@@ -9,15 +9,10 @@ export async function GET(request: NextRequest) {
     const response = await fetch('https://api.auro.finance/api/v1/pool', {
 	  method: 'GET',
 	  headers: {
-		'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-		'Accept': 'application/json, text/html, application/xhtml+xml, */*',
-		'Accept-Language': 'en-US,en;q=0.9',
-		'Accept-Encoding': 'gzip, deflate, br',
-		'Origin': 'https://auro.finance',
-		'Referer': 'https://auro.finance/',
-		'Sec-Fetch-Dest': 'empty',
-		'Sec-Fetch-Mode': 'cors',
-		'Sec-Fetch-Site': 'cross-site',
+		'User-Agent': 'yieldai-test.vercel.app/1.0 (+https://yieldai-test.vercel.app/)', 
+		'Accept': 'application/json',
+		'Origin': 'https://yieldai-test.vercel.app', 
+		'Referer': 'https://yieldai-test.vercel.app/',
 	  },
 	});
 
