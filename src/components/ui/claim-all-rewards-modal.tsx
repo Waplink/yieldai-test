@@ -13,6 +13,7 @@ import { useClaimRewards } from '@/lib/hooks/useClaimRewards';
 import { useWalletStore } from '@/lib/stores/walletStore';
 import { ToastAction } from '@/components/ui/toast';
 import { getBaseUrl } from '@/lib/utils/config';
+import { ClaimSuccessModal } from '@/components/ui/claim-success-modal';
 
 interface ClaimAllRewardsModalProps {
   isOpen: boolean;
@@ -47,6 +48,9 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
   const [results, setResults] = useState<ClaimResult[]>([]);
   const [currentStep, setCurrentStep] = useState<string>('');
   const [claimedValue, setClaimedValue] = useState(0);
+  const [showClaimSuccessModal, setShowClaimSuccessModal] = useState(false);
+  const [claimedRewards, setClaimedRewards] = useState<any[]>([]);
+  const [claimTransactionHash, setClaimTransactionHash] = useState<string>('');
 
   // Helper: detect user rejected errors from different wallets
   const isUserRejected = isUserRejectedError;
@@ -282,9 +286,26 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
       return;
     }
 
+    // Save claimable amounts before claiming
+    const rewardsToClaim: any[] = [];
+    moarRewards.forEach((reward: any) => {
+      if (reward.farming_identifier && reward.reward_id && reward.claimable_amount) {
+        rewardsToClaim.push({
+          farming_identifier: reward.farming_identifier,
+          reward_id: reward.reward_id,
+          symbol: reward.symbol,
+          amount: reward.amount,
+          usdValue: reward.usdValue,
+          logoUrl: reward.logoUrl || reward.token_info?.logoUrl,
+          claimable_amount: reward.claimable_amount,
+          decimals: reward.decimals || reward.token_info?.decimals || 8
+        });
+      }
+    });
+
     // Group rewards by farming_identifier to avoid duplicate calls
     const rewardsByPool = new Map();
-    moarRewards.forEach((reward: any) => {
+    rewardsToClaim.forEach((reward: any) => {
       if (reward.farming_identifier && reward.reward_id) {
         if (!rewardsByPool.has(reward.farming_identifier)) {
           rewardsByPool.set(reward.farming_identifier, []);
@@ -295,14 +316,19 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
 
     console.log('[ClaimAll] Grouped Moar rewards by pool:', Array.from(rewardsByPool.entries()));
 
-    let totalClaimedRewards = 0;
     let lastTransactionHash = '';
+    const claimedRewardsList: any[] = [];
 
     // Claim rewards for each pool
     for (const [farmingIdentifier, rewardIds] of rewardsByPool) {
       console.log(`[ClaimAll] Claiming Moar rewards for pool ${farmingIdentifier}:`, rewardIds);
       
       setCurrentStep(`Claiming Moar pool`);
+      
+      // Find rewards that match this pool
+      const poolRewards = rewardsToClaim.filter(
+        (r) => r.farming_identifier === farmingIdentifier && rewardIds.includes(r.reward_id)
+      );
       
       try {
         const result = await claimRewards('moar', [farmingIdentifier], rewardIds);
@@ -312,7 +338,15 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
           lastTransactionHash = result.hash;
         }
         
-        totalClaimedRewards += rewardIds.length;
+        // Add claimed rewards to list
+        poolRewards.forEach((reward) => {
+          claimedRewardsList.push({
+            symbol: reward.symbol,
+            amount: reward.amount,
+            usdValue: reward.usdValue,
+            logoUrl: reward.logoUrl
+          });
+        });
         
         // Small delay between claims to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -331,15 +365,10 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
     const moarValue = summary.protocols.moar?.value || 0;
     setClaimedValue(prev => prev + moarValue);
 
-    toast({
-      title: `Moar rewards claimed!`,
-      description: `Successfully claimed ${totalClaimedRewards} rewards from ${rewardsByPool.size} pools`,
-      action: lastTransactionHash ? (
-        <ToastAction altText="View in Explorer" onClick={() => window.open(`https://explorer.aptoslabs.com/txn/${lastTransactionHash}?network=mainnet`, '_blank')}>
-          View in Explorer
-        </ToastAction>
-      ) : undefined,
-    });
+    // Show success modal instead of toast
+    setClaimedRewards(claimedRewardsList);
+    setClaimTransactionHash(lastTransactionHash);
+    setShowClaimSuccessModal(true);
   };
 
   // Special handling for Earnium - single call claim_all_rewards
@@ -634,7 +663,7 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
     }
   };
 
-  // Special handling for Echelon - claim each reward separately
+  // Special handling for Echelon - use claim_all_rewards for rewards_pool, claim separately for farming rewards
   const handleEchelonClaim = async () => {
     if (!account?.address) {
       throw new Error('Wallet not connected');
@@ -642,110 +671,148 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
 
     console.log('[ClaimAll] Starting Echelon claim for address:', account.address);
 
-    // Load Echelon rewards directly from API (same as in working EchelonPositions)
+    // Load Echelon rewards directly from API
     let echelonRewards: any[] = [];
     try {
       const response = await fetch(`${getBaseUrl()}/api/protocols/echelon/rewards?address=${account.address}`);
       const data = await response.json();
       
-      console.log('[ClaimAll] Echelon rewards API response:', data);
-      
       if (data.success && Array.isArray(data.data)) {
         echelonRewards = data.data;
-        console.log('[ClaimAll] Found Echelon rewards:', echelonRewards);
       } else {
         echelonRewards = [];
-        console.log('[ClaimAll] No Echelon rewards found or invalid response');
       }
     } catch (error) {
       console.error('Error loading Echelon rewards:', error);
       echelonRewards = [];
     }
 
+    // Separate rewards into rewards_pool and farming rewards
+    const rewardsPoolRewards = echelonRewards.filter(r => r.farmingId === 'rewards_pool' && r.amount > 0);
+    const farmingRewards = echelonRewards.filter(r => r.farmingId !== 'rewards_pool' && r.farmingId && r.tokenType && r.amount > 0);
+
     let totalClaimed = 0;
 
-    console.log('[ClaimAll] Processing', echelonRewards.length, 'Echelon rewards');
-
-    for (const reward of echelonRewards) {
-      console.log('[ClaimAll] Processing reward:', reward);
+    // Claim rewards_pool rewards with single claim_all_rewards transaction
+    if (rewardsPoolRewards.length > 0) {
+      setCurrentStep(`Claiming ${rewardsPoolRewards.length} rewards from rewards_pool...`);
       
-      // Check if reward has valid data and positive amount (same as in EchelonPositions)
-      if (reward.farmingId && reward.tokenType && reward.amount && reward.amount > 0) {
-        console.log('[ClaimAll] Valid reward found:', { farmingId: reward.farmingId, tokenType: reward.tokenType, amount: reward.amount });
+      try {
+        const REWARDS_POOL_ADDRESS = "0xfdb653ffa48e91f39396ce87c656406f9b5e7a6686475446d92e79b098f0f4b5";
         
-        setCurrentStep(`Claiming Echelon reward ${reward.token}...`);
-        
-        try {
-          console.log('[ClaimAll] Calling claimRewards for:', { farmingId: reward.farmingId, tokenType: reward.tokenType });
-          
-          // Use the same logic as in EchelonPositions - call claimRewards for each reward separately
-          const result = await claimRewards('echelon', [reward.farmingId], [reward.tokenType]);
-          
-          console.log('[ClaimAll] Claim successful:', result);
-          
-          totalClaimed++;
-          
-          // Add individual result for each reward
-          setResults(prev => [...prev, {
-            protocol: 'echelon',
-            success: true,
-            hash: result.hash
-          }]);
-          
-          // Update claimed value (estimate based on reward amount)
-          const rewardValue = reward.amountUSD ? parseFloat(reward.amountUSD) : 0;
-          setClaimedValue(prev => prev + rewardValue);
-          
-          toast({
-            title: "Echelon reward claimed!",
-            description: `${reward.token}: ${result.hash.slice(0, 8)}...${result.hash.slice(-8)}`,
-          });
-          
-          // Wait a bit between transactions (same as in original)
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-        } catch (error) {
-          console.error('Error claiming Echelon reward:', error);
-          const msg = isUserRejected(error) ? 'User rejected' : (error instanceof Error ? error.message : 'Unknown error');
-          // Add individual error result
-          setResults(prev => [...prev, {
-            protocol: 'echelon',
-            success: false,
-            error: msg
-          }]);
-          // Don't throw error, continue with next reward (same as in original)
-          continue;
-        }
-      } else {
-        console.log('[ClaimAll] Invalid reward, skipping:', { 
-          hasFarmingId: !!reward.farmingId, 
-          hasTokenType: !!reward.tokenType, 
-          amount: reward.amount 
+        const result = await signAndSubmitTransaction({
+          data: {
+            function: `${REWARDS_POOL_ADDRESS}::rewards_pool::claim_all_rewards` as `${string}::${string}::${string}`,
+            typeArguments: [],
+            functionArguments: []
+          },
+          options: { maxGasAmount: 20000 },
         });
+
+        if (result.hash) {
+          // Wait for transaction confirmation
+          const maxAttempts = 10;
+          const delay = 2000;
+          let success = false;
+
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+              const txStatusResponse = await fetch(`https://fullnode.mainnet.aptoslabs.com/v1/transactions/by_hash/${result.hash}`);
+              const txData = await txStatusResponse.json();
+              
+              if (txData.success && txData.vm_status === 'Executed successfully') {
+                success = true;
+                break;
+              } else if (txData.vm_status && txData.vm_status !== 'Executed successfully') {
+                throw new Error(`Transaction failed: ${txData.vm_status}`);
+              }
+            } catch (error) {
+              // Continue trying
+            }
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+
+          if (success) {
+            totalClaimed += rewardsPoolRewards.length;
+            setResults(prev => [...prev, {
+              protocol: 'echelon',
+              success: true,
+              hash: result.hash
+            }]);
+
+            // Calculate total value of rewards_pool rewards
+            const rewardsPoolValue = rewardsPoolRewards.reduce((sum, reward) => {
+              const rewardValue = reward.amountUSD ? parseFloat(reward.amountUSD) : 0;
+              return sum + rewardValue;
+            }, 0);
+            setClaimedValue(prev => prev + rewardsPoolValue);
+
+            toast({
+              title: "Rewards pool claimed!",
+              description: `Claimed ${rewardsPoolRewards.length} rewards: ${result.hash.slice(0, 8)}...${result.hash.slice(-8)}`,
+            });
+          } else {
+            throw new Error('Transaction timeout');
+          }
+        }
+      } catch (error) {
+        console.error('Error claiming rewards_pool:', error);
+        const msg = isUserRejected(error) ? 'User rejected' : (error instanceof Error ? error.message : 'Unknown error');
+        setResults(prev => [...prev, {
+          protocol: 'echelon',
+          success: false,
+          error: msg
+        }]);
+      }
+    }
+
+    // Claim farming rewards separately (old mechanism)
+    for (const reward of farmingRewards) {
+      setCurrentStep(`Claiming Echelon reward ${reward.token}...`);
+      
+      try {
+        const result = await claimRewards('echelon', [reward.farmingId], [reward.tokenType]);
+        
+        totalClaimed++;
+        
+        setResults(prev => [...prev, {
+          protocol: 'echelon',
+          success: true,
+          hash: result.hash
+        }]);
+        
+        const rewardValue = reward.amountUSD ? parseFloat(reward.amountUSD) : 0;
+        setClaimedValue(prev => prev + rewardValue);
+        
+        toast({
+          title: "Echelon reward claimed!",
+          description: `${reward.token}: ${result.hash.slice(0, 8)}...${result.hash.slice(-8)}`,
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error('Error claiming Echelon reward:', error);
+        const msg = isUserRejected(error) ? 'User rejected' : (error instanceof Error ? error.message : 'Unknown error');
+        setResults(prev => [...prev, {
+          protocol: 'echelon',
+          success: false,
+          error: msg
+        }]);
+        continue;
       }
     }
 
     console.log('[ClaimAll] Echelon claim completed. Total claimed:', totalClaimed);
 
-    // Update data after claiming (same as in original EchelonPositions)
+    // Update data after claiming
     if (totalClaimed > 0 && account?.address) {
       try {
-        // Refresh rewards data
         await useWalletStore.getState().fetchRewards(account.address.toString(), ['echelon'], true);
       } catch (error) {
         console.error('Error refreshing rewards after claim:', error);
       }
     }
-
-    // Don't add a general result since we're adding individual results above
-    // if (totalClaimed === 0) {
-    //   console.log('[ClaimAll] No rewards claimed, adding error result');
-    //   setResults(prev => [...prev, {
-    //     protocol: 'echelon',
-    //     success: false,
-    //     error: 'No claimable rewards found'
-    //   }]);
-    // }
   };
 
   const handleClose = () => {
@@ -898,6 +965,19 @@ export function ClaimAllRewardsModal({ isOpen, onClose, summary, positions }: Cl
           </div>
         </div>
       </DialogContent>
+
+      {/* Claim Success Modal for Moar */}
+      <ClaimSuccessModal
+        isOpen={showClaimSuccessModal}
+        onClose={() => {
+          setShowClaimSuccessModal(false);
+          setClaimedRewards([]);
+          setClaimTransactionHash('');
+        }}
+        transactionHash={claimTransactionHash}
+        rewards={claimedRewards}
+        protocolName="Moar Market"
+      />
     </Dialog>
   );
 } 

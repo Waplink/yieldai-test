@@ -125,10 +125,11 @@ export const useWalletStore = create<WalletState>()(
         setAddress: (address: string | null) => {
           const currentAddress = get().address;
           if (currentAddress !== address) {
-            set({ address });
-            if (!address) {
+            // Clear data when switching to a different address (including null)
+            if (currentAddress !== null) {
               get().clearData();
             }
+            set({ address });
           }
         },
         setTotalAssets: (value: number) => {
@@ -139,6 +140,12 @@ export const useWalletStore = create<WalletState>()(
         
         fetchBalance: async (address: string, forceRefresh = false) => {
           const state = get();
+          
+          // Check if cached data belongs to a different address
+          if (state.address !== address) {
+            console.log('[WalletStore] Address mismatch, ignoring cache for balance');
+            forceRefresh = true;
+          }
           
           // Check if data is fresh
           if (!forceRefresh && state.lastBalanceUpdate && 
@@ -158,12 +165,13 @@ export const useWalletStore = create<WalletState>()(
             
             if (response.ok) {
               const data = await response.json();
-              set({
-                balance: data.balances || [],
-                balanceLoading: false,
-                lastBalanceUpdate: Date.now(),
-                balanceError: null
-              });
+            set({
+              address: address,
+              balance: data.balances || [],
+              balanceLoading: false,
+              lastBalanceUpdate: Date.now(),
+              balanceError: null
+            });
               console.log('[WalletStore] Balance fetched successfully:', data.balances.length);
             } else {
               console.warn('[WalletStore] Failed to fetch balance:', response.status, response.statusText);
@@ -182,6 +190,12 @@ export const useWalletStore = create<WalletState>()(
         
         fetchPositions: async (address: string, protocols?: string[], forceRefresh = false) => {
           const state = get();
+          
+          // Check if cached data belongs to a different address
+          if (state.address !== address) {
+            console.log('[WalletStore] Address mismatch, ignoring cache for positions');
+            forceRefresh = true;
+          }
           
           // Check if data is fresh
           if (!forceRefresh && state.lastPositionsUpdate && 
@@ -245,6 +259,7 @@ export const useWalletStore = create<WalletState>()(
             });
             
             set({
+              address: address,
               positions: newPositions,
               positionsLoading: false,
               lastPositionsUpdate: Date.now(),
@@ -263,6 +278,12 @@ export const useWalletStore = create<WalletState>()(
         
         fetchRewards: async (address: string, protocols?: string[], forceRefresh = false) => {
           const state = get();
+          
+          // Check if cached data belongs to a different address
+          if (state.address !== address) {
+            console.log('[WalletStore] Address mismatch, ignoring cache for rewards');
+            forceRefresh = true;
+          }
           
           // Check if data is fresh
           if (!forceRefresh && state.lastRewardsUpdate && 
@@ -544,6 +565,7 @@ export const useWalletStore = create<WalletState>()(
             }
             
             set({
+              address: address,
               rewards: newRewards,
               rewardsLoading: false,
               lastRewardsUpdate: Date.now(),
@@ -1235,21 +1257,8 @@ export const useWalletStore = create<WalletState>()(
 
           earniumRewards.forEach((pool: any) => {
             if (pool.rewards && Array.isArray(pool.rewards)) {
-              console.log(`[WalletStore] Processing Earnium pool ${pool.pool}:`, {
-                poolId: pool.pool,
-                rewardsCount: pool.rewards.length,
-                staked: pool.staked
-              });
-
               pool.rewards.forEach((reward: any) => {
                 if (reward.amount && reward.amount > 0) {
-                  console.log(`[WalletStore] Processing Earnium reward:`, {
-                    token: reward.symbol,
-                    tokenKey: reward.tokenKey,
-                    amount: reward.amount,
-                    decimals: reward.decimals
-                  });
-
                   // Clean the token address
                   let cleanAddress = reward.tokenKey;
                   if (cleanAddress.startsWith('@')) {
@@ -1263,32 +1272,14 @@ export const useWalletStore = create<WalletState>()(
                   let price = '0';
                   if (earniumPrices[cleanAddress]) {
                     price = earniumPrices[cleanAddress];
-                    console.log(`[WalletStore] Found direct Earnium price: ${price}`);
                   } else if (state.prices[cleanAddress]) {
                     price = state.prices[cleanAddress];
-                    console.log(`[WalletStore] Found store price: ${price}`);
-                  } else {
-                    console.log(`[WalletStore] No price found for address: ${cleanAddress}`);
                   }
 
                   if (parseFloat(price) > 0) {
                     const value = reward.amount * parseFloat(price);
                     summary.protocols.earnium.value += value;
                     summary.protocols.earnium.count++;
-                    console.log(`[WalletStore] Earnium reward processed:`, {
-                      token: reward.symbol,
-                      amount: reward.amount,
-                      price: price,
-                      value: value,
-                      pool: pool.pool
-                    });
-                  } else {
-                    console.log(`[WalletStore] Earnium reward skipped (no price):`, {
-                      token: reward.symbol,
-                      amount: reward.amount,
-                      address: cleanAddress,
-                      reason: 'Price is 0 or not found'
-                    });
                   }
                 }
               });

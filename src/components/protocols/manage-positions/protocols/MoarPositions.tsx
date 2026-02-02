@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useWalletStore } from '@/lib/stores/walletStore';
 import { WithdrawModal } from '@/components/ui/withdraw-modal';
 import { DepositModal } from '@/components/ui/deposit-modal';
+import { ClaimSuccessModal } from '@/components/ui/claim-success-modal';
 import { formatNumber, formatCurrency } from '@/lib/utils/numberFormat';
 
 interface MoarPositionsProps {
@@ -37,7 +38,7 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
   const { claimRewards, isLoading: isClaiming } = useClaimRewards();
   const { withdraw, isLoading: isWithdrawing } = useWithdraw();
   const { toast } = useToast();
-  const { setRewards } = useWalletStore();
+  const { setRewards, getTokenPrice } = useWalletStore();
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,12 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [selectedDepositPosition, setSelectedDepositPosition] = useState<Position | null>(null);
+  const [showClaimSuccessModal, setShowClaimSuccessModal] = useState(false);
+  const [claimedRewards, setClaimedRewards] = useState<any[]>([]);
+  const [claimTransactionHash, setClaimTransactionHash] = useState<string>('');
+  
+  // Protect modal state from re-renders
+  const isModalOpeningRef = useRef(false);
 
   const walletAddress = address || account?.address;
 
@@ -176,9 +183,27 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
     }
 
     try {
+      // Save claimable amounts before claiming
+      const rewardsToClaim: any[] = [];
+      rewardsData.forEach((reward: any) => {
+        if (reward.farming_identifier && reward.reward_id && reward.claimable_amount) {
+          rewardsToClaim.push({
+            farming_identifier: reward.farming_identifier,
+            reward_id: reward.reward_id,
+            symbol: reward.symbol,
+            amount: reward.amount,
+            usdValue: reward.usdValue,
+            logoUrl: reward.logoUrl || reward.token_info?.logoUrl,
+            tokenAddress: reward.tokenAddress, // Add tokenAddress for aggregation
+            claimable_amount: reward.claimable_amount,
+            decimals: reward.decimals || reward.token_info?.decimals || 8
+          });
+        }
+      });
+
       // Group rewards by farming_identifier to avoid duplicate calls
       const rewardsByPool = new Map();
-      rewardsData.forEach((reward: any) => {
+      rewardsToClaim.forEach((reward: any) => {
         if (reward.farming_identifier && reward.reward_id) {
           if (!rewardsByPool.has(reward.farming_identifier)) {
             rewardsByPool.set(reward.farming_identifier, []);
@@ -187,12 +212,18 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
         }
       });
 
-      let totalClaimedRewards = 0;
       let lastTransactionHash = '';
+      const claimedRewardsList: any[] = [];
 
       // Claim rewards for each pool
       for (const [farmingIdentifier, rewardIds] of rewardsByPool) {
         console.log(`Claiming rewards for pool ${farmingIdentifier}:`, rewardIds);
+        
+        // Find rewards that match this pool
+        const poolRewards = rewardsToClaim.filter(
+          (r) => r.farming_identifier === farmingIdentifier && rewardIds.includes(r.reward_id)
+        );
+        
         const result = await claimRewards('moar', [farmingIdentifier], rewardIds);
         
         // Extract transaction hash if available
@@ -200,31 +231,69 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
           lastTransactionHash = result.hash;
         }
         
-        totalClaimedRewards += rewardIds.length;
+        // Add claimed rewards to list
+        poolRewards.forEach((reward) => {
+          claimedRewardsList.push({
+            symbol: reward.symbol,
+            amount: reward.amount,
+            usdValue: reward.usdValue,
+            logoUrl: reward.logoUrl,
+            tokenAddress: reward.tokenAddress // Add tokenAddress for aggregation
+          });
+        });
         
         // Small delay between claims to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Show success notification with explorer link
-      toast({
-        title: "Success!",
-        description: (
-          <div className="space-y-2">
-            <p>Successfully claimed {totalClaimedRewards} rewards from Moar Market</p>
-            {lastTransactionHash && (
-              <a 
-                href={`https://explorer.aptoslabs.com/txn/${lastTransactionHash}?network=mainnet`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline text-sm"
-              >
-                View transaction on Explorer →
-              </a>
-            )}
-          </div>
-        ),
-      });
+      // Aggregate rewards by tokenAddress (sum same tokens)
+      // Normalize address for grouping: Move addresses (with ::) stay as-is, regular addresses are normalized
+      const normalizeKey = (addr: string | undefined, symbol: string): string => {
+        if (!addr) return symbol.toLowerCase();
+        // For Move addresses (e.g., "0x1::aptos_coin::AptosCoin"), use as-is
+        if (addr.includes('::')) return addr.toLowerCase();
+        // For regular addresses, normalize by removing leading zeros
+        if (addr.startsWith('0x')) {
+          const normalized = '0x' + addr.slice(2).replace(/^0+/, '');
+          return (normalized === '0x' ? '0x0' : normalized).toLowerCase();
+        }
+        return addr.toLowerCase();
+      };
+
+      const aggregatedRewards = claimedRewardsList.reduce((acc, reward) => {
+        // Use normalized tokenAddress as key, fallback to symbol if tokenAddress is missing
+        const key = normalizeKey(reward.tokenAddress, reward.symbol);
+        
+        if (!acc[key]) {
+          acc[key] = {
+            symbol: reward.symbol,
+            amount: 0,
+            usdValue: 0,
+            logoUrl: reward.logoUrl,
+            tokenAddress: reward.tokenAddress
+          };
+        }
+        
+        acc[key].amount += reward.amount || 0;
+        acc[key].usdValue += reward.usdValue || 0;
+        
+        return acc;
+      }, {} as Record<string, { symbol: string; amount: number; usdValue: number; logoUrl?: string | null; tokenAddress?: string }>);
+
+      // Convert aggregated object to array
+      const aggregatedRewardsArray = Object.values(aggregatedRewards);
+
+      // Set rewards data first
+      setClaimedRewards(aggregatedRewardsArray);
+      setClaimTransactionHash(lastTransactionHash);
+      
+      // Mark that modal is opening to protect from re-renders
+      isModalOpeningRef.current = true;
+      
+      // Show success modal with aggregated rewards after delay (to let toast appear first)
+      setTimeout(() => {
+        setShowClaimSuccessModal(true);
+      }, 250);
 
       // Refresh rewards data after successful claim
       setTimeout(() => {
@@ -232,6 +301,8 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
       }, 2000);
     } catch (error) {
       console.error('Error claiming all rewards:', error);
+      // Reset ref on error
+      isModalOpeningRef.current = false;
       toast({
         title: "Error",
         description: "Failed to claim rewards. Please try again.",
@@ -390,6 +461,12 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
     const handleRefresh = (event: CustomEvent) => {
       console.log('MoarPositions - Received refreshPositions event:', event.detail);
       
+      // Don't refresh if modal is opening/opened - protect modal state
+      if (isModalOpeningRef.current || showClaimSuccessModal) {
+        console.log('MoarPositions - Modal is open, skipping refresh to prevent flicker');
+        return;
+      }
+      
       if (event.detail?.protocol === 'moar') {
         console.log('MoarPositions - Protocol matches moar, refreshing data');
         // Перезагружаем данные
@@ -470,7 +547,7 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
     return () => {
       window.removeEventListener('refreshPositions', handleRefresh as unknown as EventListener);
     };
-  }, [walletAddress, onPositionsValueChange]);
+  }, [walletAddress, onPositionsValueChange, showClaimSuccessModal]);
 
   if (loading) {
     return <div>Loading Moar Market positions...</div>;
@@ -940,9 +1017,34 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
               return selectedDepositPosition.assetInfo.symbol;
             })()
           }}
-          priceUSD={4.40} // TODO: Get real price from API
+          priceUSD={(() => {
+            const tokenAddress = (() => {
+              if (selectedDepositPosition.assetInfo.symbol === 'APT') {
+                return '0x1::aptos_coin::AptosCoin';
+              } else if (selectedDepositPosition.assetInfo.symbol === 'USDC') {
+                return '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b';
+              }
+              return selectedDepositPosition.assetInfo.symbol;
+            })();
+            return parseFloat(getTokenPrice(tokenAddress)) || 0;
+          })()}
         />
       )}
+
+      {/* Claim Success Modal */}
+      <ClaimSuccessModal
+        isOpen={showClaimSuccessModal}
+        onClose={() => {
+          setShowClaimSuccessModal(false);
+          setClaimedRewards([]);
+          setClaimTransactionHash('');
+          // Reset ref when modal closes
+          isModalOpeningRef.current = false;
+        }}
+        transactionHash={claimTransactionHash}
+        rewards={claimedRewards}
+        protocolName="Moar Market"
+      />
     </div>
   );
 }

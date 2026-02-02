@@ -1,25 +1,35 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SwapModal } from '@/components/ui/swap-modal';
 import { YieldCalculatorModal } from '@/components/ui/yield-calculator-modal';
+import { TransferModal } from '@/components/ui/transfer-modal';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { useWalletData } from '@/contexts/WalletContext';
 import { useWalletStore } from '@/lib/stores/walletStore';
+import { useToast } from '@/components/ui/use-toast';
 import { useMemo } from 'react';
+import { getSolanaWalletAddress } from '@/lib/wallet/getSolanaWalletAddress';
 
 export default function ChatPanel() {
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
   const [isYieldCalcOpen, setIsYieldCalcOpen] = useState(false);
-  const { account } = useWallet();
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const { account, wallet } = useWallet();
   const { tokens } = useWalletData();
   const totalAssetsStore = useWalletStore((s) => s.totalAssets);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+
+  // Check if Solana wallet is connected
+  const solanaAddress = useMemo(() => getSolanaWalletAddress(wallet), [wallet]);
+  const hasSolanaWallet = !!solanaAddress;
 
   const walletTotal = useMemo(() => {
     return (tokens || []).reduce((sum, t: any) => {
@@ -53,6 +63,54 @@ export default function ChatPanel() {
     }
   };
 
+  const handleBridgeUSDC = () => {
+    if (account?.address) {
+      // Navigate to bridge page with destination address as query parameter
+      // router.push(`/bridge?destination=${encodeURIComponent(account.address.toString())}`);
+      router.push(`/bridge`);
+    } else {
+      // Show toast if wallet is not connected
+      toast({
+        variant: "destructive",
+        title: "Wallet Not Connected",
+        description: "Please connect your native Aptos wallet to bridge USDC",
+      });
+    }
+  };
+
+  const handleTransfer = () => {
+    if (account?.address) {
+      setIsTransferModalOpen(true);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Wallet Not Connected",
+        description: "Please connect your Aptos wallet to transfer tokens",
+      });
+    }
+  };
+
+  // Handle query parameter to open calculator
+  useEffect(() => {
+    const calculatorParam = searchParams.get('calculator');
+    if (calculatorParam === 'true') {
+      setIsYieldCalcOpen(true);
+    }
+  }, [searchParams]);
+
+  // Handle closing calculator and removing query parameter
+  const handleCloseCalculator = useCallback(() => {
+    setIsYieldCalcOpen(false);
+    // Remove calculator parameter from URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('calculator');
+    params.delete('apr');
+    params.delete('deposit');
+    const newSearch = params.toString();
+    const newUrl = newSearch ? `${window.location.pathname}?${newSearch}` : window.location.pathname;
+    router.replace(newUrl);
+  }, [searchParams, router]);
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between">
@@ -69,6 +127,16 @@ export default function ChatPanel() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
           Swap
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={handleTransfer}
+          className="flex items-center gap-2 w-full justify-start"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
+          Transfer
         </Button>
         <Button 
           variant="outline" 
@@ -90,6 +158,18 @@ export default function ChatPanel() {
           </svg>
           Portfolio Tracker
         </Button>
+        {hasSolanaWallet && (
+          <Button 
+            variant="outline" 
+            onClick={handleBridgeUSDC}
+            className="flex items-center gap-2 w-full justify-start"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            Bridge USDC
+          </Button>
+        )}
       </div>
 
       {/* Compact Footer - Mobile only */}
@@ -185,11 +265,27 @@ export default function ChatPanel() {
         isOpen={isSwapModalOpen} 
         onClose={() => setIsSwapModalOpen(false)} 
       />
+      <TransferModal 
+        isOpen={isTransferModalOpen} 
+        onClose={() => setIsTransferModalOpen(false)} 
+      />
       <YieldCalculatorModal 
         isOpen={isYieldCalcOpen}
-        onClose={() => setIsYieldCalcOpen(false)}
+        onClose={handleCloseCalculator}
         totalAssets={totalAssets}
         walletTotal={walletTotal}
+        initialApr={(() => {
+          const aprParam = searchParams.get('apr');
+          if (!aprParam) return undefined;
+          const aprValue = parseFloat(aprParam);
+          return Number.isFinite(aprValue) && aprValue > 0 ? aprValue : undefined;
+        })()}
+        initialDeposit={(() => {
+          const depositParam = searchParams.get('deposit');
+          if (!depositParam) return undefined;
+          const depositValue = parseFloat(depositParam);
+          return Number.isFinite(depositValue) && depositValue >= 0 ? depositValue : undefined;
+        })()}
       />
     </div>
   );

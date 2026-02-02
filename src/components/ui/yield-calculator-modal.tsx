@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,8 @@ import { useWalletData } from '@/contexts/WalletContext';
 import { getProtocolByName } from '@/lib/protocols/getProtocolsList';
 import { useWalletStore } from '@/lib/stores/walletStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Copy, Check } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 
 interface YieldCalculatorModalProps {
   isOpen: boolean;
@@ -24,13 +26,36 @@ interface YieldCalculatorModalProps {
   tokens?: any[]; // Опциональные токены для использования вместо токенов из контекста
   totalAssets?: number; // Опционально: итоговая сумма assets (wallet + протоколы) извне
   walletTotal?: number; // Опционально: сумма кошелька извне
+  initialApr?: number; // Опционально: начальное значение APR для предзаполнения
+  initialDeposit?: number; // Опционально: начальное значение депозита для предзаполнения
+  initialAprStart?: number; // Опционально: начальное значение start capital для APR вкладки
+  initialAprCurrent?: number; // Опционально: начальное значение current capital для APR вкладки
+  initialAprDays?: number; // Опционально: начальное значение days для APR вкладки
+  initialAprStartDate?: string; // Опционально: начальная дата начала для APR вкладки
+  initialAprEndDate?: string; // Опционально: начальная дата окончания для APR вкладки
+  initialAprMode?: 'days' | 'dates'; // Опционально: режим периода для APR вкладки
 }
 
-export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, totalAssets: externalTotalAssets, walletTotal: externalWalletTotal }: YieldCalculatorModalProps) {
+export function YieldCalculatorModal({ 
+  isOpen, 
+  onClose, 
+  tokens: externalTokens, 
+  totalAssets: externalTotalAssets, 
+  walletTotal: externalWalletTotal, 
+  initialApr, 
+  initialDeposit,
+  initialAprStart,
+  initialAprCurrent,
+  initialAprDays,
+  initialAprStartDate,
+  initialAprEndDate,
+  initialAprMode
+}: YieldCalculatorModalProps) {
   const { address, tokens: contextTokens } = useWalletData();
   // Используем внешние токены, если они переданы, иначе токены из контекста
   const tokens = externalTokens || contextTokens;
   const { fetchPositions, fetchRewards, isDataStale, getTotalValue, positions, lastPositionsUpdate } = useWalletStore();
+  const { toast } = useToast();
 
   const [apr, setApr] = useState<number>(0);
   const [aprInput, setAprInput] = useState<string>('0.00');
@@ -39,6 +64,17 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
   const [userEditedDeposit, setUserEditedDeposit] = useState<boolean>(false);
   const [walletTotalCached, setWalletTotalCached] = useState<number>(0);
   const [loadingDefaults, setLoadingDefaults] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<string>('yield');
+  const [copied, setCopied] = useState<boolean>(false);
+  const [aprTabData, setAprTabData] = useState<{
+    start: number;
+    current: number;
+    days: number;
+    daysMode: 'days' | 'dates';
+    startDate?: string;
+    endDate?: string;
+  } | null>(null);
+  const initialDepositAppliedRef = useRef<boolean>(false);
   const formatAssetInputValue = (value: number) => {
     if (!Number.isFinite(value) || value <= 0) return '0';
     const fixed = value.toFixed(2);
@@ -77,9 +113,41 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
     }, 0);
   };
 
-  // Fetch defaults on open: best stable APR from Lite Stables
+  // Reset userEditedDeposit and ref when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setUserEditedDeposit(false);
+      initialDepositAppliedRef.current = false;
+    } else {
+      initialDepositAppliedRef.current = false;
+    }
+  }, [isOpen]);
+
+  // Apply initial values from query parameters (if provided) - priority over defaults
   useEffect(() => {
     if (!isOpen) return;
+    
+    // Apply initial APR if provided
+    if (initialApr !== undefined && Number.isFinite(initialApr) && initialApr > 0) {
+      const normalizedApr = Math.max(0, Math.round(initialApr * 100) / 100);
+      setApr(normalizedApr);
+      setAprInput(normalizedApr.toFixed(2));
+    }
+    
+    // Apply initial deposit if provided (check for valid number, including 0)
+    if (initialDeposit !== undefined && Number.isFinite(initialDeposit) && initialDeposit >= 0) {
+      setDepositUSD(initialDeposit.toFixed(2));
+      setWalletTotalCached(initialDeposit); // Cache the value to prevent overwriting
+      setUserEditedDeposit(false); // Reset flag to prevent other useEffects from overwriting
+      initialDepositAppliedRef.current = true; // Mark that we've applied initial deposit
+    }
+  }, [isOpen, initialApr, initialDeposit]);
+
+  // Fetch defaults on open: best stable APR from Lite Stables (only if not provided from URL)
+  useEffect(() => {
+    if (!isOpen) return;
+    // Skip if values are provided from URL
+    if (initialApr !== undefined && initialApr > 0) return;
 
     const fetchDefaults = async () => {
       try {
@@ -135,34 +203,23 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
         const defaultApr = bestStableApr > 0 ? parseFloat(bestStableApr.toFixed(2)) : 0;
         setApr(defaultApr);
         setAprInput(defaultApr.toFixed(2));
-
-        // Auto-fill deposit from wallet tokens
-        const walletTotalValue =
-          typeof externalWalletTotal === 'number' && externalWalletTotal > 0
-            ? externalWalletTotal
-            : computeWalletTotalFromContext(tokens as any[]);
-
-        if (walletTotalValue > 0) {
-          // Для кошелька показываем 2 знака после запятой
-          setDepositUSD(walletTotalValue.toFixed(2));
-          setWalletTotalCached(walletTotalValue);
-        } else {
-          // До загрузки кошелька — 0
-          setDepositUSD('0');
-          setWalletTotalCached(0);
-        }
       } finally {
         setLoadingDefaults(false);
       }
     };
 
     fetchDefaults();
-  }, [isOpen, tokens]);
+  }, [isOpen, tokens, initialApr]);
 
-  // Подхватываем обновление суммы кошелька после загрузки (если юзер не правил поле)
+  // Подхватываем обновление суммы кошелька после загрузки (если юзер не правил поле и нет initialDeposit)
   useEffect(() => {
     if (!isOpen) return;
     if (userEditedDeposit) return;
+    // Skip if initialDeposit was applied from URL - it has priority (including 0)
+    if (initialDepositAppliedRef.current || (initialDeposit !== undefined && Number.isFinite(initialDeposit))) {
+      return; // Don't overwrite deposit from URL, even if it's 0
+    }
+    
     const walletTotalValue =
       typeof externalWalletTotal === 'number' && externalWalletTotal > 0
         ? externalWalletTotal
@@ -172,8 +229,9 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
       setWalletTotalCached(walletTotalValue);
     } else {
       setDepositUSD('0');
+      setWalletTotalCached(0);
     }
-  }, [isOpen, externalWalletTotal, tokens, userEditedDeposit]);
+  }, [isOpen, externalWalletTotal, tokens, userEditedDeposit, initialDeposit]);
 
   // No auto-updates for deposit amount for now
 
@@ -211,6 +269,65 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
     return totalAssetsNow;
   }, [externalTotalAssets, totalAssetsNow]);
 
+  // Generate share link based on current tab and inputs
+  const shareLink = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    
+    const baseUrl = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    
+    if (activeTab === 'yield') {
+      // Yield tab: save apr and deposit
+      if (apr > 0) {
+        params.set('apr', apr.toFixed(2));
+      }
+      if (parsedDeposit > 0) {
+        params.set('deposit', parsedDeposit.toFixed(2));
+      }
+    } else if (activeTab === 'apr' && aprTabData) {
+      // APR tab: save start, current, and period data
+      if (aprTabData.start > 0) {
+        params.set('aprStart', aprTabData.start.toFixed(2));
+      }
+      if (aprTabData.current > 0) {
+        params.set('aprCurrent', aprTabData.current.toFixed(2));
+      }
+      if (aprTabData.daysMode === 'days' && aprTabData.days > 0) {
+        params.set('aprDays', aprTabData.days.toString());
+      } else if (aprTabData.daysMode === 'dates') {
+        if (aprTabData.startDate) {
+          params.set('aprStartDate', aprTabData.startDate);
+        }
+        if (aprTabData.endDate) {
+          params.set('aprEndDate', aprTabData.endDate);
+        }
+      }
+      params.set('aprMode', aprTabData.daysMode);
+    }
+    
+    const queryString = params.toString();
+    return queryString ? `${baseUrl}?${queryString}` : baseUrl;
+  }, [activeTab, apr, parsedDeposit, aprTabData]);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast({
+        title: "Link copied!",
+        description: "Share link has been copied to clipboard",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      toast({
+        title: "Error",
+        description: "Failed to copy link to clipboard",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto p-6 rounded-2xl w-[calc(100vw-2rem)] sm:w-auto">
@@ -219,7 +336,7 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
           <DialogDescription>Estimate your earnings or derive APR from results.</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="yield" className="w-full">
+        <Tabs defaultValue="yield" value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-3">
             <TabsTrigger value="yield">Yield</TabsTrigger>
             <TabsTrigger value="apr">APR</TabsTrigger>
@@ -318,9 +435,47 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
 
           <TabsContent value="apr" className="space-y-5">
             {/* APR from result tab */}
-            <AprFromResult initialCurrentCapital={effectiveTotalAssets} />
+            <AprFromResult 
+              initialCurrentCapital={effectiveTotalAssets} 
+              onDataChange={setAprTabData}
+              initialStart={initialAprStart}
+              initialCurrent={initialAprCurrent}
+              initialDays={initialAprDays}
+              initialStartDate={initialAprStartDate}
+              initialEndDate={initialAprEndDate}
+              initialMode={initialAprMode}
+            />
           </TabsContent>
         </Tabs>
+
+        {/* Share link section */}
+        {shareLink && shareLink.includes('?') && (
+          <div className="mt-6 pt-4 border-t space-y-2">
+            <Label className="text-sm text-muted-foreground">Share calculations</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                value={shareLink}
+                readOnly
+                className="h-9 text-sm font-mono bg-muted flex-1 truncate"
+                title={shareLink}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => copyToClipboard(shareLink)}
+                className="h-9 px-3 shrink-0"
+                title={copied ? "Copied!" : "Copy link"}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -328,13 +483,42 @@ export function YieldCalculatorModal({ isOpen, onClose, tokens: externalTokens, 
 
 
 // --- APR from result sub-component ---
-function AprFromResult({ initialCurrentCapital }: { initialCurrentCapital?: number }) {
-  const [startInput, setStartInput] = useState<string>('10000');
-  const [currentInput, setCurrentInput] = useState<string>('0');
-  const [daysMode, setDaysMode] = useState<'days' | 'dates'>('days');
-  const [daysInput, setDaysInput] = useState<string>('30');
-  const [startDateStr, setStartDateStr] = useState<string>('');
+function AprFromResult({ 
+  initialCurrentCapital,
+  onDataChange,
+  initialStart,
+  initialCurrent: initialCurrentProp,
+  initialDays,
+  initialStartDate,
+  initialEndDate,
+  initialMode
+}: { 
+  initialCurrentCapital?: number;
+  onDataChange?: (data: { start: number; current: number; days: number; daysMode: 'days' | 'dates'; startDate?: string; endDate?: string }) => void;
+  initialStart?: number;
+  initialCurrent?: number;
+  initialDays?: number;
+  initialStartDate?: string;
+  initialEndDate?: string;
+  initialMode?: 'days' | 'dates';
+}) {
+  const [startInput, setStartInput] = useState<string>(() => {
+    return initialStart ? initialStart.toString() : '10000';
+  });
+  const [currentInput, setCurrentInput] = useState<string>(() => {
+    return initialCurrentProp ? initialCurrentProp.toString() : '0';
+  });
+  const [daysMode, setDaysMode] = useState<'days' | 'dates'>(() => {
+    return initialMode || 'days';
+  });
+  const [daysInput, setDaysInput] = useState<string>(() => {
+    return initialDays ? initialDays.toString() : '30';
+  });
+  const [startDateStr, setStartDateStr] = useState<string>(() => {
+    return initialStartDate || '';
+  });
   const [endDateStr, setEndDateStr] = useState<string>(() => {
+    if (initialEndDate) return initialEndDate;
     const d = new Date();
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -415,6 +599,20 @@ function AprFromResult({ initialCurrentCapital }: { initialCurrentCapital?: numb
     if (days <= 0) return 0;
     return roi * (365 / days) * 100;
   }, [roi, days]);
+
+  // Notify parent component about data changes for share link generation
+  useEffect(() => {
+    if (onDataChange) {
+      onDataChange({
+        start,
+        current,
+        days,
+        daysMode,
+        startDate: daysMode === 'dates' ? startDateStr : undefined,
+        endDate: daysMode === 'dates' ? endDateStr : undefined,
+      });
+    }
+  }, [start, current, days, daysMode, startDateStr, endDateStr, onDataChange]);
 
   const formatPct = (v: number) => `${(Number.isFinite(v) ? v : 0).toFixed(2)}%`;
   const formatUsd = (v: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number.isFinite(v) ? v : 0);

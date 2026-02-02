@@ -1,6 +1,8 @@
 "use client";
 import { WalletSelector } from "./WalletSelector";
 import { PortfolioCard } from "./portfolio/PortfolioCard";
+import { SolanaWalletCard } from "./portfolio/SolanaWalletCard";
+import { SolanaSignMessageButton } from "./SolanaSignMessageButton";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useState, useCallback } from "react";
 import { AptosPortfolioService } from "@/lib/services/aptos/portfolio";
@@ -21,9 +23,19 @@ import { PositionsList as AmnisPositionsList } from "./protocols/amnis/Positions
 import { PositionsList as EarniumPositionsList } from "./protocols/earnium/PositionsList";
 import { PositionsList as MoarPositionsList } from "./protocols/moar/PositionsList";
 import { PositionsList as AavePositionsList } from "./protocols/aave/PositionsList";
+import { PositionsList as ThalaPositionsList } from "./protocols/thala/PositionsList";
+import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
 
 export default function Sidebar() {
   const { account } = useWallet();
+  const {
+    address: solanaAddress,
+    tokens: solanaTokens,
+    totalValueUsd: solanaTotalValue,
+    isLoading: isSolanaLoading,
+    refresh: refreshSolana,
+  } = useSolanaPortfolio();
   const [tokens, setTokens] = useState<Token[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const [hyperionValue, setHyperionValue] = useState(0);
@@ -37,6 +49,7 @@ export default function Sidebar() {
   const [earniumValue, setEarniumValue] = useState(0);
   const [aaveValue, setAaveValue] = useState(0);
   const [moarValue, setMoarValue] = useState(0);
+  const [thalaValue, setThalaValue] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -55,6 +68,7 @@ export default function Sidebar() {
     "Earnium",
     "Aave",
     "Moar Market",
+    "Thala",
   ];
 
   const resetChecking = useCallback(() => {
@@ -100,6 +114,7 @@ export default function Sidebar() {
     setAmnisValue(0);
     setEarniumValue(0);
     setAaveValue(0);
+    setThalaValue(0);
     resetChecking();
     setRefreshKey((k) => k + 1);
   }, [loadPortfolio, resetChecking]);
@@ -156,6 +171,9 @@ export default function Sidebar() {
   const handleMoarValueChange = useCallback((value: number) => {
     setMoarValue(value);
   }, []);
+  const handleThalaValueChange = useCallback((value: number) => {
+    setThalaValue(value);
+  }, []);
 
   // Считаем сумму по кошельку
   const walletTotal = tokens.reduce((sum, token) => {
@@ -164,7 +182,7 @@ export default function Sidebar() {
   }, 0);
 
   // Считаем сумму по всем протоколам
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue;
+  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue;
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
@@ -188,7 +206,7 @@ export default function Sidebar() {
           </div>
           <WalletSelector />
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
           {account?.address ? (
             <div className="mt-4 space-y-4">
               <PortfolioCard 
@@ -196,21 +214,33 @@ export default function Sidebar() {
                 tokens={tokens} 
                 onRefresh={handleRefresh}
                 isRefreshing={isRefreshing}
+                hasSolanaWallet={!!solanaAddress}
               />
+              {solanaAddress && (
+                <div className="space-y-2">
+                  <SolanaWalletCard
+                    tokens={solanaTokens}
+                    totalValueUsd={solanaTotalValue}
+                    onRefresh={refreshSolana}
+                    isRefreshing={isSolanaLoading}
+                  />
+                  <SolanaSignMessageButton />
+                </div>
+              )}
               {checkingProtocols.length > 0 && (
                 <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
                   <span>Checking positions on</span>
                   <div className="flex items-center gap-1">
                     {checkingProtocols.map((name) => {
                       const proto = getProtocolByName(name);
-                      const logo = proto?.logoUrl;
+                      const logo = proto?.logoUrl || "/favicon.ico";
                       return (
-                        <img
+                        <ProtocolIcon
                           key={name}
-                          src={logo || "/favicon.ico"}
-                          alt={name}
-                          title={name}
-                          className="w-4 h-4 rounded-sm object-contain opacity-80"
+                          logoUrl={logo}
+                          name={name}
+                          size="sm"
+                          isLoading={true}
                         />
                       );
                     })}
@@ -229,6 +259,7 @@ export default function Sidebar() {
                 { component: EarniumPositionsList, value: earniumValue, name: 'Earnium' },
                 { component: AavePositionsList, value: aaveValue, name: 'Aave' },
                 { component: MoarPositionsList, value: moarValue, name: 'Moar Market' },
+                { component: ThalaPositionsList, value: thalaValue, name: 'Thala' },
               ]
                 .sort((a, b) => b.value - a.value)
                 .map(({ component: Component, name }) => (
@@ -249,6 +280,7 @@ export default function Sidebar() {
                       name === 'Earnium' ? handleEarniumValueChange :
                       name === 'Aave' ? handleAaveValueChange :
                       name === 'Moar Market' ? handleMoarValueChange :
+                      name === 'Thala' ? handleThalaValueChange :
                       undefined
                     }
                     onPositionsCheckComplete={() =>

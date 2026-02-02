@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useWalletData } from '@/contexts/WalletContext';
-import { useTransactionSubmitter } from '@/lib/hooks/useTransactionSubmitter';
+import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { isUserRejectedError } from '@/lib/utils/errors';
 import { Token } from '@/lib/types/panora';
 import tokenList from '@/lib/data/tokenList.json';
@@ -58,24 +58,24 @@ interface SwapModalProps {
 
 export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const { tokens, address: userAddress, refreshPortfolio } = useWalletData();
-  const { submitTransaction, isConnected } = useTransactionSubmitter();
-  
+  const { signAndSubmitTransaction, connected } = useWallet();
+
   // Убираем fetchPrices - используем готовые цены из tokens
   // const { prices, fetchPrices } = useWalletStore();
-  
+
   // Используем готовые цены из tokens кошелька - не нужно логировать
   // console.log('[SwapModal] Current tokens with prices:', tokens);
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
   const [swapResult, setSwapResult] = useState<SwapResult | null>(null);
   const [quoteDebug, setQuoteDebug] = useState<any>(null);
   const [showSlippage, setShowSlippage] = useState(false);
-  
+
   // Local optimistic balances override for UI after successful swap
   const [balancesOverride, setBalancesOverride] = useState<Record<string, number>>({});
-  
+
   // Состояние для отслеживания изменений данных
   const [lastQuoteData, setLastQuoteData] = useState({
     fromToken: null as TokenWithActualPrice | null,
@@ -83,7 +83,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     amount: '',
     slippage: 0.5
   });
-  
+
   // Token selection
   const [fromToken, setFromToken] = useState<TokenWithActualPrice | null>(null);
   const [toToken, setToToken] = useState<TokenWithActualPrice | null>(null);
@@ -147,13 +147,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           actualPrice
         };
       })
-      .filter(token => 
-        token.tokenInfo && 
+      .filter(token =>
+        token.tokenInfo &&
         token.tokenInfo.faAddress !== fromToken?.faAddress
       )
       .sort((a, b) => Number(b.amount) - Number(a.amount));
 
-    // 2) Ensure only native tokens are always present: APT, USDt, USDC (native), USD1, WBTC (native), USDA
+    // 2) Ensure only native tokens are always present: APT, USDt, USDC (native), USD1, WBTC (native)
     // Native faAddresses (lowercase)
     const requiredFaAddresses = [
       '0xa', // APT
@@ -161,7 +161,6 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b', // USDC (native)
       '0x05fabd1b12e39967a3c24e91b7b8f67719a6dacee74f3c8b9fb7d93e855437d2', // USD1 (native)
       '0x68844a0d7f2587e726ad0579f3d640865bb4162c08a4589eeda3f9689ec52a3d', // WBTC (native)
-      '0x534e4c3dc0f038dab1a8259e89301c4da58779a5d482fb354a41c08147e6b9ec', // USDA
     ];
 
     const requiredTokens = (tokenList.data.data as Token[])
@@ -203,14 +202,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       if (!addr || !addr.startsWith('0x')) return addr;
       return '0x' + addr.slice(2).replace(/^0+/, '') || '0x0';
     };
-    
+
     const normalizedAddress = normalizeAddress(address);
-    
+
     return (tokenList.data.data as Token[]).find(token => {
       const normalizedTokenAddress = normalizeAddress(token.tokenAddress || '');
       const normalizedFaAddress = normalizeAddress(token.faAddress || '');
-      
-      return normalizedTokenAddress === normalizedAddress || 
+
+      return normalizedTokenAddress === normalizedAddress ||
              normalizedFaAddress === normalizedAddress;
     });
   }
@@ -252,7 +251,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setFromToken({ ...token, actualPrice: firstToken.actualPrice });
       }
     }
-    
+
     if (availableToTokens.length > 0 && !toToken) {
       // Select second token from the list (next available)
       const secondToken = availableToTokens[1] || availableToTokens[0];
@@ -263,7 +262,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setToToken({ ...(secondToken as Token), actualPrice: secondToken.actualPrice });
       }
     }
-    
+
   }, [availableTokens, availableToTokens, fromToken, toToken, tokens]);
 
   // Auto-fetch quote: Debounced for amount changes (600ms delay)
@@ -341,7 +340,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
       const quote = quoteData.quotes?.[0];
       const toTokenAmount = quote?.toTokenAmount || '0';
-      
+
       setSwapQuote({
         amount: toTokenAmount,
         path: quoteData.route || quoteData.path || [],
@@ -365,7 +364,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   };
 
   const executeSwap = async () => {
-    if (!isConnected) {
+    if (!connected) {
       setError('Wallet not connected. Please connect your wallet first.');
       return;
     }
@@ -378,7 +377,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       if (!swapQuote) missing.push('swapQuote');
       if (!userAddress) missing.push('userAddress');
       if (!quoteDebug) missing.push('quoteDebug');
-      
+
       setError(`Missing required data for swap: ${missing.join(', ')}`);
       return;
     }
@@ -407,7 +406,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       }
 
       const swapData = await response.json();
-      
+
       if (swapData.error) {
         throw new Error(swapData.error);
       }
@@ -415,12 +414,12 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       if (swapData && !swapData.error) {
         try {
           const txPayload = swapData;
-          
+
           console.log('Transaction payload received:', txPayload);
           console.log('Function:', txPayload.function);
           console.log('Type arguments:', txPayload.type_arguments);
           console.log('Arguments:', txPayload.arguments);
-          
+
           if (!txPayload.function || !txPayload.type_arguments || !txPayload.arguments) {
             console.error('Missing required fields in payload:', {
               function: !!txPayload.function,
@@ -429,25 +428,30 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             });
             throw new Error('Invalid transaction payload structure');
           }
-          
+
           // Ensure arguments is an array
           if (!Array.isArray(txPayload.arguments)) {
             console.error('Arguments is not an array:', txPayload.arguments);
             throw new Error('Transaction payload arguments must be an array');
           }
-          
+
           const typeArguments = Array.isArray(txPayload.type_arguments) ? txPayload.type_arguments : [];
           const functionArguments = txPayload.arguments;
-          
+
           console.log('Processed type arguments:', typeArguments);
           console.log('Function arguments (as is):', functionArguments);
-          
-          console.log('Executing swap via unified transaction submitter...');
-          
-          // Use the unified transaction submitter which handles gasless transactions automatically
-          const tx = await submitTransaction({
+
+          console.log('Executing swap via signAndSubmitTransaction with Gas Station...');
+
+          // Use signAndSubmitTransaction with global Gas Station transactionSubmitter from WalletProvider
+          // Gas Station will automatically sponsor the transaction (free for user)
+          if (!connected || !signAndSubmitTransaction) {
+            throw new Error('Wallet not connected');
+          }
+
+          const tx = await signAndSubmitTransaction({
             data: {
-              function: txPayload.function,
+              function: txPayload.function as `${string}::${string}::${string}`,
               typeArguments: typeArguments,
               functionArguments: functionArguments
             },
@@ -455,14 +459,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
               maxGasAmount: 20000,
             }
           });
-          
+
           setSwapResult({
             success: true,
             hash: tx.hash || 'Transaction submitted successfully',
             receivedAmount: quoteDebug?.quotes?.[0]?.toTokenAmount || swapQuote.amount,
             receivedSymbol: toToken.symbol,
           });
-          
+
           // Сбрасываем quote после успешного выполнения
           setSwapQuote(null);
           setQuoteDebug(null);
@@ -504,7 +508,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           } else if (walletError.code === 'WALLET_LOCKED') {
             errorMessage = 'Wallet is locked. Please unlock your wallet and try again.';
           }
-          
+
           setSwapResult({
             success: false,
             error: errorMessage,
@@ -548,7 +552,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   // Проверяем, изменились ли данные с момента получения quote
   const hasDataChanged = () => {
     if (!lastQuoteData.fromToken || !lastQuoteData.toToken) return true;
-    
+
     return (
       lastQuoteData.fromToken.faAddress !== fromToken?.faAddress ||
       lastQuoteData.toToken.faAddress !== toToken?.faAddress ||
@@ -567,7 +571,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         variant: 'default' as const
       };
     }
-    
+
     return {
       text: 'Execute Swap',
       action: executeSwap,
@@ -613,17 +617,17 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
   const swapTokens = () => {
     if (fromToken && toToken) {
-      
+
       setFromToken(toToken);
       setToToken(fromToken);
-      
+
       // Если есть quote, используем количество получаемых токенов как новое количество
       if (swapQuote && quoteDebug?.quotes?.[0]?.toTokenAmount) {
         setAmount(quoteDebug.quotes[0].toTokenAmount);
       } else {
         setAmount('');
       }
-      
+
       setSwapQuote(null);
       setQuoteDebug(null);
       setError(null);
@@ -644,11 +648,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         <DialogHeader>
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Image 
-                src="/logo.png" 
-                alt="Panora" 
-                width={24} 
-                height={24} 
+              <Image
+                src="/logo.png"
+                alt="Panora"
+                width={24}
+                height={24}
                 className="rounded-full"
               />
               <DialogTitle>Gasless Swap Tokens</DialogTitle>
@@ -721,7 +725,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 onValueChange={(value) => {
                   const token = getTokenInfo(value);
                   // Find actual price from wallet
-                  const walletToken = availableTokens.find(t => 
+                  const walletToken = availableTokens.find(t =>
                     (t.tokenInfo?.faAddress || t.tokenInfo?.tokenAddress) === value
                   );
                   if (token) {
@@ -810,8 +814,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   </div>
                 </SelectContent>
               </Select>
-			  
-		
+
+
 			  {fromToken && (
 			    <div className="text-xs text-muted-foreground">
 				  Balance: {formatNumber(getTokenBalance(fromToken).balance)} {fromToken.symbol}
@@ -833,8 +837,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 			    ) : (
 				  <span></span>
 			    )}
-			  </Label>  
-				  
+			  </Label>
+
               <div className="space-y-1">
                   <Input
                     type="number"
@@ -855,14 +859,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                     }}
                     className="h-9 text-sm"
                   />
-                  
+
                   {/* Убираем отображение USD стоимости */}
                 </div>
               {fromToken && (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       const balance = getTokenBalance(fromToken);
                       setAmount((balance.balance * 0.25).toString());
@@ -871,9 +875,9 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   >
                     25%
                   </Button>
-				  <Button 
-                    variant="outline" 
-                    size="sm" 
+				  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       const balance = getTokenBalance(fromToken);
                       setAmount((balance.balance * 0.5).toString());
@@ -882,9 +886,9 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   >
                     50%
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       const balance = getTokenBalance(fromToken);
                       setAmount(balance.balance.toString());
@@ -920,7 +924,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   onValueChange={(value) => {
                     const token = getTokenInfo(value);
                     // Find actual price from wallet
-                    const walletToken = availableToTokens.find(t => 
+                    const walletToken = availableToTokens.find(t =>
                       (t.tokenInfo?.faAddress || t.tokenInfo?.tokenAddress) === value
                     );
                     if (token) {
@@ -985,7 +989,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {formatNumber(balance.balance)}
-									
+
 									{ /*
                                     {tokenInfo.usdPrice && Math.abs(parseFloat(balance.balance)) >= 0.001 &&  (
                                       <span> (${(balance.balance * Number(balance.balance)).toFixed(2)})</span>
@@ -1027,7 +1031,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {/* You Receive Amount */}
               {swapQuote && toToken && (
                 <div className="flex flex-col justify-center">
@@ -1045,7 +1049,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           </div>
 
-          
+
 
           {/* Quote Results - Simplified */}
           {swapQuote && (
@@ -1071,12 +1075,12 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           {swapResult && (
             <div className="p-3 rounded-lg space-y-2">
               {swapResult.success ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-green-600">
+                <div className="border border-success rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-success">
                     <CheckCircle className="h-4 w-4" />
                     <span className="font-medium text-sm">Gasless swap executed successfully!</span>
                   </div>
-                  
+
                   <div className="space-y-2 text-sm mt-2">
                     <div className="flex justify-between items-center">
                       <span className="text-muted-foreground">Transaction Hash:</span>
@@ -1100,12 +1104,12 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Gas Fee:</span>
-                      <span className="font-medium text-green-600">Paid by Gas Station</span>
+                      <span className="font-medium text-success">Paid by Gas Station</span>
                     </div>
-                    
+
                     {swapResult.receivedAmount && (
                       <div className="flex justify-between">
                         <span className="font-bold text-lg">Received:</span>
@@ -1117,14 +1121,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   </div>
                 </div>
               ) : (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-yellow-600">
+                <div className="bg-warning-muted border border-warning rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-warning">
                     <XCircle className="h-4 w-4" />
                     <span className="font-medium text-sm">Swap cancelled</span>
                   </div>
-                  
+
                   {swapResult.error && (
-                    <div className="text-sm text-yellow-700 mt-2">User rejected swap{/*swapResult.error*/}</div>
+                    <div className="text-sm text-warning mt-2">User rejected swap{/*swapResult.error*/}</div>
                   )}
                 </div>
               )}
@@ -1132,15 +1136,15 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           )}
 
           {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle className="h-4 w-4 text-red-500" />
-              <span className="text-red-700 text-sm">{error}</span>
+            <div className="flex items-center gap-2 p-3 bg-error-muted border border-error rounded-lg">
+              <AlertCircle className="h-4 w-4 text-error" />
+              <span className="text-error text-sm">{error}</span>
             </div>
           )}
 
           {/* Action Buttons */}
           <div className="flex gap-2">
-            <Button 
+            <Button
               onClick={getButtonConfig().action}
               disabled={loading || getButtonConfig().disabled}
               variant={getButtonConfig().variant}
@@ -1173,4 +1177,4 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       </DialogContent>
     </Dialog>
   );
-} 
+}
