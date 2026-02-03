@@ -241,19 +241,35 @@ function BridgePageContent() {
     connectAptos(aptosWallet.name);
   }, [aptosConnected, aptosWallet, connectAptos]);
 
-  // Suppress unhandled WalletDisconnectedError from wallet adapters (e.g. when Aptos derived disconnect triggers Solana disconnect on Vercel)
+  // Suppress WalletDisconnectedError from wallet adapters (Aptos derived disconnect triggers Solana disconnect on Vercel).
+  // Adapter often catches and console.error's it, so we patch console.error and also handle unhandledrejection.
   useEffect(() => {
+    const isWalletDisconnectedError = (err: unknown) => {
+      if (err == null) return false;
+      if (typeof err === "string") return err.includes("WalletDisconnectedError");
+      if (typeof err === "object") {
+        const name = (err as { name?: string }).name;
+        const msg = (err as { message?: string }).message;
+        return name === "WalletDisconnectedError" || (typeof msg === "string" && msg.includes("WalletDisconnectedError"));
+      }
+      return false;
+    };
+    const orig = console.error;
+    console.error = (...args: unknown[]) => {
+      if (args.some(isWalletDisconnectedError)) return;
+      orig.apply(console, args);
+    };
     const onRejection = (e: PromiseRejectionEvent) => {
-      const err = e?.reason;
-      const name = err?.name;
-      const msg = typeof err?.message === "string" ? err.message : "";
-      if (name === "WalletDisconnectedError" || msg.includes("WalletDisconnectedError")) {
+      if (isWalletDisconnectedError(e?.reason)) {
         e.preventDefault();
         e.stopPropagation();
       }
     };
     window.addEventListener("unhandledrejection", onRejection);
-    return () => window.removeEventListener("unhandledrejection", onRejection);
+    return () => {
+      console.error = orig;
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
   }, []);
 
   const aptosClient = useAptosClient();
