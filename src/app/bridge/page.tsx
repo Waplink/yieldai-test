@@ -238,7 +238,7 @@ function BridgePageContent() {
     if (String(stored).trim().endsWith(" (Solana)")) return; // only resync native
     if (hasTriedAptosResyncRef.current) return;
     hasTriedAptosResyncRef.current = true;
-    connectAptos(aptosWallet.name).catch(() => {});
+    connectAptos(aptosWallet.name);
   }, [aptosConnected, aptosWallet, connectAptos]);
 
   // Suppress unhandled WalletDisconnectedError from wallet adapters (e.g. when Aptos derived disconnect triggers Solana disconnect on Vercel)
