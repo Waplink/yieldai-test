@@ -316,18 +316,67 @@ function BridgePageContent() {
   const handleDisconnectAptos = async () => {
     skipAutoConnectDerivedRef.current = true;
     if (typeof window !== "undefined") sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+
+    // When disconnecting Aptos derived, Trust (and on Vercel) can disconnect Solana and clear walletName.
+    // Save Solana name so we can restore connection and localStorage after.
+    const isDerived = aptosWallet && isDerivedAptosWalletReliable(aptosWallet);
+    let savedSolanaName: string | null = null;
+    if (isDerived && typeof window !== "undefined") {
+      const fromAdapter =
+        (solanaWallet as { adapter?: { name?: string } })?.adapter?.name ??
+        (solanaWallet as { name?: string })?.name;
+      const fromStorage = window.localStorage.getItem("walletName");
+      const fromAptos = (() => {
+        const a = window.localStorage.getItem("AptosWalletName");
+        if (a?.endsWith(" (Solana)")) return a.slice(0, -" (Solana)".length).trim();
+        return null;
+      })();
+      let raw = fromAdapter ?? fromStorage ?? fromAptos;
+      if (typeof raw === "string" && raw.startsWith('"') && raw.endsWith('"')) {
+        try {
+          raw = JSON.parse(raw) as string;
+        } catch {}
+      }
+      savedSolanaName = (typeof raw === "string" ? raw.trim() : null) || null;
+    }
+
     try {
       await disconnectAptos();
       toast({
         title: "Success",
         description: "Aptos wallet disconnected",
       });
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to disconnect Aptos wallet",
-      });
+    } catch (error: unknown) {
+      const isWalletDisconnected =
+        (error as { name?: string })?.name === "WalletDisconnectedError" ||
+        (error instanceof Error && error.message?.includes("WalletDisconnectedError"));
+      if (isWalletDisconnected) {
+        toast({
+          title: "Success",
+          description: "Aptos wallet disconnected",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to disconnect Aptos wallet",
+        });
+      }
+    }
+
+    // Restore Solana connection if extension disconnected it (Vercel / Trust derived).
+    if (savedSolanaName) {
+      const runRestore = () => {
+        if (solanaConnectedRef.current) return;
+        if (typeof window === "undefined") return;
+        try {
+          window.localStorage.setItem("walletName", savedSolanaName!);
+          select(savedSolanaName as WalletName);
+          connectSolana().catch(() => {});
+        } catch (_) {}
+      };
+      setTimeout(runRestore, 400);
+      setTimeout(runRestore, 900);
     }
   };
 
@@ -1082,7 +1131,7 @@ function BridgePageContent() {
             </button>
             <Link href="/privacy-bridge">
               <Button variant="outline" size="sm" className="bg-black text-white border-black hover:bg-gray-800 hover:text-white hover:border-gray-800">
-                Private Bridge
+                Privacy Bridge
               </Button>
             </Link>
           </div>
