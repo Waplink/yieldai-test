@@ -11,7 +11,26 @@ import {
 import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
 import { useMemo, type ReactNode } from "react";
 
+const WALLET_NAME_KEY = "walletName";
+
+/** Normalize walletName to valid JSON so adapter's JSON.parse() does not throw (e.g. "Trust" → "\"Trust\""). */
+function normalizeWalletNameStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(WALLET_NAME_KEY);
+    if (raw == null || raw === "") return;
+    JSON.parse(raw);
+  } catch {
+    const raw = window.localStorage.getItem(WALLET_NAME_KEY);
+    if (raw != null && raw !== "") {
+      window.localStorage.setItem(WALLET_NAME_KEY, JSON.stringify(raw));
+    }
+  }
+}
+
 export function SolanaProvider({ children }: { children: ReactNode }) {
+  normalizeWalletNameStorage();
+
   const endpoint = useMemo(
     () =>
       process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
