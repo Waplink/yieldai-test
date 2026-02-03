@@ -224,6 +224,38 @@ function BridgePageContent() {
     }
   }, [solanaConnected, aptosConnected, aptosWallets, connectAptos, solanaWallet]);
 
+  // On Vercel, after connecting native Aptos (e.g. Petra), adapter state can stay disconnected due to WalletDisconnectedError.
+  // Resync: if localStorage says native Aptos is selected but adapter reports not connected, try connect once.
+  const hasTriedAptosResyncRef = useRef(false);
+  useEffect(() => {
+    if (aptosConnected) {
+      hasTriedAptosResyncRef.current = false;
+      return;
+    }
+    if (!aptosWallet?.name || typeof window === "undefined") return;
+    const stored = getAptosWalletNameFromStorage();
+    if (!stored || stored !== aptosWallet.name) return;
+    if (String(stored).trim().endsWith(" (Solana)")) return; // only resync native
+    if (hasTriedAptosResyncRef.current) return;
+    hasTriedAptosResyncRef.current = true;
+    connectAptos(aptosWallet.name).catch(() => {});
+  }, [aptosConnected, aptosWallet, connectAptos]);
+
+  // Suppress unhandled WalletDisconnectedError from wallet adapters (e.g. when Aptos derived disconnect triggers Solana disconnect on Vercel)
+  useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const err = e?.reason;
+      const name = err?.name;
+      const msg = typeof err?.message === "string" ? err.message : "";
+      if (name === "WalletDisconnectedError" || msg.includes("WalletDisconnectedError")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
+
   const aptosClient = useAptosClient();
   const aptosTransactionSubmitter = useMemo(() => GasStationService.getInstance().getTransactionSubmitter(), []);
 
@@ -367,9 +399,9 @@ function BridgePageContent() {
     }
 
     // Restore Solana connection if extension disconnected it (Vercel / Trust derived).
+    // Always run restore when we have savedSolanaName: on Vercel ref can be stale, select+connect are idempotent.
     if (savedSolanaName) {
       const runRestore = () => {
-        if (solanaConnectedRef.current) return;
         if (typeof window === "undefined") return;
         try {
           // Adapter reads with JSON.parse; store JSON so adapter does not throw "Trust is not valid JSON"
@@ -378,8 +410,10 @@ function BridgePageContent() {
           connectSolana().catch(() => {});
         } catch (_) {}
       };
+      setTimeout(runRestore, 100);
       setTimeout(runRestore, 400);
       setTimeout(runRestore, 900);
+      setTimeout(runRestore, 1800);
     }
   };
 
