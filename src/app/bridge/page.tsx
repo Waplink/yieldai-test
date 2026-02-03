@@ -172,7 +172,9 @@ function BridgePageContent() {
         try {
           const p = JSON.parse(raw) as string | null;
           if (p && walletNames.has(p)) savedName = p;
-        } catch {}
+        } catch {
+          if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
+        }
       }
     }
     if (!savedName) return;
@@ -370,7 +372,8 @@ function BridgePageContent() {
         if (solanaConnectedRef.current) return;
         if (typeof window === "undefined") return;
         try {
-          window.localStorage.setItem("walletName", savedSolanaName!);
+          // Adapter reads with JSON.parse; store JSON so adapter does not throw "Trust is not valid JSON"
+          window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName!));
           select(savedSolanaName as WalletName);
           connectSolana().catch(() => {});
         } catch (_) {}

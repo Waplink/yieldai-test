@@ -77,8 +77,12 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
 
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          const parsed = JSON.parse(raw) as string | null;
-          if (parsed && typeof parsed === "string" && walletNames.has(parsed)) return parsed;
+          try {
+            const parsed = JSON.parse(raw) as string | null;
+            if (parsed && typeof parsed === "string" && walletNames.has(parsed)) return parsed;
+          } catch {
+            if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) return raw;
+          }
         }
 
         for (let i = 0; i < window.localStorage.length; i++) {
