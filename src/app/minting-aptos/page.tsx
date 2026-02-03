@@ -151,3 +151,4 @@ export default function MintingAptosPage() {
     </Suspense>
   );
 }
+
