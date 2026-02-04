@@ -42,6 +42,9 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
   );
   const wallets = useMemo(
     () => [
+      // Standard Solana wallets we want globally available (main + /bridge)
+      new PhantomWalletAdapter(),
+      new TrustWalletAdapter(),
       new SolflareWalletAdapter(),
       new CoinbaseWalletAdapter(),
       new TorusWalletAdapter(),
