@@ -75,12 +75,13 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
         const message = typeof error === "string" ? error : (error?.message ?? "Unknown wallet error");
         const name = (error as { name?: string })?.name;
         // Don't show toast for expected user actions, auto-connect noise, or disconnect noise
-        // WalletDisconnectedError can fire when disconnecting Aptos derived (Trust) on Vercel and would break UI
+        // WalletDisconnectedError / WalletNotConnectedError могут лететь при ручном disconnect и не должны пугать пользователя.
         if (
           message === "Unexpected error" ||
           message === "User has rejected the request" ||
           name === "WalletDisconnectedError" ||
-          (typeof message === "string" && message.includes("WalletDisconnectedError"))
+          name === "WalletNotConnectedError" ||
+          (typeof message === "string" && (message.includes("WalletDisconnectedError") || message.includes("WalletNotConnectedError")))
         ) {
           return;
         }

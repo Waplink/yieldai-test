@@ -447,10 +447,15 @@ function BridgePageContent() {
         description: "Aptos wallet disconnected",
       });
     } catch (error: unknown) {
-      const isWalletDisconnected =
-        (error as { name?: string })?.name === "WalletDisconnectedError" ||
-        (error instanceof Error && error.message?.includes("WalletDisconnectedError"));
-      if (isWalletDisconnected) {
+      const name = (error as { name?: string })?.name;
+      const msg = error instanceof Error ? error.message : "";
+      const isBenignDisconnect =
+        name === "WalletDisconnectedError" ||
+        name === "WalletNotConnectedError" ||
+        (typeof msg === "string" &&
+          (msg.includes("WalletDisconnectedError") || msg.includes("WalletNotConnectedError")));
+      if (isBenignDisconnect) {
+        // Кошелёк уже считался отключённым — воспринимаем как успешный disconnect.
         toast({
           title: "Success",
           description: "Aptos wallet disconnected",
@@ -459,7 +464,7 @@ function BridgePageContent() {
         toast({
           variant: "destructive",
           title: "Error",
-          description: error instanceof Error ? error.message : "Failed to disconnect Aptos wallet",
+          description: msg || "Failed to disconnect Aptos wallet",
         });
       }
     }
