@@ -37,6 +37,17 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
   const { wallets, wallet, connected, select, connect } = useWallet();
   const hasTriggeredSelect = useRef(false);
   const hasTriggeredConnect = useRef(false);
+  const prevConnected = useRef<boolean>(connected);
+
+  // If wallet gets disconnected externally (e.g. Trust disconnect cascade), allow restore again
+  useEffect(() => {
+    const was = prevConnected.current;
+    if (was && !connected) {
+      hasTriggeredSelect.current = false;
+      hasTriggeredConnect.current = false;
+    }
+    prevConnected.current = connected;
+  }, [connected]);
 
   // 0) Keep localStorage in sync when connected (so other tabs / new tab get the key)
   useEffect(() => {
@@ -197,6 +208,8 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
         if (typeof console !== "undefined" && console.warn) {
           console.warn(LOG, "connect() failed:", err?.message ?? err);
         }
+        // allow retries on next timer tick(s)
+        hasTriggeredConnect.current = false;
       });
       return true;
     };

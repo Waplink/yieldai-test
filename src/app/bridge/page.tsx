@@ -207,12 +207,32 @@ function BridgePageContent() {
   useEffect(() => {
     if (!aptosConnected || !aptosWallet || typeof window === "undefined") return;
     const derived = isDerivedAptosWalletReliable(aptosWallet) || Boolean(solanaWalletNameForDerived && aptosWallet.name === solanaWalletNameForDerived);
-    if (!derived) {
+    // Keep "skip derived auto-connect" when user switched to native.
+    // Only clear it when a derived wallet is actually connected again.
+    if (derived) {
       sessionStorage.removeItem("skip_auto_connect_derived_aptos");
       skipAutoConnectDerivedRef.current = false;
       hasTriedAutoConnectDerived.current = false;
     }
   }, [aptosConnected, aptosWallet, solanaWalletNameForDerived]);
+
+  // Restore native Aptos wallet after refresh if user selected native (Petra, etc.)
+  const hasRestoredNativeAptosRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = getAptosWalletNameFromStorage();
+    if (!stored || String(stored).trim().endsWith(" (Solana)")) return; // only native preference
+    if (!aptosWallets?.length) return;
+    if (aptosConnected && aptosWallet?.name === stored) {
+      hasRestoredNativeAptosRef.current = false;
+      return;
+    }
+    if (hasRestoredNativeAptosRef.current) return;
+    const exists = aptosWallets.some((w) => w.name === stored);
+    if (!exists) return;
+    hasRestoredNativeAptosRef.current = true;
+    connectAptos(stored);
+  }, [aptosWallets, aptosConnected, aptosWallet?.name, connectAptos]);
   useEffect(() => {
     if (!solanaConnected || aptosConnected || !aptosWallets?.length || !solanaWallet) return;
     if (skipAutoConnectDerivedRef.current) return;
@@ -475,6 +495,11 @@ function BridgePageContent() {
       }
     } catch (_) {}
   }, [solanaConnected, wallets]);
+
+  // Clear reconnect UI as soon as we have a publicKey again (some adapters can lag `connected`)
+  useEffect(() => {
+    if (solanaPublicKey) setPendingSolanaRestore(null);
+  }, [solanaPublicKey]);
 
   // Helper to truncate address
   const truncateAddress = (address: string) => {
