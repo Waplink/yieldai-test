@@ -67,8 +67,13 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (typeof window === "undefined") return;
     
-    // Check skip flag but also verify there's a wallet in storage we should restore
-    const skipFlag = window.sessionStorage.getItem(SKIP_SOLANA_KEY) === "1";
+    // Skip flag is set when user explicitly disconnects Solana - respect it
+    if (window.sessionStorage.getItem(SKIP_SOLANA_KEY) === "1") {
+      if (typeof console !== "undefined" && console.log) {
+        console.log(LOG, "Skip restore due to skip_auto_connect_solana flag");
+      }
+      return;
+    }
     
     if (connected) {
       if (typeof console !== "undefined" && console.log) {
@@ -125,28 +130,6 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
         return null;
       }
     };
-    
-    // If skip flag is set, only honor it if we're NOT restoring a standalone wallet (like Phantom)
-    // The skip flag is meant to prevent auto-reconnect after explicit user disconnect,
-    // but if user connects a different wallet type, we should still restore it
-    if (skipFlag) {
-      const savedName = readSavedName();
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      // If there's a walletName in storage that's different from what was disconnected,
-      // or if it's a standalone Solana wallet, proceed with restore
-      if (savedName && raw) {
-        if (typeof console !== "undefined" && console.log) {
-          console.log(LOG, "Skip flag set but found wallet in storage, attempting restore:", savedName);
-        }
-        // Clear the skip flag since we're restoring a valid wallet
-        window.sessionStorage.removeItem(SKIP_SOLANA_KEY);
-      } else {
-        if (typeof console !== "undefined" && console.log) {
-          console.log(LOG, "Skip restore due to skip_auto_connect_solana flag");
-        }
-        return;
-      }
-    }
 
     let selectCleanup: (() => void) | null = null;
 

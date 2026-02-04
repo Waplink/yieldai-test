@@ -388,7 +388,10 @@ function BridgePageContent() {
     try {
       if (typeof window !== "undefined") {
         try {
+          // Set skip flag to prevent SolanaWalletRestore from reconnecting
           window.sessionStorage.setItem("skip_auto_connect_solana", "1");
+          // Also remove walletName to prevent SolanaWalletProvider's autoConnect from reconnecting
+          window.localStorage.removeItem("walletName");
         } catch {}
       }
       await disconnectSolana();
