@@ -235,6 +235,12 @@ function BridgePageContent() {
     if (typeof window !== "undefined" && sessionStorage.getItem("skip_auto_connect_derived_aptos") === "1") return;
     const solanaWalletName = (solanaWallet as { adapter?: { name?: string }; name?: string }).adapter?.name ?? (solanaWallet as { name?: string }).name ?? '';
     const derivedNameForCurrentSolana = `${solanaWalletName} (Solana)`;
+    // Autoconnect derived ONLY when storage still indicates derived should be used.
+    // If user disconnected derived, we remove AptosWalletName — don't reconnect it automatically.
+    const storedAptos = getAptosWalletNameFromStorage();
+    if (!storedAptos) return;
+    if (!String(storedAptos).trim().endsWith(" (Solana)")) return; // don't override native
+    if (String(storedAptos).trim() !== derivedNameForCurrentSolana) return; // only for current Solana wallet
     const derived = aptosWallets.find((w) => w.name === derivedNameForCurrentSolana);
     if (derived && !hasTriedAutoConnectDerived.current) {
       hasTriedAutoConnectDerived.current = true;
