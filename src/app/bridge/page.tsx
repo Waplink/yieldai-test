@@ -206,14 +206,10 @@ function BridgePageContent() {
   const hasTriedAutoConnectDerived = useRef(false);
   useEffect(() => {
     if (!aptosConnected || !aptosWallet || typeof window === "undefined") return;
-    const derived = isDerivedAptosWalletReliable(aptosWallet) || Boolean(solanaWalletNameForDerived && aptosWallet.name === solanaWalletNameForDerived);
-    // Keep "skip derived auto-connect" when user switched to native.
-    // Only clear it when a derived wallet is actually connected again.
-    if (derived) {
-      sessionStorage.removeItem("skip_auto_connect_derived_aptos");
-      skipAutoConnectDerivedRef.current = false;
-      hasTriedAutoConnectDerived.current = false;
-    }
+    // Any successful connection means user intent is explicit again; allow derived auto-connect later.
+    sessionStorage.removeItem("skip_auto_connect_derived_aptos");
+    skipAutoConnectDerivedRef.current = false;
+    hasTriedAutoConnectDerived.current = false;
   }, [aptosConnected, aptosWallet, solanaWalletNameForDerived]);
 
   // Restore native Aptos wallet after refresh if user selected native (Petra, etc.)
@@ -407,6 +403,13 @@ function BridgePageContent() {
   const handleDisconnectAptos = async () => {
     skipAutoConnectDerivedRef.current = true;
     if (typeof window !== "undefined") sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+    // Ensure adapter won't auto-restore derived immediately after disconnect
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem("AptosWalletName");
+      } catch {}
+    }
+    setStoredAptosName(null);
 
     // When disconnecting Aptos derived, Trust (and on Vercel) can disconnect Solana and clear walletName.
     // Save Solana name so we can restore connection and localStorage after.

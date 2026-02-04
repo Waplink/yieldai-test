@@ -14,6 +14,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { AptosClientProvider } from "@/contexts/AptosClientContext";
 import { ThemeProviderWrapper } from "@/components/ThemeProviderWrapper";
 import { SolanaWalletRestore } from "@/components/SolanaWalletRestore";
+import { AptosWalletRestore } from "@/components/AptosWalletRestore";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -69,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <WalletProvider>
               <SolanaProvider>
                 <SolanaWalletRestore>
+                <AptosWalletRestore>
                 <WalletDataProvider>
                   <ProtocolProvider>
                   <DragDropProvider>
@@ -92,6 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </DragDropProvider>
                   </ProtocolProvider>
                 </WalletDataProvider>
+                </AptosWalletRestore>
                 </SolanaWalletRestore>
               </SolanaProvider>
               <Toaster />
