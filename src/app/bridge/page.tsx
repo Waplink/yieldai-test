@@ -613,24 +613,54 @@ function BridgePageContent() {
             if (walletToReconnect) {
               console.log('[handleDisconnectAptos] Starting reconnect for:', savedSolanaName);
               
-              // Select and connect with retries
+              // Select the wallet first
               select(savedSolanaName as WalletName);
               
-              setTimeout(() => {
-                console.log('[handleDisconnectAptos] Connecting (attempt 1)');
-                connectSolana()
-                  .then(() => console.log('[handleDisconnectAptos] Connected (attempt 1)'))
-                  .catch((e) => {
-                    console.log('[handleDisconnectAptos] Failed (attempt 1):', e?.name);
-                    setTimeout(() => {
-                      console.log('[handleDisconnectAptos] Connecting (attempt 2)');
-                      select(savedSolanaName as WalletName);
-                      connectSolana()
-                        .then(() => console.log('[handleDisconnectAptos] Connected (attempt 2)'))
-                        .catch((e2) => console.log('[handleDisconnectAptos] Failed (attempt 2):', e2?.name));
-                    }, 500);
+              // Try connecting directly on the adapter (more reliable than hook's connect)
+              setTimeout(async () => {
+                try {
+                  const adapter = walletToReconnect.adapter;
+                  console.log('[handleDisconnectAptos] Adapter state before connect:', {
+                    name: adapter.name,
+                    connected: adapter.connected,
+                    publicKey: adapter.publicKey?.toBase58(),
                   });
-              }, 200);
+                  
+                  // Call adapter's connect directly
+                  if (!adapter.connected) {
+                    console.log('[handleDisconnectAptos] Calling adapter.connect()');
+                    await adapter.connect();
+                    console.log('[handleDisconnectAptos] Adapter connected:', {
+                      connected: adapter.connected,
+                      publicKey: adapter.publicKey?.toBase58(),
+                    });
+                  }
+                  
+                  // Also call hook's connect to sync React state
+                  console.log('[handleDisconnectAptos] Calling connectSolana() to sync state');
+                  await connectSolana();
+                  console.log('[handleDisconnectAptos] connectSolana() resolved');
+                  
+                } catch (e: unknown) {
+                  const err = e as { name?: string; message?: string };
+                  console.log('[handleDisconnectAptos] Connect failed:', err?.name, err?.message);
+                  
+                  // Retry
+                  setTimeout(async () => {
+                    try {
+                      select(savedSolanaName as WalletName);
+                      const adapter = walletToReconnect.adapter;
+                      if (!adapter.connected) {
+                        await adapter.connect();
+                      }
+                      await connectSolana();
+                      console.log('[handleDisconnectAptos] Retry succeeded');
+                    } catch (e2) {
+                      console.log('[handleDisconnectAptos] Retry failed:', (e2 as { name?: string })?.name);
+                    }
+                  }, 500);
+                }
+              }, 300);
             }
           } else {
             console.log('[handleDisconnectAptos] No restore needed, wallet still connected');
