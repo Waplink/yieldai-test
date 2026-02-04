@@ -242,31 +242,39 @@ function BridgePageContent() {
       select(savedName as WalletName);
       
       const doConnect = async (attempt: number) => {
-        console.log(`[bridge-restore] Calling connectSolana (attempt ${attempt}), current connected state:`, solanaConnected);
+        // Check current wallet state from the adapter
+        const currentWallet = wallets.find(w => w.adapter.name === savedName);
+        console.log(`[bridge-restore] Attempt ${attempt}:`, {
+          savedName,
+          currentWalletFound: !!currentWallet,
+          currentWalletName: currentWallet?.adapter?.name,
+          currentWalletConnected: currentWallet?.adapter?.connected,
+          currentWalletPublicKey: currentWallet?.adapter?.publicKey?.toBase58(),
+          solanaConnected,
+        });
+        
         try {
-          // On first attempt, try disconnecting first to clear any stale state
-          if (attempt === 1) {
-            try {
-              await disconnectSolana();
-              console.log('[bridge-restore] Disconnected stale connection');
-            } catch {
-              // Ignore disconnect errors
-            }
-            // Re-select wallet after disconnect
-            select(savedName as WalletName);
-            await new Promise(r => setTimeout(r, 100));
-          }
-          
           await connectSolana();
-          console.log(`[bridge-restore] connectSolana resolved (attempt ${attempt})`);
+          console.log(`[bridge-restore] connectSolana resolved (attempt ${attempt}), now checking state...`);
+          // Check state after connect
+          setTimeout(() => {
+            console.log(`[bridge-restore] Post-connect state (attempt ${attempt}):`, {
+              adapterConnected: currentWallet?.adapter?.connected,
+              adapterPublicKey: currentWallet?.adapter?.publicKey?.toBase58(),
+            });
+          }, 100);
         } catch (e: any) {
           console.log(`[bridge-restore] connectSolana failed (attempt ${attempt}):`, e?.name, e?.message);
+          // If connection fails, try re-selecting the wallet
+          if (attempt < 3) {
+            select(savedName as WalletName);
+          }
         }
       };
       
-      setTimeout(() => doConnect(1), 200);
-      setTimeout(() => doConnect(2), 800);
-      setTimeout(() => doConnect(3), 2000);
+      setTimeout(() => doConnect(1), 150);
+      setTimeout(() => doConnect(2), 500);
+      setTimeout(() => doConnect(3), 1200);
     };
 
     tryRestore();
@@ -276,7 +284,7 @@ function BridgePageContent() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [wallets, solanaConnected, select, connectSolana, disconnectSolana]);
+  }, [wallets, solanaConnected, select, connectSolana]);
 
   // Skip auto-connect derived when user explicitly disconnected Aptos (set synchronously on click)
   const skipAutoConnectDerivedRef = useRef(false);
