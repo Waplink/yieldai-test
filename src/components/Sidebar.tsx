@@ -207,95 +207,100 @@ export default function Sidebar() {
           <WalletSelector />
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-hide">
-          {account?.address ? (
-            <div className="mt-4 space-y-4">
-              <PortfolioCard 
-                totalValue={totalAssets.toString()} 
-                tokens={tokens} 
-                onRefresh={handleRefresh}
-                isRefreshing={isRefreshing}
-                hasSolanaWallet={!!solanaAddress}
-              />
-              {solanaAddress && (
-                <div className="space-y-2">
-                  <SolanaWalletCard
-                    tokens={solanaTokens}
-                    totalValueUsd={solanaTotalValue}
-                    onRefresh={refreshSolana}
-                    isRefreshing={isSolanaLoading}
-                  />
-                  <SolanaSignMessageButton />
-                </div>
-              )}
-              {checkingProtocols.length > 0 && (
-                <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                  <span>Checking positions on</span>
-                  <div className="flex items-center gap-1">
-                    {checkingProtocols.map((name) => {
-                      const proto = getProtocolByName(name);
-                      const logo = proto?.logoUrl || "/favicon.ico";
-                      return (
-                        <ProtocolIcon
-                          key={name}
-                          logoUrl={logo}
-                          name={name}
-                          size="sm"
-                          isLoading={true}
-                        />
-                      );
-                    })}
+          <div className="mt-4 space-y-4">
+            {/* Aptos-портфель и протоколы — только если есть Aptos-аккаунт */}
+            {account?.address ? (
+              <div className="space-y-4">
+                <PortfolioCard 
+                  totalValue={totalAssets.toString()} 
+                  tokens={tokens} 
+                  onRefresh={handleRefresh}
+                  isRefreshing={isRefreshing}
+                  hasSolanaWallet={!!solanaAddress}
+                />
+                {checkingProtocols.length > 0 && (
+                  <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
+                    <span>Checking positions on</span>
+                    <div className="flex items-center gap-1">
+                      {checkingProtocols.map((name) => {
+                        const proto = getProtocolByName(name);
+                        const logo = proto?.logoUrl || "/favicon.ico";
+                        return (
+                          <ProtocolIcon
+                            key={name}
+                            logoUrl={logo}
+                            name={name}
+                            size="sm"
+                            isLoading={true}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-              {[
-                { component: HyperionPositionsList, value: hyperionValue, name: 'Hyperion' },
-                { component: EchelonPositionsList, value: echelonValue, name: 'Echelon' },
-                { component: AriesPositionsList, value: ariesValue, name: 'Aries' },
-                { component: JoulePositionsList, value: jouleValue, name: 'Joule' },
-                { component: TappPositionsList, value: tappValue, name: 'Tapp Exchange' },
-                { component: MesoPositionsList, value: mesoValue, name: 'Meso Finance' },
-                { component: AuroPositionsList, value: auroValue, name: 'Auro Finance' },
-                { component: AmnisPositionsList, value: amnisValue, name: 'Amnis Finance' },
-                { component: EarniumPositionsList, value: earniumValue, name: 'Earnium' },
-                { component: AavePositionsList, value: aaveValue, name: 'Aave' },
-                { component: MoarPositionsList, value: moarValue, name: 'Moar Market' },
-                { component: ThalaPositionsList, value: thalaValue, name: 'Thala' },
-              ]
-                .sort((a, b) => b.value - a.value)
-                .map(({ component: Component, name }) => (
-                  <Component
-                    key={name}
-                    address={account.address.toString()}
-                    walletTokens={tokens} // Передаем токены кошелька для проверки Vault токенов
-                    refreshKey={refreshKey}
-                    onPositionsValueChange={
-                      name === 'Hyperion' ? handleHyperionValueChange :
-                      name === 'Echelon' ? handleEchelonValueChange :
-                      name === 'Aries' ? handleAriesValueChange :
-                      name === 'Joule' ? handleJouleValueChange :
-                      name === 'Tapp Exchange' ? handleTappValueChange :
-                      name === 'Meso Finance' ? handleMesoValueChange :
-                      name === 'Auro Finance' ? handleAuroValueChange :
-                      name === 'Amnis Finance' ? handleAmnisValueChange :
-                      name === 'Earnium' ? handleEarniumValueChange :
-                      name === 'Aave' ? handleAaveValueChange :
-                      name === 'Moar Market' ? handleMoarValueChange :
-                      name === 'Thala' ? handleThalaValueChange :
-                      undefined
-                    }
-                    onPositionsCheckComplete={() =>
-                      setCheckingProtocols((prev) => prev.filter((p) => p !== name))
-                    }
-                  />
-                ))}
-            </div>
-          ) : (
-            <div className="mt-4 p-4 bg-muted rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                Connect your Aptos wallet to view your assets and positions in DeFi protocols
-              </p>
-            </div>
-          )}
+                )}
+                {[
+                  { component: HyperionPositionsList, value: hyperionValue, name: 'Hyperion' },
+                  { component: EchelonPositionsList, value: echelonValue, name: 'Echelon' },
+                  { component: AriesPositionsList, value: ariesValue, name: 'Aries' },
+                  { component: JoulePositionsList, value: jouleValue, name: 'Joule' },
+                  { component: TappPositionsList, value: tappValue, name: 'Tapp Exchange' },
+                  { component: MesoPositionsList, value: mesoValue, name: 'Meso Finance' },
+                  { component: AuroPositionsList, value: auroValue, name: 'Auro Finance' },
+                  { component: AmnisPositionsList, value: amnisValue, name: 'Amnis Finance' },
+                  { component: EarniumPositionsList, value: earniumValue, name: 'Earnium' },
+                  { component: AavePositionsList, value: aaveValue, name: 'Aave' },
+                  { component: MoarPositionsList, value: moarValue, name: 'Moar Market' },
+                  { component: ThalaPositionsList, value: thalaValue, name: 'Thala' },
+                ]
+                  .sort((a, b) => b.value - a.value)
+                  .map(({ component: Component, name }) => (
+                    <Component
+                      key={name}
+                      address={account!.address.toString()}
+                      walletTokens={tokens}
+                      refreshKey={refreshKey}
+                      onPositionsValueChange={
+                        name === 'Hyperion' ? handleHyperionValueChange :
+                        name === 'Echelon' ? handleEchelonValueChange :
+                        name === 'Aries' ? handleAriesValueChange :
+                        name === 'Joule' ? handleJouleValueChange :
+                        name === 'Tapp Exchange' ? handleTappValueChange :
+                        name === 'Meso Finance' ? handleMesoValueChange :
+                        name === 'Auro Finance' ? handleAuroValueChange :
+                        name === 'Amnis Finance' ? handleAmnisValueChange :
+                        name === 'Earnium' ? handleEarniumValueChange :
+                        name === 'Aave' ? handleAaveValueChange :
+                        name === 'Moar Market' ? handleMoarValueChange :
+                        name === 'Thala' ? handleThalaValueChange :
+                        undefined
+                      }
+                      onPositionsCheckComplete={() =>
+                        setCheckingProtocols((prev) => prev.filter((p) => p !== name))
+                      }
+                    />
+                  ))}
+              </div>
+            ) : (
+              <div className="mt-4 p-4 bg-muted rounded-lg space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Connect your Aptos wallet to view your assets and positions in DeFi protocols
+                </p>
+              </div>
+            )}
+
+            {/* Solana должна отображаться независимо от Aptos-аккаунта */}
+            {solanaAddress && (
+              <div className="space-y-2">
+                <SolanaWalletCard
+                  tokens={solanaTokens}
+                  totalValueUsd={solanaTotalValue}
+                  onRefresh={refreshSolana}
+                  isRefreshing={isSolanaLoading}
+                />
+                <SolanaSignMessageButton />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </CollapsibleProvider>
