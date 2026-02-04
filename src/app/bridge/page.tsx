@@ -588,57 +588,57 @@ function BridgePageContent() {
 
     // Restore Solana walletName in localStorage if it was cleared by the Aptos derived disconnect cascade
     // This happens with Phantom especially - disconnecting Aptos derived also disconnects Solana and clears walletName
-    console.log('[handleDisconnectAptos] Post-disconnect check:', {
-      isDerived,
-      savedSolanaName,
-      currentWalletName: typeof window !== "undefined" ? window.localStorage.getItem("walletName") : null,
-      solanaConnected,
-      effectiveSolanaConnected,
-    });
-    
+    // IMPORTANT: The cascade disconnect happens ASYNCHRONOUSLY, so we need to wait before checking
     if (isDerived && savedSolanaName && typeof window !== "undefined") {
-      try {
-        const currentWalletName = window.localStorage.getItem("walletName");
-        console.log('[handleDisconnectAptos] Checking restore:', { currentWalletName, savedSolanaName });
-        
-        // Restore and reconnect if walletName was cleared OR if Solana is not connected
-        if (!currentWalletName || !effectiveSolanaConnected) {
-          console.log('[handleDisconnectAptos] Restoring walletName:', savedSolanaName);
-          window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+      // Wait for cascade disconnect to potentially happen
+      setTimeout(() => {
+        try {
+          const currentWalletName = window.localStorage.getItem("walletName");
+          const adapterConnected = solanaWallet?.adapter?.connected ?? false;
           
-          // Also trigger actual reconnect since SolanaWalletRestore may have already run
-          const walletToReconnect = wallets.find(w => w.adapter.name === savedSolanaName);
-          console.log('[handleDisconnectAptos] Wallet to reconnect:', walletToReconnect?.adapter?.name, 'found:', !!walletToReconnect);
+          console.log('[handleDisconnectAptos] Delayed check (500ms):', {
+            savedSolanaName,
+            currentWalletName,
+            adapterConnected,
+          });
           
-          if (walletToReconnect) {
-            console.log('[handleDisconnectAptos] Starting reconnect sequence for:', savedSolanaName);
-            // Longer delay to let adapter state fully settle after disconnect
-            setTimeout(() => {
-              console.log('[handleDisconnectAptos] Selecting wallet:', savedSolanaName);
+          // Restore and reconnect if walletName was cleared OR if adapter disconnected
+          if (!currentWalletName || !adapterConnected) {
+            console.log('[handleDisconnectAptos] Need to restore, setting walletName:', savedSolanaName);
+            window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+            
+            const walletToReconnect = wallets.find(w => w.adapter.name === savedSolanaName);
+            console.log('[handleDisconnectAptos] Wallet found:', !!walletToReconnect);
+            
+            if (walletToReconnect) {
+              console.log('[handleDisconnectAptos] Starting reconnect for:', savedSolanaName);
+              
+              // Select and connect with retries
               select(savedSolanaName as WalletName);
               
               setTimeout(() => {
-                console.log('[handleDisconnectAptos] Calling connectSolana (attempt 1)');
+                console.log('[handleDisconnectAptos] Connecting (attempt 1)');
                 connectSolana()
-                  .then(() => console.log('[handleDisconnectAptos] connectSolana resolved (attempt 1)'))
+                  .then(() => console.log('[handleDisconnectAptos] Connected (attempt 1)'))
                   .catch((e) => {
-                    console.log('[handleDisconnectAptos] connectSolana failed (attempt 1):', e?.name, e?.message);
-                    // Retry with longer delay
+                    console.log('[handleDisconnectAptos] Failed (attempt 1):', e?.name);
                     setTimeout(() => {
-                      console.log('[handleDisconnectAptos] Calling connectSolana (attempt 2)');
+                      console.log('[handleDisconnectAptos] Connecting (attempt 2)');
                       select(savedSolanaName as WalletName);
                       connectSolana()
-                        .then(() => console.log('[handleDisconnectAptos] connectSolana resolved (attempt 2)'))
-                        .catch((e2) => console.log('[handleDisconnectAptos] connectSolana failed (attempt 2):', e2?.name, e2?.message));
+                        .then(() => console.log('[handleDisconnectAptos] Connected (attempt 2)'))
+                        .catch((e2) => console.log('[handleDisconnectAptos] Failed (attempt 2):', e2?.name));
                     }, 500);
                   });
               }, 200);
-            }, 300);
+            }
+          } else {
+            console.log('[handleDisconnectAptos] No restore needed, wallet still connected');
           }
+        } catch (e) {
+          console.log('[handleDisconnectAptos] Error:', e);
         }
-      } catch (e) {
-        console.log('[handleDisconnectAptos] Error in restore:', e);
-      }
+      }, 500); // Wait 500ms for cascade disconnect to happen
     }
 
   };
