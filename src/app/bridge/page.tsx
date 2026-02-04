@@ -80,6 +80,15 @@ function BridgePageContent() {
   const { connection: solanaConnection } = useConnection();
   const { account: aptosAccount, connected: aptosConnected, wallet: aptosWallet, wallets: aptosWallets, connect: connectAptos, disconnect: disconnectAptos } = useAptosWallet();
 
+  // Get Solana address - prefer adapter state over hook state for reliability
+  // The hook state can desync from the actual adapter state
+  const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
+  const solanaAdapterPublicKey = solanaWallet?.adapter?.publicKey;
+  
+  // Use adapter state if available, fall back to hook state
+  const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
+  const solanaAddress = solanaPublicKey?.toBase58() || solanaAdapterPublicKey?.toBase58() || null;
+
   // Re-check both wallets before mint (state may be lost during attestation wait)
   // Note: effectiveSolanaConnected is computed later, so we track both hook state and adapter state
   const solanaConnectedRef = useRef(solanaConnected);
@@ -387,15 +396,6 @@ function BridgePageContent() {
   const aptosClient = useAptosClient();
   const aptosTransactionSubmitter = useMemo(() => GasStationService.getInstance().getTransactionSubmitter(), []);
 
-  // Get Solana address - prefer adapter state over hook state for reliability
-  // The hook state can desync from the actual adapter state
-  const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
-  const solanaAdapterPublicKey = solanaWallet?.adapter?.publicKey;
-  
-  // Use adapter state if available, fall back to hook state
-  const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
-  const solanaAddress = solanaPublicKey?.toBase58() || solanaAdapterPublicKey?.toBase58() || null;
-  
   // Debug log for connection state
   useEffect(() => {
     console.log('[bridge-state] Connection state changed:', {
