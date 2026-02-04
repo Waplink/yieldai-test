@@ -19,24 +19,23 @@ function isDerivedName(name: string): boolean {
  * - Native wallets (Petra, etc.) are allowed to restore even when skip is set.
  */
 export function AptosWalletRestore({ children }: { children: React.ReactNode }) {
-  const { wallets, wallet, connected, connect } = useWallet();
+  const { wallets, wallet, connected, connect, isLoading } = useWallet();
   const prevConnected = useRef<boolean>(connected);
-  const hasTriggeredConnect = useRef(false);
+  const restoreRunId = useRef(0);
 
   // If disconnected externally, allow restore again
   useEffect(() => {
     const was = prevConnected.current;
     if (was && !connected) {
-      hasTriggeredConnect.current = false;
+      restoreRunId.current += 1;
     }
     prevConnected.current = connected;
   }, [connected]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (connected) return;
+    if (connected || isLoading) return;
     if (!wallets?.length) return;
-    if (hasTriggeredConnect.current) return;
 
     const stored = getAptosWalletNameFromStorage();
     if (!stored) return;
@@ -52,35 +51,35 @@ export function AptosWalletRestore({ children }: { children: React.ReactNode }) 
     const exists = wallets.some((w) => w.name === stored);
     if (!exists) return;
 
-    hasTriggeredConnect.current = true;
-    try {
-      if (typeof console !== "undefined" && console.log) {
-        console.log(LOG, "Restoring Aptos wallet:", stored);
-      }
-      connect(stored);
-    } catch (e) {
-      // allow retries
-      hasTriggeredConnect.current = false;
-      if (typeof console !== "undefined" && console.warn) {
-        console.warn(LOG, "connect() threw:", (e as any)?.message ?? e);
-      }
-    }
+    const thisRun = (restoreRunId.current += 1);
+    const derived = isDerivedName(stored);
 
-    const delays = [200, 600, 1500, 3500];
+    const attempt = () => {
+      if (restoreRunId.current !== thisRun) return;
+      if (connected || isLoading) return;
+      try {
+        if (typeof console !== "undefined" && console.log) {
+          console.log(LOG, "Restoring Aptos wallet:", stored);
+        }
+        connect(stored);
+      } catch (e) {
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn(LOG, "connect() threw:", (e as any)?.message ?? e);
+        }
+      }
+    };
+
+    // Native wallets: single attempt (avoid repeated signature prompts).
+    // Derived wallets: retry a few times (they usually reconnect silently).
+    attempt();
+    const delays = derived ? [300, 900, 2000, 4500] : [800];
     const timers = delays.map((ms) =>
       setTimeout(() => {
-        if (connected) return;
-        if (hasTriggeredConnect.current) return;
-        try {
-          hasTriggeredConnect.current = true;
-          connect(stored);
-        } catch {
-          hasTriggeredConnect.current = false;
-        }
+        attempt();
       }, ms)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [connected, wallets, connect, wallet?.name]);
+  }, [connected, isLoading, wallets, connect, wallet?.name]);
 
   return <>{children}</>;
 }
