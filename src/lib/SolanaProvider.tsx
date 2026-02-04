@@ -2,13 +2,11 @@
 
 import { WalletProvider as SolanaWalletProvider, ConnectionProvider } from "@solana/wallet-adapter-react";
 import {
-  PhantomWalletAdapter,
   SolflareWalletAdapter,
   CoinbaseWalletAdapter,
   TorusWalletAdapter,
   LedgerWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
 import { useMemo, type ReactNode } from "react";
 
 const WALLET_NAME_KEY = "walletName";
@@ -40,11 +38,13 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
         : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234"),
     []
   );
+  
+  // Note: Phantom and Trust are NOT included here because they register themselves
+  // as Standard Wallets and will be automatically detected by the wallet adapter.
+  // Including them explicitly causes "was registered as a Standard Wallet" warnings.
   const wallets = useMemo(
     () => [
-      // Standard Solana wallets we want globally available (main + /bridge)
-      new PhantomWalletAdapter(),
-      new TrustWalletAdapter(),
+      // Only include wallets that don't auto-register as Standard Wallets
       new SolflareWalletAdapter(),
       new CoinbaseWalletAdapter(),
       new TorusWalletAdapter(),

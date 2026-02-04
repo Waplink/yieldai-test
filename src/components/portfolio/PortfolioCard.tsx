@@ -21,14 +21,31 @@ interface PortfolioCardProps {
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
   hasSolanaWallet?: boolean;
+  /** Optional external control for hiding small assets; if not provided, component manages its own state */
+  hideSmallAssets?: boolean;
+  onHideSmallAssetsChange?: (value: boolean) => void;
+  /** If false, не рендерить верхнюю панель (чекбокс, refresh, CollapsibleControls) */
+  showHeaderControls?: boolean;
 }
 
-export function PortfolioCard({ totalValue, tokens, onRefresh, isRefreshing, hasSolanaWallet = false }: PortfolioCardProps) {
+export function PortfolioCard({
+  totalValue,
+  tokens,
+  onRefresh,
+  isRefreshing,
+  hasSolanaWallet = false,
+  hideSmallAssets,
+  onHideSmallAssetsChange,
+  showHeaderControls = true,
+}: PortfolioCardProps) {
   const { isExpanded, toggleSection } = useCollapsible();
-  const [hideSmallAssets, setHideSmallAssets] = useState(true);
+  const [internalHideSmallAssets, setInternalHideSmallAssets] = useState(true);
   const { state, validateDrop, handleDrop } = useDragDrop();
 
-  const filteredTokens = hideSmallAssets 
+  const effectiveHideSmallAssets = hideSmallAssets ?? internalHideSmallAssets;
+  const setHideSmallAssets = onHideSmallAssetsChange ?? setInternalHideSmallAssets;
+
+  const filteredTokens = effectiveHideSmallAssets 
     ? tokens.filter(token => {
         const value = token.value ? parseFloat(token.value) : 0;
         return !isNaN(value) && value >= 1;
@@ -85,44 +102,48 @@ export function PortfolioCard({ totalValue, tokens, onRefresh, isRefreshing, has
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-lg font-medium">Assets</span>
-        <span className="text-lg font-medium">{formatCurrency(displayTotalValue, 2)}</span>
-      </div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-2">
-          <Checkbox 
-            id="hideSmallAssets" 
-            checked={hideSmallAssets}
-            onCheckedChange={(checked) => setHideSmallAssets(checked as boolean)}
-          />
-          <Label htmlFor="hideSmallAssets" className="text-sm">Hide assets {'<'}1$</Label>
-        </div>
-        <div className="flex items-center gap-1">
-          {onRefresh && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onRefresh}
-                  disabled={isRefreshing}
-                  className="h-4 w-4 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground/60 opacity-80 transition-colors"
-                >
-                  <RefreshCw className={cn(
-                    "h-3 w-3",
-                    isRefreshing && "animate-spin"
-                  )} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Refresh all data</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-          <CollapsibleControls />
-        </div>
-      </div>
+      {showHeaderControls && (
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-lg font-medium">Assets</span>
+            <span className="text-lg font-medium">{formatCurrency(displayTotalValue, 2)}</span>
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="hideSmallAssets" 
+                checked={effectiveHideSmallAssets}
+                onCheckedChange={(checked) => setHideSmallAssets(checked as boolean)}
+              />
+              <Label htmlFor="hideSmallAssets" className="text-sm">Hide assets {'<'}1$</Label>
+            </div>
+            <div className="flex items-center gap-1">
+              {onRefresh && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onRefresh}
+                      disabled={isRefreshing}
+                      className="h-4 w-4 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground/60 opacity-80 transition-colors"
+                    >
+                      <RefreshCw className={cn(
+                        "h-3 w-3",
+                        isRefreshing && "animate-spin"
+                      )} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Refresh all data</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <CollapsibleControls />
+            </div>
+          </div>
+        </>
+      )}
       <Card 
         className={`w-full h-full flex flex-col transition-colors ${getDropZoneClassName()}`}
         onDragOver={handleDragOver}

@@ -26,6 +26,13 @@ import { PositionsList as AavePositionsList } from "./protocols/aave/PositionsLi
 import { PositionsList as ThalaPositionsList } from "./protocols/thala/PositionsList";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { RefreshCw } from "lucide-react";
+import { CollapsibleControls } from "@/components/ui/collapsible-controls";
+import { cn } from "@/lib/utils";
 
 export default function Sidebar() {
   const { account } = useWallet();
@@ -191,6 +198,19 @@ export default function Sidebar() {
     setTotalAssetsStore(totalAssets);
   }, [totalAssets, setTotalAssetsStore]);
 
+  // Shared UI state: hide assets <1$ for all wallets (Aptos + Solana)
+  const [hideSmallAssets, setHideSmallAssets] = useState(true);
+
+  const hasAnyWalletCard = Boolean(account?.address || solanaAddress);
+
+  const handleGlobalRefresh = useCallback(async () => {
+    // Обновляем Aptos-портфель (если есть) и Solana-портфель
+    if (account?.address) {
+      await handleRefresh();
+    }
+    await refreshSolana();
+  }, [account?.address, handleRefresh, refreshSolana]);
+
   return (
     <CollapsibleProvider>
       <div className="hidden md:flex w-[360px] p-4 border-r h-screen flex-col">
@@ -208,6 +228,45 @@ export default function Sidebar() {
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           <div className="mt-4 space-y-4">
+            {hasAnyWalletCard && (
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="hideSmallAssetsGlobal"
+                    checked={hideSmallAssets}
+                    onCheckedChange={(checked) => setHideSmallAssets(!!checked)}
+                  />
+                  <Label htmlFor="hideSmallAssetsGlobal" className="text-sm">
+                    Hide assets {'<'}1$
+                  </Label>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleGlobalRefresh}
+                        disabled={isRefreshing || isSolanaLoading}
+                        className="h-4 w-4 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground/60 opacity-80 transition-colors"
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "h-3 w-3",
+                            (isRefreshing || isSolanaLoading) && "animate-spin"
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Refresh Aptos & Solana</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <CollapsibleControls />
+                </div>
+              </div>
+            )}
+
             {/* Aptos-портфель и протоколы — только если есть Aptos-аккаунт */}
             {account?.address ? (
               <div className="space-y-4">
@@ -217,6 +276,9 @@ export default function Sidebar() {
                   onRefresh={handleRefresh}
                   isRefreshing={isRefreshing}
                   hasSolanaWallet={!!solanaAddress}
+                  hideSmallAssets={hideSmallAssets}
+                  onHideSmallAssetsChange={setHideSmallAssets}
+                  showHeaderControls={false}
                 />
                 {checkingProtocols.length > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
@@ -296,6 +358,7 @@ export default function Sidebar() {
                   totalValueUsd={solanaTotalValue}
                   onRefresh={refreshSolana}
                   isRefreshing={isSolanaLoading}
+                  hideSmallAssets={hideSmallAssets}
                 />
                 <SolanaSignMessageButton />
               </div>

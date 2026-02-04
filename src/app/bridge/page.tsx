@@ -412,6 +412,9 @@ function BridgePageContent() {
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem("AptosWalletName");
+        // Clear Solana skip flag to allow restore of standalone Solana wallets (like Phantom)
+        // after disconnecting Aptos derived (which might cascade disconnect)
+        window.sessionStorage.removeItem("skip_auto_connect_solana");
       } catch {}
     }
     setStoredAptosName(null);

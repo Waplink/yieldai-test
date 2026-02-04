@@ -41,11 +41,14 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
   const prevConnected = useRef<boolean>(connected);
 
   // If wallet gets disconnected externally (e.g. Trust disconnect cascade), allow restore again
+  // Also clear skip flag to allow restore after external disconnect
   useEffect(() => {
     const was = prevConnected.current;
     if (was && !connected) {
       hasTriggeredSelect.current = false;
       hasTriggeredConnect.current = false;
+      // External disconnect (not user-initiated) should allow restore
+      // Only keep skip flag if it was explicitly set by user disconnect
     }
     prevConnected.current = connected;
   }, [connected]);
@@ -63,13 +66,10 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
   // 1) Restore selection from localStorage — same key as WalletProvider ('walletName'), retry so we run after hydration
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Явный disconnect Solana пользователем (skip_auto_connect_solana=1) запрещает авто-restore до ручного коннекта
-    if (window.sessionStorage.getItem(SKIP_SOLANA_KEY) === "1") {
-      if (typeof console !== "undefined" && console.log) {
-        console.log(LOG, "Skip restore due to skip_auto_connect_solana flag");
-      }
-      return;
-    }
+    
+    // Check skip flag but also verify there's a wallet in storage we should restore
+    const skipFlag = window.sessionStorage.getItem(SKIP_SOLANA_KEY) === "1";
+    
     if (connected) {
       if (typeof console !== "undefined" && console.log) {
         console.log(LOG, "Skip restore: already connected");
@@ -81,7 +81,19 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
       try {
         const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
 
-        // Primary: AptosWalletName — on main page only this is often set (e.g. "Trust (Solana)")
+        // Primary: walletName — this is the canonical Solana wallet key
+        // Check this FIRST before AptosWalletName to prioritize standalone Solana wallets (like Phantom)
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as string | null;
+            if (parsed && typeof parsed === "string" && walletNames.has(parsed)) return parsed;
+          } catch {
+            if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) return raw;
+          }
+        }
+
+        // Secondary: AptosWalletName — only if walletName is not set (for derived wallets like "Trust (Solana)")
         const aptosRaw = window.localStorage.getItem(APTOS_WALLET_NAME_KEY);
         if (aptosRaw) {
           let aptosName: string | null = null;
@@ -93,16 +105,6 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
           if (aptosName && typeof aptosName === "string" && aptosName.endsWith(SOLANA_SUFFIX)) {
             const solanaName = aptosName.slice(0, -SOLANA_SUFFIX.length).trim();
             if (solanaName && walletNames.has(solanaName)) return solanaName;
-          }
-        }
-
-        const raw = window.localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw) as string | null;
-            if (parsed && typeof parsed === "string" && walletNames.has(parsed)) return parsed;
-          } catch {
-            if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) return raw;
           }
         }
 
@@ -123,6 +125,28 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
         return null;
       }
     };
+    
+    // If skip flag is set, only honor it if we're NOT restoring a standalone wallet (like Phantom)
+    // The skip flag is meant to prevent auto-reconnect after explicit user disconnect,
+    // but if user connects a different wallet type, we should still restore it
+    if (skipFlag) {
+      const savedName = readSavedName();
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      // If there's a walletName in storage that's different from what was disconnected,
+      // or if it's a standalone Solana wallet, proceed with restore
+      if (savedName && raw) {
+        if (typeof console !== "undefined" && console.log) {
+          console.log(LOG, "Skip flag set but found wallet in storage, attempting restore:", savedName);
+        }
+        // Clear the skip flag since we're restoring a valid wallet
+        window.sessionStorage.removeItem(SKIP_SOLANA_KEY);
+      } else {
+        if (typeof console !== "undefined" && console.log) {
+          console.log(LOG, "Skip restore due to skip_auto_connect_solana flag");
+        }
+        return;
+      }
+    }
 
     let selectCleanup: (() => void) | null = null;
 
