@@ -50,8 +50,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
 
   return (
     <AptosWalletAdapterProvider
-      // We manage restore manually (see AptosWalletRestore) to avoid derived auto-reconnect loops on disconnect.
-      autoConnect={false}
+      autoConnect={true}
       dappConfig={{
         network: Network.MAINNET,
         crossChainWallets: true,
