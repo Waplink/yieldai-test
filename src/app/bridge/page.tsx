@@ -392,6 +392,11 @@ function BridgePageContent() {
   // Disconnect handlers
   const handleDisconnectSolana = async () => {
     try {
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.setItem("skip_auto_connect_solana", "1");
+        } catch {}
+      }
       await disconnectSolana();
       toast({
         title: "Success",

@@ -7,6 +7,7 @@ import { WalletName, WalletReadyState } from "@solana/wallet-adapter-base";
 const STORAGE_KEY = "walletName";
 const APTOS_WALLET_NAME_KEY = "AptosWalletName";
 const SOLANA_SUFFIX = " (Solana)";
+const SKIP_SOLANA_KEY = "skip_auto_connect_solana";
 const LOG = "[solana-restore]";
 
 /**
@@ -54,12 +55,21 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
     if (typeof window === "undefined" || !connected || !wallet) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(wallet.adapter.name));
+      // Любое успешное подключение Solana снимает запрет на авто-восстановление
+      window.sessionStorage.removeItem(SKIP_SOLANA_KEY);
     } catch {}
   }, [connected, wallet]);
 
   // 1) Restore selection from localStorage — same key as WalletProvider ('walletName'), retry so we run after hydration
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Явный disconnect Solana пользователем (skip_auto_connect_solana=1) запрещает авто-restore до ручного коннекта
+    if (window.sessionStorage.getItem(SKIP_SOLANA_KEY) === "1") {
+      if (typeof console !== "undefined" && console.log) {
+        console.log(LOG, "Skip restore due to skip_auto_connect_solana flag");
+      }
+      return;
+    }
     if (connected) {
       if (typeof console !== "undefined" && console.log) {
         console.log(LOG, "Skip restore: already connected");
