@@ -136,6 +136,8 @@ function BridgePageContent() {
   const [actionLog, setActionLog] = useState<ActionLogItem[]>([]);
   const [lastSolanaToAptosParams, setLastSolanaToAptosParams] = useState<{ signature: string; finalRecipient: string } | null>(null);
   const [lastAptosToSolanaParams, setLastAptosToSolanaParams] = useState<{ signature: string; finalRecipient: string } | null>(null);
+  // When Aptos (derived) disconnect triggers Solana disconnect, keep showing Solana card until restore completes
+  const [pendingSolanaRestore, setPendingSolanaRestore] = useState<string | null>(null);
 
   // Reliable derived vs native: localStorage AptosWalletName first ("X (Solana)" = derived), then wallet.name
   const solanaWalletNameForDerived = (solanaWallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (solanaWallet as { name?: string })?.name ?? '';
@@ -278,6 +280,25 @@ function BridgePageContent() {
   // Get Solana address
   const solanaAddress = solanaPublicKey?.toBase58() || null;
 
+  // Show Solana card when connected OR when we're restoring (so disconnect Aptos doesn't flash "Connect Solana")
+  const showSolanaCard = Boolean((solanaConnected && solanaAddress) || pendingSolanaRestore);
+  const solanaReconnecting = Boolean(pendingSolanaRestore && !solanaConnected);
+
+  // Aptos stored name (client-only, avoid hydration mismatch)
+  const [storedAptosName, setStoredAptosName] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setStoredAptosName(getAptosWalletNameFromStorage());
+  }, [aptosConnected, aptosWallet?.name]);
+
+  // Show Aptos as connected when adapter says so OR when native is selected and connecting (so UI doesn't stay on button)
+  const aptosNativeSelected = Boolean(storedAptosName && !String(storedAptosName).trim().endsWith(" (Solana)"));
+  const showAptosAsConnected = Boolean(
+    (aptosConnected && aptosAccount) ||
+    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected)
+  );
+  const aptosConnecting = Boolean(aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected);
+
   const DOMAIN_APTOS = 9;
 
   // Check if both wallets are connected
@@ -415,12 +436,11 @@ function BridgePageContent() {
     }
 
     // Restore Solana connection if extension disconnected it (Vercel / Trust derived).
-    // Always run restore when we have savedSolanaName: on Vercel ref can be stale, select+connect are idempotent.
     if (savedSolanaName) {
+      setPendingSolanaRestore(savedSolanaName);
       const runRestore = () => {
         if (typeof window === "undefined") return;
         try {
-          // Adapter reads with JSON.parse; store JSON so adapter does not throw "Trust is not valid JSON"
           window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName!));
           select(savedSolanaName as WalletName);
           connectSolana().catch(() => {});
@@ -432,6 +452,29 @@ function BridgePageContent() {
       setTimeout(runRestore, 1800);
     }
   };
+
+  // Sync pendingSolanaRestore from localStorage when Solana was disconnected (e.g. by extension)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (solanaConnected) {
+      setPendingSolanaRestore(null);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem("walletName");
+      if (!raw) return;
+      let name: string | null = null;
+      try {
+        const p = JSON.parse(raw) as string | null;
+        if (p && typeof p === "string") name = p;
+      } catch {
+        if (typeof raw === "string" && raw.length > 0) name = raw;
+      }
+      if (name && wallets?.length && wallets.some((w) => w.adapter.name === name)) {
+        setPendingSolanaRestore((prev) => (prev === name ? prev : name));
+      }
+    } catch (_) {}
+  }, [solanaConnected, wallets]);
 
   // Helper to truncate address
   const truncateAddress = (address: string) => {
@@ -1223,24 +1266,24 @@ function BridgePageContent() {
               <div>{bridgeButtonAlert}</div>
             ) : null}
             walletSection={
-              solanaConnected && solanaAddress ? (
+              showSolanaCard ? (
                 <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
                   {/* Solana Wallet */}
                   <div>
-                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
+                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => !solanaReconnecting && setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-medium text-muted-foreground shrink-0">Solana</span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
-                              {truncateAddress(solanaAddress)}
+                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={solanaReconnecting}>
+                              {solanaReconnecting ? (pendingSolanaRestore ? `Reconnecting ${pendingSolanaRestore}…` : "Reconnecting…") : truncateAddress(solanaAddress || "")}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={copySolanaAddress} className="gap-2">
+                            <DropdownMenuItem onSelect={copySolanaAddress} className="gap-2" disabled={!solanaAddress}>
                               <Copy className="h-4 w-4" /> Copy address
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={handleDisconnectSolana} className="gap-2">
+                            <DropdownMenuItem onSelect={handleDisconnectSolana} className="gap-2" disabled={solanaReconnecting}>
                               <LogOut className="h-4 w-4" /> Disconnect
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -1253,7 +1296,7 @@ function BridgePageContent() {
                         )}
                       />
                     </div>
-                    {isSolanaBalanceExpanded && (
+                    {isSolanaBalanceExpanded && !solanaReconnecting && (
                       <div className="mt-2 pt-2 border-t">
                         <div className="text-sm font-medium pb-2">
                           {isSolanaLoading ? '...' : solanaTotalValue !== null ? formatCurrency(solanaTotalValue, 2) : 'N/A'}
@@ -1270,24 +1313,24 @@ function BridgePageContent() {
                   </div>
 
                   {/* Aptos Wallet: Derived or Native or Connect Button */}
-                  {aptosConnected && aptosAccount ? (
+                  {showAptosAsConnected ? (
                     <div>
-                      <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
+                      <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => !aptosConnecting && setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-sm font-medium text-muted-foreground shrink-0">
-                            Aptos {isDerivedWallet ? '(Derived)' : '(Native)'}
+                            Aptos {aptosNativeSelected && !aptosConnected ? "(Native)" : isDerivedWallet ? "(Derived)" : "(Native)"}
                           </span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
-                                {truncateAddress(aptosAccount.address.toString())}
+                              <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={aptosConnecting}>
+                                {aptosConnecting ? "Connecting…" : aptosAccount ? truncateAddress(aptosAccount.address.toString()) : "…"}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2">
+                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2" disabled={!aptosAccount}>
                                 <Copy className="h-4 w-4" /> Copy address
                               </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2">
+                              <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2" disabled={aptosConnecting}>
                                 <LogOut className="h-4 w-4" /> Disconnect
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -1300,7 +1343,7 @@ function BridgePageContent() {
                           )}
                         />
                       </div>
-                      {isAptosBalanceExpanded && (
+                      {isAptosBalanceExpanded && !aptosConnecting && (
                         <div className="mt-2 pt-2 border-t">
                           <div className="text-sm font-medium pb-2">
                             {isAptosLoading ? '...' : formatCurrency(aptosTotalValue, 2)}
@@ -1346,7 +1389,7 @@ function BridgePageContent() {
                     </div>
                   )}
                 </div>
-              ) : !solanaConnected ? (
+              ) : !showSolanaCard ? (
                 <div className="flex flex-col items-end gap-2">
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
