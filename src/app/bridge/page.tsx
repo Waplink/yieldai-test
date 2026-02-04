@@ -595,6 +595,24 @@ function BridgePageContent() {
         if (!currentWalletName) {
           console.log('[handleDisconnectAptos] Restoring walletName:', savedSolanaName);
           window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+          
+          // Also trigger actual reconnect since SolanaWalletRestore may have already run
+          const walletToReconnect = wallets.find(w => w.adapter.name === savedSolanaName);
+          if (walletToReconnect) {
+            console.log('[handleDisconnectAptos] Reconnecting Solana wallet:', savedSolanaName);
+            // Small delay to let state settle
+            setTimeout(() => {
+              select(savedSolanaName as WalletName);
+              setTimeout(() => {
+                connectSolana().catch(() => {
+                  // Retry once more
+                  setTimeout(() => {
+                    connectSolana().catch(() => {});
+                  }, 300);
+                });
+              }, 100);
+            }, 100);
+          }
         }
       } catch {}
     }
