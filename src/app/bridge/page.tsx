@@ -240,14 +240,33 @@ function BridgePageContent() {
       hasTriggeredRestore.current = true;
       console.log('[bridge-restore] tryRestore: selecting and connecting:', savedName);
       select(savedName as WalletName);
-      setTimeout(() => {
-        console.log('[bridge-restore] Calling connectSolana (attempt 1)');
-        connectSolana().catch((e) => console.log('[bridge-restore] connect error 1:', e?.message));
-      }, 100);
-      setTimeout(() => {
-        console.log('[bridge-restore] Calling connectSolana (attempt 2)');
-        connectSolana().catch((e) => console.log('[bridge-restore] connect error 2:', e?.message));
-      }, 600);
+      
+      const doConnect = async (attempt: number) => {
+        console.log(`[bridge-restore] Calling connectSolana (attempt ${attempt}), current connected state:`, solanaConnected);
+        try {
+          // On first attempt, try disconnecting first to clear any stale state
+          if (attempt === 1) {
+            try {
+              await disconnectSolana();
+              console.log('[bridge-restore] Disconnected stale connection');
+            } catch {
+              // Ignore disconnect errors
+            }
+            // Re-select wallet after disconnect
+            select(savedName as WalletName);
+            await new Promise(r => setTimeout(r, 100));
+          }
+          
+          await connectSolana();
+          console.log(`[bridge-restore] connectSolana resolved (attempt ${attempt})`);
+        } catch (e: any) {
+          console.log(`[bridge-restore] connectSolana failed (attempt ${attempt}):`, e?.name, e?.message);
+        }
+      };
+      
+      setTimeout(() => doConnect(1), 200);
+      setTimeout(() => doConnect(2), 800);
+      setTimeout(() => doConnect(3), 2000);
     };
 
     tryRestore();
@@ -257,7 +276,7 @@ function BridgePageContent() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [wallets, solanaConnected, select, connectSolana]);
+  }, [wallets, solanaConnected, select, connectSolana, disconnectSolana]);
 
   // Skip auto-connect derived when user explicitly disconnected Aptos (set synchronously on click)
   const skipAutoConnectDerivedRef = useRef(false);

@@ -2,13 +2,11 @@
 
 import { WalletProvider as SolanaWalletProvider, ConnectionProvider } from "@solana/wallet-adapter-react";
 import {
-  PhantomWalletAdapter,
   SolflareWalletAdapter,
   CoinbaseWalletAdapter,
   TorusWalletAdapter,
   LedgerWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-import { TrustWalletAdapter } from "@solana/wallet-adapter-trust";
 import { useMemo, type ReactNode } from "react";
 
 const WALLET_NAME_KEY = "walletName";
@@ -41,13 +39,11 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
     []
   );
   
-  // Include explicit adapters for Phantom and Trust to ensure they work on all pages
-  // even if Standard Wallet detection is delayed. The "was registered as a Standard Wallet"
-  // warnings are informational and don't cause functional issues.
+  // Phantom and Trust register themselves as Standard Wallets automatically.
+  // We only include wallets that don't auto-register to avoid conflicts.
+  // Standard Wallet detection handles Phantom and Trust.
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),
-      new TrustWalletAdapter(),
       new SolflareWalletAdapter(),
       new CoinbaseWalletAdapter(),
       new TorusWalletAdapter(),
