@@ -136,8 +136,6 @@ function BridgePageContent() {
   const [actionLog, setActionLog] = useState<ActionLogItem[]>([]);
   const [lastSolanaToAptosParams, setLastSolanaToAptosParams] = useState<{ signature: string; finalRecipient: string } | null>(null);
   const [lastAptosToSolanaParams, setLastAptosToSolanaParams] = useState<{ signature: string; finalRecipient: string } | null>(null);
-  // When Aptos (derived) disconnect triggers Solana disconnect, keep showing Solana card until restore completes
-  const [pendingSolanaRestore, setPendingSolanaRestore] = useState<string | null>(null);
 
   // Reliable derived vs native: localStorage AptosWalletName first ("X (Solana)" = derived), then wallet.name
   const solanaWalletNameForDerived = (solanaWallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (solanaWallet as { name?: string })?.name ?? '';
@@ -301,10 +299,6 @@ function BridgePageContent() {
 
   // Get Solana address
   const solanaAddress = solanaPublicKey?.toBase58() || null;
-
-  // Show Solana card when connected OR when we're restoring (so disconnect Aptos doesn't flash "Connect Solana")
-  const showSolanaCard = Boolean((solanaConnected && solanaAddress) || pendingSolanaRestore);
-  const solanaReconnecting = Boolean(pendingSolanaRestore && !solanaConnected);
 
   // Aptos stored name (client-only, avoid hydration mismatch)
   const [storedAptosName, setStoredAptosName] = useState<string | null>(null);
@@ -474,51 +468,7 @@ function BridgePageContent() {
       }
     }
 
-    // Restore Solana connection if extension disconnected it (Vercel / Trust derived).
-    if (savedSolanaName) {
-      setPendingSolanaRestore(savedSolanaName);
-      const runRestore = () => {
-        if (typeof window === "undefined") return;
-        try {
-          window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName!));
-          select(savedSolanaName as WalletName);
-          connectSolana().catch(() => {});
-        } catch (_) {}
-      };
-      setTimeout(runRestore, 100);
-      setTimeout(runRestore, 400);
-      setTimeout(runRestore, 900);
-      setTimeout(runRestore, 1800);
-    }
   };
-
-  // Sync pendingSolanaRestore from localStorage when Solana was disconnected (e.g. by extension)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (solanaConnected) {
-      setPendingSolanaRestore(null);
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem("walletName");
-      if (!raw) return;
-      let name: string | null = null;
-      try {
-        const p = JSON.parse(raw) as string | null;
-        if (p && typeof p === "string") name = p;
-      } catch {
-        if (typeof raw === "string" && raw.length > 0) name = raw;
-      }
-      if (name && wallets?.length && wallets.some((w) => w.adapter.name === name)) {
-        setPendingSolanaRestore((prev) => (prev === name ? prev : name));
-      }
-    } catch (_) {}
-  }, [solanaConnected, wallets]);
-
-  // Clear reconnect UI as soon as we have a publicKey again (some adapters can lag `connected`)
-  useEffect(() => {
-    if (solanaPublicKey) setPendingSolanaRestore(null);
-  }, [solanaPublicKey]);
 
   // Helper to truncate address
   const truncateAddress = (address: string) => {
@@ -1310,24 +1260,24 @@ function BridgePageContent() {
               <div>{bridgeButtonAlert}</div>
             ) : null}
             walletSection={
-              showSolanaCard ? (
+              solanaConnected && solanaAddress ? (
                 <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
                   {/* Solana Wallet */}
                   <div>
-                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => !solanaReconnecting && setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
+                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-medium text-muted-foreground shrink-0">Solana</span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={solanaReconnecting}>
-                              {solanaReconnecting ? (pendingSolanaRestore ? `Reconnecting ${pendingSolanaRestore}…` : "Reconnecting…") : truncateAddress(solanaAddress || "")}
+                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
+                              {truncateAddress(solanaAddress || "")}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={copySolanaAddress} className="gap-2" disabled={!solanaAddress}>
+                            <DropdownMenuItem onSelect={copySolanaAddress} className="gap-2">
                               <Copy className="h-4 w-4" /> Copy address
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={handleDisconnectSolana} className="gap-2" disabled={solanaReconnecting}>
+                            <DropdownMenuItem onSelect={handleDisconnectSolana} className="gap-2">
                               <LogOut className="h-4 w-4" /> Disconnect
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -1340,7 +1290,7 @@ function BridgePageContent() {
                         )}
                       />
                     </div>
-                    {isSolanaBalanceExpanded && !solanaReconnecting && (
+                    {isSolanaBalanceExpanded && (
                       <div className="mt-2 pt-2 border-t">
                         <div className="text-sm font-medium pb-2">
                           {isSolanaLoading ? '...' : solanaTotalValue !== null ? formatCurrency(solanaTotalValue, 2) : 'N/A'}
@@ -1433,7 +1383,7 @@ function BridgePageContent() {
                     </div>
                   )}
                 </div>
-              ) : !showSolanaCard ? (
+              ) : !solanaConnected ? (
                 <div className="flex flex-col items-end gap-2">
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
