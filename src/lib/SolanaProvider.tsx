@@ -54,7 +54,23 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <SolanaWalletProvider wallets={wallets} autoConnect localStorageKey="walletName">
+      <SolanaWalletProvider 
+        wallets={wallets} 
+        autoConnect 
+        localStorageKey="walletName"
+        onError={(error) => {
+          const name = (error as { name?: string })?.name;
+          // Suppress expected errors during disconnect/reconnect flows
+          if (
+            name === "WalletDisconnectedError" ||
+            name === "WalletNotConnectedError" ||
+            name === "WalletNotSelectedError"
+          ) {
+            return;
+          }
+          console.error("Solana wallet error:", error);
+        }}
+      >
         {children}
       </SolanaWalletProvider>
     </ConnectionProvider>

@@ -74,13 +74,14 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
         const message = typeof error === "string" ? error : (error?.message ?? "Unknown wallet error");
         const name = (error as { name?: string })?.name;
         // Don't show toast for expected user actions, auto-connect noise, or disconnect noise
-        // WalletDisconnectedError / WalletNotConnectedError могут лететь при ручном disconnect и не должны пугать пользователя.
+        // WalletDisconnectedError / WalletNotConnectedError / WalletNotSelectedError могут лететь при ручном disconnect и не должны пугать пользователя.
         if (
           message === "Unexpected error" ||
           message === "User has rejected the request" ||
           name === "WalletDisconnectedError" ||
           name === "WalletNotConnectedError" ||
-          (typeof message === "string" && (message.includes("WalletDisconnectedError") || message.includes("WalletNotConnectedError")))
+          name === "WalletNotSelectedError" ||
+          (typeof message === "string" && (message.includes("WalletDisconnectedError") || message.includes("WalletNotConnectedError") || message.includes("WalletNotSelectedError")))
         ) {
           return;
         }

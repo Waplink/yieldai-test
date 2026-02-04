@@ -586,6 +586,19 @@ function BridgePageContent() {
       }
     }
 
+    // Restore Solana walletName in localStorage if it was cleared by the Aptos derived disconnect cascade
+    // This happens with Phantom especially - disconnecting Aptos derived also disconnects Solana and clears walletName
+    if (isDerived && savedSolanaName && typeof window !== "undefined") {
+      try {
+        const currentWalletName = window.localStorage.getItem("walletName");
+        // Only restore if walletName was cleared
+        if (!currentWalletName) {
+          console.log('[handleDisconnectAptos] Restoring walletName:', savedSolanaName);
+          window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+        }
+      } catch {}
+    }
+
   };
 
   // Helper to truncate address
