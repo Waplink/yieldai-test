@@ -148,43 +148,74 @@ function BridgePageContent() {
     return Boolean(stored != null && stored !== '' && String(stored).trim().endsWith(' (Solana)'));
   }, [aptosWallet, solanaWalletNameForDerived]);
 
-  // Restore Solana wallet from localStorage on bridge load (AptosWalletName e.g. "Trust (Solana)" first, then walletName)
+  // Restore Solana wallet from localStorage on bridge load
+  // Priority: walletName first (standalone wallets like Phantom), then AptosWalletName for derived
   const hasTriggeredRestore = useRef(false);
+  const prevSolanaConnected = useRef(solanaConnected);
+  
+  // Reset restore flag when Solana disconnects (allows re-restore on reconnect attempt)
+  useEffect(() => {
+    if (prevSolanaConnected.current && !solanaConnected) {
+      hasTriggeredRestore.current = false;
+    }
+    prevSolanaConnected.current = solanaConnected;
+  }, [solanaConnected]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (solanaConnected) return;
+    
+    // Check skip flag
+    if (window.sessionStorage.getItem('skip_auto_connect_solana') === '1') {
+      console.log('[bridge] Skip Solana restore due to skip flag');
+      return;
+    }
+    
     const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
     let savedName: string | null = null;
-    const aptosRaw = window.localStorage.getItem('AptosWalletName');
-    if (aptosRaw) {
+    
+    // Primary: walletName — canonical Solana wallet key (prioritizes standalone wallets like Phantom)
+    const raw = window.localStorage.getItem('walletName');
+    if (raw) {
       try {
-        const parsed = JSON.parse(aptosRaw) as string | null;
-        const aptosName = typeof parsed === 'string' ? parsed : aptosRaw;
-        if (aptosName?.endsWith(' (Solana)')) {
-          const name = aptosName.slice(0, -' (Solana)'.length).trim();
-          if (name && walletNames.has(name)) savedName = name;
-        }
-      } catch {}
-    }
-    if (!savedName) {
-      const raw = window.localStorage.getItem('walletName');
-      if (raw) {
-        try {
-          const p = JSON.parse(raw) as string | null;
-          if (p && walletNames.has(p)) savedName = p;
-        } catch {
-          if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
-        }
+        const p = JSON.parse(raw) as string | null;
+        if (p && walletNames.has(p)) savedName = p;
+      } catch {
+        if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
       }
     }
-    if (!savedName) return;
+    
+    // Secondary: AptosWalletName for derived wallets (e.g. "Trust (Solana)")
+    if (!savedName) {
+      const aptosRaw = window.localStorage.getItem('AptosWalletName');
+      if (aptosRaw) {
+        try {
+          const parsed = JSON.parse(aptosRaw) as string | null;
+          const aptosName = typeof parsed === 'string' ? parsed : aptosRaw;
+          if (aptosName?.endsWith(' (Solana)')) {
+            const name = aptosName.slice(0, -' (Solana)'.length).trim();
+            if (name && walletNames.has(name)) savedName = name;
+          }
+        } catch {}
+      }
+    }
+    
+    if (!savedName) {
+      console.log('[bridge] No saved Solana wallet found, available wallets:', Array.from(walletNames));
+      return;
+    }
+    
+    console.log('[bridge] Found saved Solana wallet:', savedName);
 
     const tryRestore = () => {
       if (solanaConnected || !wallets?.length) return;
       const exists = wallets.some((w) => w.adapter.name === savedName);
-      if (!exists) return;
+      if (!exists) {
+        console.log('[bridge] Wallet not in available list:', savedName);
+        return;
+      }
       if (hasTriggeredRestore.current) return;
       hasTriggeredRestore.current = true;
+      console.log('[bridge] Restoring Solana wallet:', savedName);
       select(savedName as WalletName);
       setTimeout(() => connectSolana().catch(() => {}), 100);
       setTimeout(() => connectSolana().catch(() => {}), 600);
@@ -390,11 +421,15 @@ function BridgePageContent() {
         try {
           // Set skip flag to prevent SolanaWalletRestore from reconnecting
           window.sessionStorage.setItem("skip_auto_connect_solana", "1");
-          // Also remove walletName to prevent SolanaWalletProvider's autoConnect from reconnecting
-          window.localStorage.removeItem("walletName");
         } catch {}
       }
       await disconnectSolana();
+      // Remove walletName AFTER disconnect to prevent immediate reconnect by autoConnect
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem("walletName");
+        } catch {}
+      }
       toast({
         title: "Success",
         description: "Solana wallet disconnected",
@@ -501,8 +536,20 @@ function BridgePageContent() {
   const handleSolanaWalletSelect = async (walletName: string) => {
     try {
       setIsSolanaConnecting(true);
+      
+      // Clear skip flag since user is explicitly connecting
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.removeItem("skip_auto_connect_solana");
+          // Pre-set walletName in localStorage to help adapter find it
+          window.localStorage.setItem("walletName", JSON.stringify(walletName));
+        } catch {}
+      }
+      
       select(walletName as WalletName);
       setIsSolanaDialogOpen(false);
+      
+      // Wait a bit longer for the wallet to be selected before connecting
       setTimeout(async () => {
         try {
           await connectSolana();
@@ -511,15 +558,28 @@ function BridgePageContent() {
             description: `Connected to ${walletName}`,
           });
         } catch (error: any) {
-          toast({
-            variant: "destructive",
-            title: "Connection Failed",
-            description: error.message || "Failed to connect wallet",
-          });
-        } finally {
-          setIsSolanaConnecting(false);
+          // Retry once after a longer delay
+          setTimeout(async () => {
+            try {
+              await connectSolana();
+              toast({
+                title: "Wallet Connected",
+                description: `Connected to ${walletName}`,
+              });
+            } catch (retryError: any) {
+              toast({
+                variant: "destructive",
+                title: "Connection Failed",
+                description: retryError.message || "Failed to connect wallet",
+              });
+            } finally {
+              setIsSolanaConnecting(false);
+            }
+          }, 300);
+          return; // Don't set connecting to false yet, wait for retry
         }
-      }, 100);
+        setIsSolanaConnecting(false);
+      }, 200);
     } catch (error: any) {
       setIsSolanaConnecting(false);
       toast({
