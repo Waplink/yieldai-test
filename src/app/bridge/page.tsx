@@ -162,63 +162,92 @@ function BridgePageContent() {
   }, [solanaConnected]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (solanaConnected) return;
     
-    // Check skip flag
-    if (window.sessionStorage.getItem('skip_auto_connect_solana') === '1') {
-      console.log('[bridge] Skip Solana restore due to skip flag');
+    const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
+    const raw = window.localStorage.getItem('walletName');
+    const aptosRaw = window.localStorage.getItem('AptosWalletName');
+    const skipFlag = window.sessionStorage.getItem('skip_auto_connect_solana');
+    
+    console.log('[bridge-restore] Effect running:', {
+      solanaConnected,
+      walletCount: wallets?.length,
+      walletNames: Array.from(walletNames),
+      rawWalletName: raw,
+      aptosWalletName: aptosRaw,
+      skipFlag,
+      hasTriggeredRestore: hasTriggeredRestore.current,
+    });
+    
+    if (solanaConnected) {
+      console.log('[bridge-restore] Already connected, skipping');
       return;
     }
     
-    const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
+    // Check skip flag
+    if (skipFlag === '1') {
+      console.log('[bridge-restore] Skip flag is set');
+      return;
+    }
+    
     let savedName: string | null = null;
     
     // Primary: walletName — canonical Solana wallet key (prioritizes standalone wallets like Phantom)
-    const raw = window.localStorage.getItem('walletName');
     if (raw) {
       try {
         const p = JSON.parse(raw) as string | null;
+        console.log('[bridge-restore] Parsed walletName:', p, 'exists in wallets:', p ? walletNames.has(p) : false);
         if (p && walletNames.has(p)) savedName = p;
       } catch {
+        console.log('[bridge-restore] walletName not JSON, raw value:', raw, 'exists:', walletNames.has(raw));
         if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
       }
     }
     
     // Secondary: AptosWalletName for derived wallets (e.g. "Trust (Solana)")
-    if (!savedName) {
-      const aptosRaw = window.localStorage.getItem('AptosWalletName');
-      if (aptosRaw) {
-        try {
-          const parsed = JSON.parse(aptosRaw) as string | null;
-          const aptosName = typeof parsed === 'string' ? parsed : aptosRaw;
-          if (aptosName?.endsWith(' (Solana)')) {
-            const name = aptosName.slice(0, -' (Solana)'.length).trim();
-            if (name && walletNames.has(name)) savedName = name;
-          }
-        } catch {}
-      }
+    if (!savedName && aptosRaw) {
+      try {
+        const parsed = JSON.parse(aptosRaw) as string | null;
+        const aptosName = typeof parsed === 'string' ? parsed : aptosRaw;
+        if (aptosName?.endsWith(' (Solana)')) {
+          const name = aptosName.slice(0, -' (Solana)'.length).trim();
+          console.log('[bridge-restore] Derived from AptosWalletName:', name, 'exists:', walletNames.has(name));
+          if (name && walletNames.has(name)) savedName = name;
+        }
+      } catch {}
     }
     
     if (!savedName) {
-      console.log('[bridge] No saved Solana wallet found, available wallets:', Array.from(walletNames));
+      console.log('[bridge-restore] No valid saved wallet found');
       return;
     }
     
-    console.log('[bridge] Found saved Solana wallet:', savedName);
+    console.log('[bridge-restore] Will restore:', savedName);
 
     const tryRestore = () => {
-      if (solanaConnected || !wallets?.length) return;
-      const exists = wallets.some((w) => w.adapter.name === savedName);
-      if (!exists) {
-        console.log('[bridge] Wallet not in available list:', savedName);
+      if (solanaConnected || !wallets?.length) {
+        console.log('[bridge-restore] tryRestore: skip (connected or no wallets)');
         return;
       }
-      if (hasTriggeredRestore.current) return;
+      const exists = wallets.some((w) => w.adapter.name === savedName);
+      if (!exists) {
+        console.log('[bridge-restore] tryRestore: wallet not found:', savedName);
+        return;
+      }
+      if (hasTriggeredRestore.current) {
+        console.log('[bridge-restore] tryRestore: already triggered');
+        return;
+      }
       hasTriggeredRestore.current = true;
-      console.log('[bridge] Restoring Solana wallet:', savedName);
+      console.log('[bridge-restore] tryRestore: selecting and connecting:', savedName);
       select(savedName as WalletName);
-      setTimeout(() => connectSolana().catch(() => {}), 100);
-      setTimeout(() => connectSolana().catch(() => {}), 600);
+      setTimeout(() => {
+        console.log('[bridge-restore] Calling connectSolana (attempt 1)');
+        connectSolana().catch((e) => console.log('[bridge-restore] connect error 1:', e?.message));
+      }, 100);
+      setTimeout(() => {
+        console.log('[bridge-restore] Calling connectSolana (attempt 2)');
+        connectSolana().catch((e) => console.log('[bridge-restore] connect error 2:', e?.message));
+      }, 600);
     };
 
     tryRestore();
@@ -330,6 +359,16 @@ function BridgePageContent() {
 
   // Get Solana address
   const solanaAddress = solanaPublicKey?.toBase58() || null;
+  
+  // Debug log for connection state
+  useEffect(() => {
+    console.log('[bridge-state] Connection state changed:', {
+      solanaConnected,
+      solanaAddress,
+      solanaWalletName: solanaWallet?.adapter?.name,
+      walletCount: wallets?.length,
+    });
+  }, [solanaConnected, solanaAddress, solanaWallet, wallets]);
 
   // Aptos stored name (client-only, avoid hydration mismatch)
   const [storedAptosName, setStoredAptosName] = useState<string | null>(null);
@@ -534,6 +573,11 @@ function BridgePageContent() {
   }, [wallets]);
 
   const handleSolanaWalletSelect = async (walletName: string) => {
+    console.log('[bridge] handleSolanaWalletSelect called with:', walletName);
+    console.log('[bridge] Available wallets:', wallets.map(w => w.adapter.name));
+    console.log('[bridge] Current wallet:', solanaWallet?.adapter?.name);
+    console.log('[bridge] Connected:', solanaConnected);
+    
     try {
       setIsSolanaConnecting(true);
       
@@ -546,41 +590,55 @@ function BridgePageContent() {
         } catch {}
       }
       
+      // Find the wallet adapter
+      const targetWallet = wallets.find(w => w.adapter.name === walletName);
+      console.log('[bridge] Target wallet found:', targetWallet?.adapter?.name, 'readyState:', targetWallet?.readyState);
+      
+      if (!targetWallet) {
+        throw new Error(`Wallet ${walletName} not found in available wallets`);
+      }
+      
       select(walletName as WalletName);
       setIsSolanaDialogOpen(false);
       
-      // Wait a bit longer for the wallet to be selected before connecting
-      setTimeout(async () => {
+      // Poll for wallet selection, then connect
+      const maxAttempts = 10;
+      let attempt = 0;
+      
+      const tryConnect = async () => {
+        attempt++;
+        console.log('[bridge] Connection attempt', attempt, 'current wallet:', solanaWallet?.adapter?.name);
+        
         try {
           await connectSolana();
+          console.log('[bridge] connectSolana() succeeded');
           toast({
             title: "Wallet Connected",
             description: `Connected to ${walletName}`,
           });
+          setIsSolanaConnecting(false);
         } catch (error: any) {
-          // Retry once after a longer delay
-          setTimeout(async () => {
-            try {
-              await connectSolana();
-              toast({
-                title: "Wallet Connected",
-                description: `Connected to ${walletName}`,
-              });
-            } catch (retryError: any) {
-              toast({
-                variant: "destructive",
-                title: "Connection Failed",
-                description: retryError.message || "Failed to connect wallet",
-              });
-            } finally {
-              setIsSolanaConnecting(false);
-            }
-          }, 300);
-          return; // Don't set connecting to false yet, wait for retry
+          console.log('[bridge] connectSolana() failed:', error?.name, error?.message);
+          
+          if (attempt < maxAttempts) {
+            // Retry with increasing delay
+            setTimeout(tryConnect, 200 * attempt);
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Connection Failed",
+              description: error.message || "Failed to connect wallet",
+            });
+            setIsSolanaConnecting(false);
+          }
         }
-        setIsSolanaConnecting(false);
-      }, 200);
+      };
+      
+      // Start connection attempts after a short delay
+      setTimeout(tryConnect, 150);
+      
     } catch (error: any) {
+      console.log('[bridge] handleSolanaWalletSelect error:', error);
       setIsSolanaConnecting(false);
       toast({
         variant: "destructive",
