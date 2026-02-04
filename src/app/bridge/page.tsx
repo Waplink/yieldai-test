@@ -90,8 +90,8 @@ function BridgePageContent() {
   const aptosAccountRef = useRef(aptosAccount);
   useEffect(() => {
     // Track effective connection state (hook state OR adapter state)
-    solanaConnectedRef.current = solanaConnected || solanaWallet?.adapter?.connected;
-    solanaPublicKeyRef.current = solanaPublicKey || solanaWallet?.adapter?.publicKey;
+    solanaConnectedRef.current = solanaConnected || (solanaWallet?.adapter?.connected ?? false);
+    solanaPublicKeyRef.current = solanaPublicKey || solanaWallet?.adapter?.publicKey || null;
     signSolanaTransactionRef.current = signSolanaTransaction;
     solanaWalletRef.current = solanaWallet;
     aptosConnectedRef.current = aptosConnected;
