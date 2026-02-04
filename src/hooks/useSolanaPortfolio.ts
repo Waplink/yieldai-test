@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useWallet as useAptosWallet } from "@aptos-labs/wallet-adapter-react";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
 import { Token } from "@/lib/types/token";
 
@@ -12,7 +13,10 @@ interface SolanaPortfolioState {
 }
 
 export function useSolanaPortfolio(): SolanaPortfolioState {
-  const { wallet } = useWallet();
+  // 1) Aptos cross-chain wallet (Trust / derived) — даёт solanaWallet внутри себя.
+  const { wallet: aptosWallet } = useAptosWallet();
+  // 2) Обычный Solana-адаптер — независимое подключение Solana.
+  const { publicKey: solanaPublicKey } = useSolanaWallet();
   const [address, setAddress] = useState<string | null>(null);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [totalValueUsd, setTotalValueUsd] = useState<number | null>(null);
@@ -20,14 +24,19 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
   const addressRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const derivedAddress = getSolanaWalletAddress(wallet ?? null);
-    setAddress(derivedAddress);
-    addressRef.current = derivedAddress;
-    if (!derivedAddress) {
+    // Приоритет: если есть Aptos cross-chain (Trust) с solanaWallet внутри — считаем это "основным" адресом Solana.
+    // Если нет — fallback на обычный Solana-кошелёк из @solana/wallet-adapter-react.
+    const derivedAddress = getSolanaWalletAddress(aptosWallet ?? null);
+    const fallbackAddress = solanaPublicKey ? solanaPublicKey.toBase58() : null;
+    const effectiveAddress = derivedAddress ?? fallbackAddress;
+
+    setAddress(effectiveAddress);
+    addressRef.current = effectiveAddress;
+    if (!effectiveAddress) {
       setTokens([]);
       setTotalValueUsd(null);
     }
-  }, [wallet]);
+  }, [aptosWallet, solanaPublicKey]);
 
   const refresh = useCallback(async () => {
     if (!addressRef.current) {
