@@ -1787,9 +1787,9 @@ function BridgePageContent() {
               <div>{bridgeButtonAlert}</div>
             ) : null}
             walletSection={
-              effectiveSolanaConnected && solanaAddress ? (
-                <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
-                  {/* Solana Wallet */}
+              <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
+                {/* Solana Wallet: Connected or Connect Button */}
+                {effectiveSolanaConnected && solanaAddress ? (
                   <div>
                     <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
                       <div className="flex items-center gap-2 min-w-0">
@@ -1832,89 +1832,10 @@ function BridgePageContent() {
                       </div>
                     )}
                   </div>
-
-                  {/* Aptos Wallet: Derived or Native or Connect Button */}
-                  {showAptosAsConnected ? (
-                    <div>
-                      <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => !aptosConnecting && setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium text-muted-foreground shrink-0">
-                            Aptos {aptosNativeSelected && !aptosConnected ? "(Native)" : isDerivedWallet ? "(Derived)" : "(Native)"}
-                          </span>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={aptosConnecting}>
-                                {aptosConnecting ? "Connecting…" : (aptosAccount ? truncateAddress(aptosAccount.address.toString()) : (aptosNativeFallback ? truncateAddress(aptosNativeFallback.address) : "…"))}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2" disabled={!aptosAccount && !aptosNativeFallback}>
-                                <Copy className="h-4 w-4" /> Copy address
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2" disabled={aptosConnecting}>
-                                <LogOut className="h-4 w-4" /> Disconnect
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-transform text-muted-foreground",
-                            isAptosBalanceExpanded ? "transform rotate-0" : "transform -rotate-90"
-                          )}
-                        />
-                      </div>
-                      {isAptosBalanceExpanded && !aptosConnecting && (
-                        <div className="mt-2 pt-2 border-t">
-                          <div className="text-sm font-medium pb-2">
-                            {isAptosLoading ? '...' : formatCurrency(aptosTotalValue, 2)}
-                          </div>
-                          <ScrollArea className="max-h-48">
-                            {aptosTokens.length > 0 ? (
-                              <TokenList tokens={aptosTokens} disableDrag={true} />
-                            ) : (
-                              <div className="text-sm text-muted-foreground p-2">No tokens found</div>
-                            )}
-                          </ScrollArea>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="[&>button]:hidden">
-                        <WalletSelector />
-                      </div>
-                      <Button 
-                        size="sm" 
-                        className="w-full"
-                        disabled={isAptosConnecting}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Find and click the hidden WalletSelector button
-                          const wrapper = e.currentTarget.parentElement;
-                          const hiddenButton = wrapper?.querySelector('button') as HTMLElement;
-                          if (hiddenButton) {
-                            hiddenButton.click();
-                          }
-                        }}
-                      >
-                        {isAptosConnecting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Connecting...
-                          </>
-                        ) : (
-                          'Connect Aptos Wallet'
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : !effectiveSolanaConnected ? (
-                <div className="flex flex-col items-end gap-2">
+                ) : (
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" disabled={isSolanaConnecting}>
+                      <Button size="sm" className="w-full" disabled={isSolanaConnecting}>
                         {isSolanaConnecting ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1961,19 +1882,70 @@ function BridgePageContent() {
                       </div>
                     </DialogContent>
                   </Dialog>
+                )}
+
+                {/* Aptos Wallet: Connected or Connect Button (INDEPENDENT of Solana) */}
+                {showAptosAsConnected ? (
+                  <div>
+                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => !aptosConnecting && setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium text-muted-foreground shrink-0">
+                          Aptos {aptosNativeSelected && !aptosConnected ? "(Native)" : isDerivedWallet ? "(Derived)" : "(Native)"}
+                        </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={aptosConnecting}>
+                              {aptosConnecting ? "Connecting…" : (aptosAccount ? truncateAddress(aptosAccount.address.toString()) : (aptosNativeFallback ? truncateAddress(aptosNativeFallback.address) : "…"))}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2" disabled={!aptosAccount && !aptosNativeFallback}>
+                              <Copy className="h-4 w-4" /> Copy address
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2" disabled={aptosConnecting}>
+                              <LogOut className="h-4 w-4" /> Disconnect
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-transform text-muted-foreground",
+                          isAptosBalanceExpanded ? "transform rotate-0" : "transform -rotate-90"
+                        )}
+                      />
+                    </div>
+                    {isAptosBalanceExpanded && !aptosConnecting && (
+                      <div className="mt-2 pt-2 border-t">
+                        <div className="text-sm font-medium pb-2">
+                          {isAptosLoading ? '...' : formatCurrency(aptosTotalValue, 2)}
+                        </div>
+                        <ScrollArea className="max-h-48">
+                          {aptosTokens.length > 0 ? (
+                            <TokenList tokens={aptosTokens} disableDrag={true} />
+                          ) : (
+                            <div className="text-sm text-muted-foreground p-2">No tokens found</div>
+                          )}
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </div>
+                ) : (
                   <div className="relative">
                     <div className="[&>button]:hidden">
                       <WalletSelector />
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
+                    <Button 
+                      size="sm" 
+                      className="w-full"
                       disabled={isAptosConnecting}
                       onClick={(e) => {
                         e.stopPropagation();
                         const wrapper = e.currentTarget.parentElement;
-                        const hiddenButton = wrapper?.querySelector('div button') as HTMLElement | null;
-                        if (hiddenButton) hiddenButton.click();
+                        const hiddenButton = wrapper?.querySelector('button') as HTMLElement;
+                        if (hiddenButton) {
+                          hiddenButton.click();
+                        }
                       }}
                     >
                       {isAptosConnecting ? (
@@ -1986,8 +1958,8 @@ function BridgePageContent() {
                       )}
                     </Button>
                   </div>
-                </div>
-              ) : null
+                )}
+              </div>
             }
           />
 
