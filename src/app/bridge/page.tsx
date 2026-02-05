@@ -633,6 +633,12 @@ function BridgePageContent() {
               currentWalletName,
             });
             
+            // If already connected with the same wallet, skip reconnect
+            if (currentlyConnected && currentWalletName === walletName) {
+              console.log(`[handleDisconnectSolana] Already connected to ${walletName}, skipping attempt ${attempt}`);
+              return;
+            }
+            
             // Check if wallet exists in available wallets
             // Note: aptosWallets is captured from closure - this is intentional
             const walletToConnect = aptosWallets?.find(w => w.name === walletName);
