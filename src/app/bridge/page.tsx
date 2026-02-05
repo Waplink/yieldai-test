@@ -537,8 +537,11 @@ function BridgePageContent() {
   const aptosNativeSelected = Boolean(storedAptosName && !String(storedAptosName).trim().endsWith(" (Solana)"));
   // Check if fallback represents a native wallet (not derived from Solana)
   const fallbackIsNative = Boolean(aptosNativeFallback && !aptosNativeFallback.name.endsWith(' (Solana)'));
+  // Check if current Aptos wallet is derived (depends on Solana being connected)
+  const isCurrentAptosDerived = aptosWallet?.name?.endsWith(' (Solana)') ?? false;
   const showAptosAsConnected = Boolean(
-    (aptosConnected && aptosAccount) ||
+    // Adapter connected - but only count derived as connected if Solana is still connected
+    (aptosConnected && aptosAccount && (!isCurrentAptosDerived || effectiveSolanaConnected)) ||
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
     fallbackIsNative  // Simplified: if fallback exists and is native, show it regardless of storedAptosName
   );
@@ -553,7 +556,7 @@ function BridgePageContent() {
     console.log('[showAptosAsConnected] Debug:', {
       showAptosAsConnected,
       aptosConnecting,
-      condition1_adapterConnected: Boolean(aptosConnected && aptosAccount),
+      condition1_adapterConnectedAndNotDerivedWithoutSolana: Boolean(aptosConnected && aptosAccount && (!isCurrentAptosDerived || effectiveSolanaConnected)),
       condition2_walletMatch: Boolean(aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected),
       condition3_fallbackIsNative: fallbackIsNative,
       aptosConnected,
@@ -561,9 +564,11 @@ function BridgePageContent() {
       aptosWallet: aptosWallet?.name || null,
       storedAptosName,
       aptosNativeSelected,
+      isCurrentAptosDerived,
+      effectiveSolanaConnected,
       aptosNativeFallback: aptosNativeFallback ? { name: aptosNativeFallback.name, address: aptosNativeFallback.address.slice(0, 10) + '...' } : null,
     });
-  }, [showAptosAsConnected, aptosConnecting, aptosConnected, aptosAccount, aptosWallet, storedAptosName, aptosNativeSelected, fallbackIsNative, aptosNativeFallback]);
+  }, [showAptosAsConnected, aptosConnecting, aptosConnected, aptosAccount, aptosWallet, storedAptosName, aptosNativeSelected, fallbackIsNative, aptosNativeFallback, isCurrentAptosDerived, effectiveSolanaConnected]);
   
   // Track previous aptosConnected state to detect reconnection (false -> true transition)
   const prevAptosConnectedRef = useRef(aptosConnected);
