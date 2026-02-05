@@ -24,11 +24,19 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
   const addressRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Приоритет: если есть Aptos cross-chain (Trust) с solanaWallet внутри — считаем это "основным" адресом Solana.
+    // Приоритет: если есть Aptos cross-chain (Trust/Phantom) с solanaWallet внутри — считаем это "основным" адресом Solana.
     // Если нет — fallback на обычный Solana-кошелёк из @solana/wallet-adapter-react.
     const derivedAddress = getSolanaWalletAddress(aptosWallet ?? null);
     const fallbackAddress = solanaPublicKey ? solanaPublicKey.toBase58() : null;
     const effectiveAddress = derivedAddress ?? fallbackAddress;
+
+    console.log('[useSolanaPortfolio] Address detection:', {
+      aptosWalletName: aptosWallet?.name ?? null,
+      derivedAddress,
+      fallbackAddress,
+      effectiveAddress,
+      hasSolanaPublicKey: !!solanaPublicKey,
+    });
 
     setAddress(effectiveAddress);
     addressRef.current = effectiveAddress;
