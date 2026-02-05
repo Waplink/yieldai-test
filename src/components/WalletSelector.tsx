@@ -16,6 +16,8 @@ import {
   useWallet,
 } from "@aptos-labs/wallet-adapter-react";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
+import { WalletReadyState, WalletName } from "@solana/wallet-adapter-base";
+import { DialogDescription } from "./ui/dialog";
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,7 +59,7 @@ interface WalletSelectorProps extends WalletSortingOptions {
 
 export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSortingOptions }: WalletSelectorProps) {
   const { account, connected: aptosConnected, disconnect, wallet } = useWallet();
-  const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet, disconnect: disconnectSolana } = useSolanaWallet();
+  const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet, disconnect: disconnectSolana, wallets: solanaWallets, select: selectSolana, connect: connectSolana } = useSolanaWallet();
   const [internalDialogOpen, setInternalDialogOpen] = useState(false);
   
   // Use external control if provided, otherwise use internal state
@@ -65,6 +67,8 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   const setIsDialogOpen = onExternalOpenChange !== undefined ? onExternalOpenChange : setInternalDialogOpen;
   const [mounted, setMounted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
+  const [isSolanaConnecting, setIsSolanaConnecting] = useState(false);
   const { toast } = useToast();
 
   // Cross-chain Solana address (from Aptos derived wallet)
@@ -94,6 +98,61 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   }, [aptosConnected, solanaConnected]);
 
   const closeDialog = useCallback(() => setIsDialogOpen(false), []);
+  const closeSolanaDialog = useCallback(() => setIsSolanaDialogOpen(false), []);
+
+  // Available Solana wallets (excluding not detected)
+  const availableSolanaWallets = useMemo(() => {
+    const filtered = solanaWallets.filter(
+      (w) => w.readyState !== WalletReadyState.NotDetected
+    );
+    // Remove duplicates by name
+    const seen = new Set<string>();
+    return filtered.filter((w) => {
+      const name = w.adapter.name;
+      if (seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+  }, [solanaWallets]);
+
+  // Handle Solana wallet selection
+  const handleSolanaWalletSelect = useCallback(async (walletName: string) => {
+    try {
+      setIsSolanaConnecting(true);
+      selectSolana(walletName as WalletName);
+      setIsSolanaDialogOpen(false);
+      
+      // Auto-connect after selection
+      setTimeout(async () => {
+        try {
+          await connectSolana();
+          toast({
+            title: "Wallet Connected",
+            description: `Connected to ${walletName}`,
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Failed to connect wallet";
+          // Don't show error for user rejection
+          if (!message.includes("reject") && !message.includes("Reject")) {
+            toast({
+              variant: "destructive",
+              title: "Connection Failed",
+              description: message,
+            });
+          }
+        } finally {
+          setIsSolanaConnecting(false);
+        }
+      }, 100);
+    } catch (err: unknown) {
+      setIsSolanaConnecting(false);
+      toast({
+        variant: "destructive",
+        title: "Selection Failed",
+        description: err instanceof Error ? err.message : "Failed to select wallet",
+      });
+    }
+  }, [selectSolana, connectSolana, toast]);
 
   const copyAddress = useCallback(async () => {
     if (!account?.address) return;
@@ -253,7 +312,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
                   variant="ghost"
                   size="sm"
                   className="w-full justify-start gap-2"
-                  onClick={() => setIsDialogOpen(true)}
+                  onClick={() => setIsSolanaDialogOpen(true)}
                 >
                   Connect Solana
                 </Button>
@@ -327,6 +386,45 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
           <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
         </Dialog>
       )}
+
+      {/* Dialog for connecting Solana wallets */}
+      <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Solana Wallet</DialogTitle>
+            <DialogDescription>
+              Choose a wallet to connect to your Solana account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-4">
+            {availableSolanaWallets.length === 0 ? (
+              <div className="text-sm text-muted-foreground p-4 text-center">
+                No Solana wallets detected. Please install a wallet extension.
+              </div>
+            ) : (
+              availableSolanaWallets.map((w, i) => (
+                <Button
+                  key={`${w.adapter.name}-${i}`}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => handleSolanaWalletSelect(w.adapter.name)}
+                  disabled={isSolanaConnecting}
+                >
+                  <div className="flex items-center gap-2">
+                    {w.adapter.icon && (
+                      <img src={w.adapter.icon} alt={w.adapter.name} className="w-6 h-6" />
+                    )}
+                    <span>{w.adapter.name}</span>
+                    {w.readyState === WalletReadyState.Loadable && (
+                      <span className="ml-auto text-xs text-muted-foreground">(Install)</span>
+                    )}
+                  </div>
+                </Button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -34,11 +34,13 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
         name === 'WalletNotConnectedError' ||
         name === 'WalletDisconnectedError' ||
         name === 'WalletNotSelectedError' ||
+        message === 'Unexpected error' ||
         message.includes('WalletNotConnectedError') ||
         message.includes('WalletDisconnectedError') ||
         message.includes('WalletNotSelectedError') ||
         message.includes('User has rejected the request') ||
-        message.includes('User rejected');
+        message.includes('User rejected') ||
+        message.includes('Unexpected error');
       
       if (isBenignWalletError) {
         console.log('[WalletProvider] Suppressing benign wallet error:', name || message);
