@@ -20,6 +20,7 @@ interface PortfolioCardProps {
   tokens: Token[];
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
+  /** @deprecated No longer used - title is always "Aptos Wallet" */
   hasSolanaWallet?: boolean;
   /** Optional external control for hiding small assets; if not provided, component manages its own state */
   hideSmallAssets?: boolean;
@@ -33,6 +34,7 @@ export function PortfolioCard({
   tokens,
   onRefresh,
   isRefreshing,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hasSolanaWallet = false,
   hideSmallAssets,
   onHideSmallAssetsChange,
@@ -157,7 +159,7 @@ export function PortfolioCard({
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-500"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"></path><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"></path></svg>
-              {hasSolanaWallet ? 'Aptos Wallet' : 'Wallet'}
+              Aptos Wallet
             </CardTitle>
             <div className="flex items-center gap-2">
               <span className="text-lg">{formatCurrency(walletTotal, 2)}</span>

@@ -185,7 +185,9 @@ function MobileTabsContent() {
             <div className={tab === "assets" ? "block w-full max-w-full" : "hidden w-full max-w-full"}>
               <div className="p-4 space-y-4 w-full max-w-full">
                 <WalletSelector />
-                {account?.address ? (
+                
+                {/* Aptos wallet card and protocols - only when Aptos is connected */}
+                {account?.address && (
                   <>
                     <PortfolioCard 
                       totalValue={totalValue} 
@@ -194,17 +196,6 @@ function MobileTabsContent() {
                       isRefreshing={isRefreshing}
                       hasSolanaWallet={!!solanaAddress}
                     />
-                    {solanaAddress && (
-                      <div className="space-y-2">
-                        <SolanaWalletCard
-                          tokens={solanaTokens}
-                          totalValueUsd={solanaTotalValue}
-                          onRefresh={refreshSolana}
-                          isRefreshing={isSolanaLoading}
-                        />
-                        <SolanaSignMessageButton />
-                      </div>
-                    )}
                     {[
                       { 
                         component: HyperionPositionsList, 
@@ -283,10 +274,26 @@ function MobileTabsContent() {
                         />
                       ))}
                   </>
-                ) : (
+                )}
+                
+                {/* Solana wallet card - INDEPENDENT of Aptos */}
+                {solanaAddress && (
+                  <div className="space-y-2">
+                    <SolanaWalletCard
+                      tokens={solanaTokens}
+                      totalValueUsd={solanaTotalValue}
+                      onRefresh={refreshSolana}
+                      isRefreshing={isSolanaLoading}
+                    />
+                    <SolanaSignMessageButton />
+                  </div>
+                )}
+                
+                {/* Message when no wallets connected */}
+                {!account?.address && !solanaAddress && (
                   <div className="mt-6 p-4 bg-muted rounded-lg">
                     <p className="text-sm text-muted-foreground">
-                      Connect your Aptos wallet to view your assets and positions in DeFi protocols
+                      Connect your wallet to view your assets and positions in DeFi protocols
                     </p>
                   </div>
                 )}
