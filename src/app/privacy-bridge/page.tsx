@@ -83,8 +83,21 @@ function PrivacyBridgeContent() {
 
   const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
   const [isSolanaConnecting, setIsSolanaConnecting] = useState(false);
+  const [isAptosDialogOpen, setIsAptosDialogOpen] = useState(false);
+  const [isAptosConnecting, setIsAptosConnecting] = useState(false);
   const [isSolanaBalanceExpanded, setIsSolanaBalanceExpanded] = useState(false);
   const [isAptosBalanceExpanded, setIsAptosBalanceExpanded] = useState(false);
+  
+  // Restoring/Reconnecting states - show loading while wallets are being restored/reconnected
+  const [isSolanaRestoring, setIsSolanaRestoring] = useState(false);
+  const [isAptosRestoring, setIsAptosRestoring] = useState(false);
+  const [isSolanaReconnecting, setIsSolanaReconnecting] = useState(false);
+  const [isAptosReconnecting, setIsAptosReconnecting] = useState(false);
+  
+  // Get Solana address - prefer adapter state over hook state for reliability
+  const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
+  const solanaAdapterPublicKey = solanaWallet?.adapter?.publicKey;
+  const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
   const [privacyBalanceUsdc, setPrivacyBalanceUsdc] = useState<number | null>(null);
   const [privacyBalanceUsdcLoading, setPrivacyBalanceUsdcLoading] = useState(false);
   const [privacyBalanceUsdcError, setPrivacyBalanceUsdcError] = useState<string | null>(null);
@@ -104,6 +117,69 @@ function PrivacyBridgeContent() {
   useEffect(() => {
     setWalletConnectMounted(true);
   }, []);
+  
+  // Check if there's a saved wallet in localStorage on mount to show restoring indicator
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Already connected - no need to restore
+    if (solanaConnected || effectiveSolanaConnected) {
+      setIsSolanaRestoring(false);
+      return;
+    }
+    
+    // Check for saved Solana wallet
+    let hasSavedSolana = false;
+    try {
+      const raw = window.localStorage.getItem('walletName');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string' && parsed.length > 0) {
+          hasSavedSolana = true;
+        }
+      }
+    } catch {
+      // Also check if raw value is a valid wallet name
+      const raw = window.localStorage.getItem('walletName');
+      if (raw && typeof raw === 'string' && raw.length > 0 && raw.length < 50) {
+        hasSavedSolana = true;
+      }
+    }
+    
+    if (hasSavedSolana) {
+      setIsSolanaRestoring(true);
+      // Clear after 3s or when connected
+      const timeout = setTimeout(() => setIsSolanaRestoring(false), 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [solanaConnected, effectiveSolanaConnected]);
+  
+  // Same for Aptos
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    if (aptosConnected) {
+      setIsAptosRestoring(false);
+      return;
+    }
+    
+    let hasSavedAptos = false;
+    try {
+      const raw = window.localStorage.getItem('AptosWalletName');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string' && parsed.length > 0) {
+          hasSavedAptos = true;
+        }
+      }
+    } catch {}
+    
+    if (hasSavedAptos) {
+      setIsAptosRestoring(true);
+      const timeout = setTimeout(() => setIsAptosRestoring(false), 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [aptosConnected]);
 
   /** Один раз за сессию для текущего адреса — чтобы не дергать кошелёк на подпись после burn/mint */
   const lastFetchedBalanceForAddress = useRef<string | null>(null);
@@ -1185,24 +1261,22 @@ function PrivacyBridgeContent() {
                     </div>
                   ) : (
                   <div className="relative">
-                    <div className="[&>button]:hidden">
-                      <WalletSelector />
+                    <div className="hidden">
+                      <WalletSelector 
+                        externalOpen={isAptosDialogOpen} 
+                        onExternalOpenChange={setIsAptosDialogOpen} 
+                      />
                     </div>
                     <Button
                       size="sm"
                       className="w-full"
-                      disabled={aptosConnecting}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const wrapper = e.currentTarget.parentElement;
-                        const hiddenButton = wrapper?.querySelector("button") as HTMLElement;
-                        if (hiddenButton) hiddenButton.click();
-                      }}
+                      disabled={aptosConnecting || isAptosRestoring || isAptosReconnecting}
+                      onClick={() => setIsAptosDialogOpen(true)}
                     >
-                      {aptosConnecting ? (
+                      {aptosConnecting || isAptosRestoring || isAptosReconnecting ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Connecting...
+                          {isAptosRestoring ? 'Restoring...' : isAptosReconnecting ? 'Reconnecting...' : 'Connecting...'}
                         </>
                       ) : (
                         "Connect Aptos Wallet"
@@ -1218,11 +1292,11 @@ function PrivacyBridgeContent() {
                 {walletConnectMounted ? (
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" disabled={isSolanaConnecting}>
-                        {isSolanaConnecting ? (
+                      <Button size="sm" disabled={isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting}>
+                        {isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Connecting...
+                            {isSolanaRestoring ? 'Restoring...' : isSolanaReconnecting ? 'Reconnecting...' : 'Connecting...'}
                           </>
                         ) : (
                           "Connect Solana Wallet"
@@ -1271,24 +1345,22 @@ function PrivacyBridgeContent() {
                   </Button>
                 )}
                 <div className="relative">
-                  <div className="[&>button]:hidden">
-                    <WalletSelector />
+                  <div className="hidden">
+                    <WalletSelector 
+                      externalOpen={isAptosDialogOpen} 
+                      onExternalOpenChange={setIsAptosDialogOpen} 
+                    />
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={aptosConnecting}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const wrapper = e.currentTarget.parentElement;
-                      const hiddenButton = wrapper?.querySelector("div button") as HTMLElement | null;
-                      if (hiddenButton) hiddenButton.click();
-                    }}
+                    disabled={aptosConnecting || isAptosRestoring || isAptosReconnecting}
+                    onClick={() => setIsAptosDialogOpen(true)}
                   >
-                    {aptosConnecting ? (
+                    {aptosConnecting || isAptosRestoring || isAptosReconnecting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Connecting...
+                        {isAptosRestoring ? 'Restoring...' : isAptosReconnecting ? 'Reconnecting...' : 'Connecting...'}
                       </>
                     ) : (
                       "Connect Aptos Wallet"
