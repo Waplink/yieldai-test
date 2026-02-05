@@ -103,16 +103,28 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
       onError={(error) => {
         const message = typeof error === "string" ? error : (error?.message ?? "Unknown wallet error");
         const name = (error as { name?: string })?.name;
+        
+        // Debug log all errors
+        console.log('[WalletProvider] onError called:', { name, message, error });
+        
         // Don't show toast for expected user actions, auto-connect noise, or disconnect noise
         // WalletDisconnectedError / WalletNotConnectedError / WalletNotSelectedError могут лететь при ручном disconnect и не должны пугать пользователя.
+        // Also suppress "Unexpected error" which Trust wallet throws on disconnect
         if (
           message === "Unexpected error" ||
           message === "User has rejected the request" ||
           name === "WalletDisconnectedError" ||
           name === "WalletNotConnectedError" ||
           name === "WalletNotSelectedError" ||
-          (typeof message === "string" && (message.includes("WalletDisconnectedError") || message.includes("WalletNotConnectedError") || message.includes("WalletNotSelectedError")))
+          (typeof message === "string" && (
+            message.includes("WalletDisconnectedError") || 
+            message.includes("WalletNotConnectedError") || 
+            message.includes("WalletNotSelectedError") ||
+            message.includes("disconnect") ||
+            message.includes("Disconnect")
+          ))
         ) {
+          console.log('[WalletProvider] Suppressing error:', name || message);
           return;
         }
         console.error("Wallet error:", error);
