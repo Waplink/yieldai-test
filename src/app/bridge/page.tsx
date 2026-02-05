@@ -791,8 +791,10 @@ function BridgePageContent() {
       savedSolanaName = (typeof raw === "string" ? raw.trim() : null) || null;
     }
 
+    let disconnectSucceeded = false;
     try {
       await disconnectAptos();
+      disconnectSucceeded = true;
       toast({
         title: "Success",
         description: "Aptos wallet disconnected",
@@ -805,19 +807,35 @@ function BridgePageContent() {
         name === "WalletNotConnectedError" ||
         (typeof msg === "string" &&
           (msg.includes("WalletDisconnectedError") || msg.includes("WalletNotConnectedError")));
+      const isUserRejected =
+        msg === "User has rejected the request" ||
+        msg.includes("User rejected") ||
+        msg.includes("rejected the request");
+      
       if (isBenignDisconnect) {
         // Кошелёк уже считался отключённым — воспринимаем как успешный disconnect.
+        disconnectSucceeded = true;
         toast({
           title: "Success",
           description: "Aptos wallet disconnected",
         });
+      } else if (isUserRejected) {
+        // User explicitly rejected the disconnect - don't continue
+        console.log('[handleDisconnectAptos] User rejected disconnect, stopping');
+        return; // Stop execution, don't try to restore Solana
       } else {
         toast({
           variant: "destructive",
           title: "Error",
           description: msg || "Failed to disconnect Aptos wallet",
         });
+        return; // Stop execution on error
       }
+    }
+
+    // Only continue with Solana restore if disconnect actually succeeded
+    if (!disconnectSucceeded) {
+      return;
     }
 
     // Restore Solana walletName in localStorage if it was cleared by the Aptos derived disconnect cascade
