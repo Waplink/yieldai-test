@@ -896,18 +896,22 @@ function BridgePageContent() {
         msg === "User has rejected the request" ||
         msg.includes("User rejected") ||
         msg.includes("rejected the request");
-      
-      if (isBenignDisconnect) {
-        // Кошелёк уже считался отключённым — воспринимаем как успешный disconnect.
+
+      // Для derived-кошельков любые ошибки (кроме явного отказа пользователя) считаем мягкими:
+      // адаптер часто уже отключён, а ошибка не важна для UX.
+      const isDerivedSoftError = isDerived && !isUserRejected;
+
+      if (isUserRejected) {
+        // User explicitly rejected the disconnect - don't continue
+        console.log('[handleDisconnectAptos] User rejected disconnect, stopping');
+        return; // Stop execution, don't try to restore Solana
+      } else if (isBenignDisconnect || isDerivedSoftError) {
+        // Кошелёк уже считался отключённым или это мягкая ошибка для derived — считаем disconnect успешным.
         disconnectSucceeded = true;
         toast({
           title: "Success",
           description: "Aptos wallet disconnected",
         });
-      } else if (isUserRejected) {
-        // User explicitly rejected the disconnect - don't continue
-        console.log('[handleDisconnectAptos] User rejected disconnect, stopping');
-        return; // Stop execution, don't try to restore Solana
       } else {
         toast({
           variant: "destructive",
