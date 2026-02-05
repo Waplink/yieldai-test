@@ -585,9 +585,9 @@ function BridgePageContent() {
     console.log('[pendingAptosReconnect] Starting reconnect sequence for:', walletName);
     
     // Multiple reconnect attempts with increasing delays
-    // Always call connectAptos - let the adapter handle if already connected
+    // ALWAYS call connectAptos - let the adapter handle if already connected
+    // This is more reliable than checking state which might be stale or out of sync
     const attemptReconnect = (attempt: number) => {
-      // Use refs to get current values (not stale closure values)
       const currentlyConnected = aptosConnectedRef.current;
       const currentWalletName = aptosWalletNameRef.current;
       
@@ -597,21 +597,16 @@ function BridgePageContent() {
         currentWalletName,
       });
       
-      // Reconnect if disconnected OR connected to different wallet
-      if (!currentlyConnected || currentWalletName !== walletName) {
-        console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt})`);
-        connectAptos(walletName);
-      } else {
-        console.log(`[pendingAptosReconnect] Already connected correctly (attempt ${attempt})`);
-      }
+      // Always call connectAptos - the adapter will handle if already connected
+      console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt})`);
+      connectAptos(walletName);
     };
     
-    // Attempt with delays
-    // By now (1500ms after disconnect), the cascade should be complete
-    const t0 = setTimeout(() => attemptReconnect(1), 50);
-    const t1 = setTimeout(() => attemptReconnect(2), 300);
-    const t2 = setTimeout(() => attemptReconnect(3), 700);
-    const t3 = setTimeout(() => attemptReconnect(4), 1200);
+    // Attempt with longer delays to account for slow cascade disconnect
+    const t0 = setTimeout(() => attemptReconnect(1), 100);
+    const t1 = setTimeout(() => attemptReconnect(2), 500);
+    const t2 = setTimeout(() => attemptReconnect(3), 1500);
+    const t3 = setTimeout(() => attemptReconnect(4), 3000);
     
     setPendingAptosReconnect(null);
     
