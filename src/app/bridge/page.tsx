@@ -480,18 +480,32 @@ function BridgePageContent() {
     if (typeof window === "undefined") return;
     setStoredAptosName(getAptosWalletNameFromStorage());
   }, [aptosConnected, aptosWallet?.name]);
+  
+  // Sync storedAptosName when fallback is set (ensures consistency)
+  useEffect(() => {
+    if (aptosNativeFallback && aptosNativeFallback.name) {
+      console.log('[storedAptosName] Syncing with fallback:', aptosNativeFallback.name);
+      setStoredAptosName(aptosNativeFallback.name);
+      // Also ensure localStorage is updated
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("AptosWalletName", aptosNativeFallback.name);
+      }
+    }
+  }, [aptosNativeFallback]);
 
   // Show Aptos as connected when adapter says so OR when native is selected and connecting (so UI doesn't stay on button)
   // Also use fallback state when React state desyncs from actual adapter state (e.g., after Solana disconnect)
   const aptosNativeSelected = Boolean(storedAptosName && !String(storedAptosName).trim().endsWith(" (Solana)"));
+  // Check if fallback represents a native wallet (not derived from Solana)
+  const fallbackIsNative = Boolean(aptosNativeFallback && !aptosNativeFallback.name.endsWith(' (Solana)'));
   const showAptosAsConnected = Boolean(
     (aptosConnected && aptosAccount) ||
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
-    (aptosNativeFallback && aptosNativeFallback.name === storedAptosName && aptosNativeSelected)
+    fallbackIsNative  // Simplified: if fallback exists and is native, show it regardless of storedAptosName
   );
   const aptosConnecting = Boolean(
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected) ||
-    (aptosNativeFallback && !aptosConnected)
+    (fallbackIsNative && !aptosConnected)
   );
   
   // Track previous aptosConnected state to detect reconnection (false -> true transition)
