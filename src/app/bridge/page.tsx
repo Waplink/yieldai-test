@@ -2082,21 +2082,17 @@ function BridgePageContent() {
                   </div>
                 ) : (
                   <div className="relative">
-                    <div className="[&>button]:hidden">
-                      <WalletSelector />
+                    <div className="hidden">
+                      <WalletSelector 
+                        externalOpen={isAptosDialogOpen} 
+                        onExternalOpenChange={setIsAptosDialogOpen} 
+                      />
                     </div>
                     <Button 
                       size="sm" 
                       className="w-full"
                       disabled={isAptosConnecting || isAptosRestoring || isAptosReconnecting}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const wrapper = e.currentTarget.parentElement;
-                        const hiddenButton = wrapper?.querySelector('button') as HTMLElement;
-                        if (hiddenButton) {
-                          hiddenButton.click();
-                        }
-                      }}
+                      onClick={() => setIsAptosDialogOpen(true)}
                     >
                       {isAptosConnecting || isAptosRestoring || isAptosReconnecting ? (
                         <>

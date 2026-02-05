@@ -48,10 +48,21 @@ import {
 import { useToast } from "./ui/use-toast";
 import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
 
-export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
+interface WalletSelectorProps extends WalletSortingOptions {
+  /** External control for dialog open state */
+  externalOpen?: boolean;
+  /** Callback when dialog open state changes (for external control) */
+  onExternalOpenChange?: (open: boolean) => void;
+}
+
+export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSortingOptions }: WalletSelectorProps) {
   const { account, connected: aptosConnected, disconnect, wallet } = useWallet();
   const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet, disconnect: disconnectSolana } = useSolanaWallet();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [internalDialogOpen, setInternalDialogOpen] = useState(false);
+  
+  // Use external control if provided, otherwise use internal state
+  const isDialogOpen = externalOpen !== undefined ? externalOpen : internalDialogOpen;
+  const setIsDialogOpen = onExternalOpenChange !== undefined ? onExternalOpenChange : setInternalDialogOpen;
   const [mounted, setMounted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
@@ -197,117 +208,126 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
     (solanaAddress ? truncateAddress(solanaAddress) : null) ||
     "Unknown";
 
-  return isAnyWalletConnected ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button>
-          {displayAddress}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        {/* Solana Block */}
-        <div className="px-3 py-2 border-b">
-          <p className="text-xs font-medium uppercase text-muted-foreground mb-2">
-            Solana
-          </p>
-          {solanaAddress ? (
-            <>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="font-mono text-sm truncate">
-                  {truncateAddress(solanaAddress)}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 shrink-0"
-                  onClick={copySolanaAddress}
-                  aria-label="Copy Solana address"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
-                onClick={handleDisconnectSolanaOnly}
-              >
-                <LogOut className="h-4 w-4" /> Disconnect
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2"
-              onClick={() => setIsDialogOpen(true)}
-            >
-              Connect Solana
+  return (
+    <>
+      {isAnyWalletConnected ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>
+              {displayAddress}
             </Button>
-          )}
-        </div>
-
-        {/* Aptos Block */}
-        <div className="px-3 py-2">
-          <p className="text-xs font-medium uppercase text-muted-foreground mb-2">
-            Aptos
-          </p>
-          {aptosConnected && account?.address ? (
-            <>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="font-mono text-sm truncate">
-                  {truncateAddress(account.address.toString())}
-                </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            {/* Solana Block */}
+            <div className="px-3 py-2 border-b">
+              <p className="text-xs font-medium uppercase text-muted-foreground mb-2">
+                Solana
+              </p>
+              {solanaAddress ? (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-mono text-sm truncate">
+                      {truncateAddress(solanaAddress)}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0"
+                      onClick={copySolanaAddress}
+                      aria-label="Copy Solana address"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+                    onClick={handleDisconnectSolanaOnly}
+                  >
+                    <LogOut className="h-4 w-4" /> Disconnect
+                  </Button>
+                </>
+              ) : (
                 <Button
-                  size="icon"
                   variant="ghost"
-                  className="h-7 w-7 shrink-0"
-                  onClick={copyAddress}
-                  aria-label="Copy Aptos address"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  onClick={() => setIsDialogOpen(true)}
                 >
-                  <Copy className="h-4 w-4" />
+                  Connect Solana
                 </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
-                onClick={handleDisconnectAptosOnly}
-              >
-                <LogOut className="h-4 w-4" /> Disconnect
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2"
-              onClick={() => setIsDialogOpen(true)}
-            >
-              Connect Aptos
-            </Button>
-          )}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : (
-    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-      <DialogTrigger asChild>
-        <Button disabled={isConnecting}>
-          {isConnecting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            'Connect Wallet'
-          )}
-        </Button>
-      </DialogTrigger>
-      <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
-    </Dialog>
+              )}
+            </div>
 
-    
+            {/* Aptos Block */}
+            <div className="px-3 py-2">
+              <p className="text-xs font-medium uppercase text-muted-foreground mb-2">
+                Aptos
+              </p>
+              {aptosConnected && account?.address ? (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="font-mono text-sm truncate">
+                      {truncateAddress(account.address.toString())}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0"
+                      onClick={copyAddress}
+                      aria-label="Copy Aptos address"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+                    onClick={handleDisconnectAptosOnly}
+                  >
+                    <LogOut className="h-4 w-4" /> Disconnect
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  onClick={() => setIsDialogOpen(true)}
+                >
+                  Connect Aptos
+                </Button>
+              )}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button disabled={isConnecting}>
+              {isConnecting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect Wallet'
+              )}
+            </Button>
+          </DialogTrigger>
+          <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
+        </Dialog>
+      )}
+
+      {/* Dialog for connecting wallets when already connected to one chain */}
+      {isAnyWalletConnected && (
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
+        </Dialog>
+      )}
+    </>
   );
 }
 
