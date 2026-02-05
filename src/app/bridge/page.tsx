@@ -586,27 +586,45 @@ function BridgePageContent() {
     
     // Multiple reconnect attempts with increasing delays
     // ALWAYS call connectAptos - let the adapter handle if already connected
-    // This is more reliable than checking state which might be stale or out of sync
     const attemptReconnect = (attempt: number) => {
-      const currentlyConnected = aptosConnectedRef.current;
-      const currentWalletName = aptosWalletNameRef.current;
-      
-      console.log(`[pendingAptosReconnect] Attempt ${attempt}:`, {
-        walletName,
-        currentlyConnected,
-        currentWalletName,
-      });
-      
-      // Always call connectAptos - the adapter will handle if already connected
-      console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt})`);
-      connectAptos(walletName);
+      try {
+        const currentlyConnected = aptosConnectedRef.current;
+        const currentWalletName = aptosWalletNameRef.current;
+        
+        console.log(`[pendingAptosReconnect] Attempt ${attempt}:`, {
+          walletName,
+          currentlyConnected,
+          currentWalletName,
+        });
+        
+        // Always call connectAptos - the adapter will handle if already connected
+        console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt}) for:`, walletName);
+        connectAptos(walletName);
+        console.log(`[pendingAptosReconnect] connectAptos returned (attempt ${attempt})`);
+      } catch (e) {
+        console.error(`[pendingAptosReconnect] Error in attempt ${attempt}:`, e);
+      }
     };
     
+    console.log('[pendingAptosReconnect] Scheduling 4 reconnect attempts...');
+    
     // Attempt with longer delays to account for slow cascade disconnect
-    const t0 = setTimeout(() => attemptReconnect(1), 100);
-    const t1 = setTimeout(() => attemptReconnect(2), 500);
-    const t2 = setTimeout(() => attemptReconnect(3), 1500);
-    const t3 = setTimeout(() => attemptReconnect(4), 3000);
+    const t0 = setTimeout(() => {
+      console.log('[pendingAptosReconnect] Timeout 1 fired');
+      attemptReconnect(1);
+    }, 100);
+    const t1 = setTimeout(() => {
+      console.log('[pendingAptosReconnect] Timeout 2 fired');
+      attemptReconnect(2);
+    }, 500);
+    const t2 = setTimeout(() => {
+      console.log('[pendingAptosReconnect] Timeout 3 fired');
+      attemptReconnect(3);
+    }, 1500);
+    const t3 = setTimeout(() => {
+      console.log('[pendingAptosReconnect] Timeout 4 fired');
+      attemptReconnect(4);
+    }, 3000);
     
     setPendingAptosReconnect(null);
     
