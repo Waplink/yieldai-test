@@ -110,6 +110,8 @@ function BridgePageContent() {
   // Solana wallet selector state
   const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
   const [isSolanaConnecting, setIsSolanaConnecting] = useState(false);
+  // Force re-render counter - used after manual reconnect to update UI
+  const [, forceUpdate] = useState(0);
   // Aptos wallet selector state
   const [isAptosDialogOpen, setIsAptosDialogOpen] = useState(false);
   const [isAptosConnecting, setIsAptosConnecting] = useState(false);
@@ -163,14 +165,71 @@ function BridgePageContent() {
   // Priority: walletName first (standalone wallets like Phantom), then AptosWalletName for derived
   const hasTriggeredRestore = useRef(false);
   const prevSolanaConnected = useRef(solanaConnected);
+  const prevEffectiveSolanaConnected = useRef(effectiveSolanaConnected);
+  
+  // Pending reconnect after Aptos derived disconnect (set by handleDisconnectAptos)
+  const [pendingReconnectWallet, setPendingReconnectWallet] = useState<string | null>(null);
+  
+  // Effect to handle pending reconnect with fresh state
+  useEffect(() => {
+    if (!pendingReconnectWallet || effectiveSolanaConnected) {
+      if (pendingReconnectWallet && effectiveSolanaConnected) {
+        console.log('[pendingReconnect] Already connected, clearing pending');
+        setPendingReconnectWallet(null);
+      }
+      return;
+    }
+    
+    const walletToConnect = wallets.find(w => w.adapter.name === pendingReconnectWallet);
+    if (!walletToConnect) {
+      console.log('[pendingReconnect] Wallet not found:', pendingReconnectWallet);
+      setPendingReconnectWallet(null);
+      return;
+    }
+    
+    console.log('[pendingReconnect] Attempting reconnect for:', pendingReconnectWallet);
+    
+    const doReconnect = async () => {
+      try {
+        select(pendingReconnectWallet as WalletName);
+        
+        // Wait a bit for selection to take effect
+        await new Promise(r => setTimeout(r, 100));
+        
+        const adapter = walletToConnect.adapter;
+        if (!adapter.connected) {
+          console.log('[pendingReconnect] Calling adapter.connect()');
+          await adapter.connect();
+          console.log('[pendingReconnect] Adapter connected:', adapter.connected, adapter.publicKey?.toBase58());
+        }
+        
+        // Force re-render to pick up new state
+        forceUpdate(n => n + 1);
+        setPendingReconnectWallet(null);
+        
+      } catch (e) {
+        console.log('[pendingReconnect] Failed:', (e as Error)?.message);
+        setPendingReconnectWallet(null);
+      }
+    };
+    
+    doReconnect();
+  }, [pendingReconnectWallet, effectiveSolanaConnected, wallets, select]);
   
   // Reset restore flag when Solana disconnects (allows re-restore on reconnect attempt)
+  // Check both hook state AND effective state (adapter state) since Phantom may only update adapter
   useEffect(() => {
-    if (prevSolanaConnected.current && !solanaConnected) {
+    const wasConnected = prevSolanaConnected.current || prevEffectiveSolanaConnected.current;
+    const isNowDisconnected = !solanaConnected && !effectiveSolanaConnected;
+    
+    if (wasConnected && isNowDisconnected) {
+      console.log('[bridge-restore] Resetting hasTriggeredRestore flag (was connected, now disconnected)');
       hasTriggeredRestore.current = false;
     }
+    
     prevSolanaConnected.current = solanaConnected;
-  }, [solanaConnected]);
+    prevEffectiveSolanaConnected.current = effectiveSolanaConnected;
+  }, [solanaConnected, effectiveSolanaConnected]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -607,61 +666,9 @@ function BridgePageContent() {
             console.log('[handleDisconnectAptos] Need to restore, setting walletName:', savedSolanaName);
             window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
             
-            const walletToReconnect = wallets.find(w => w.adapter.name === savedSolanaName);
-            console.log('[handleDisconnectAptos] Wallet found:', !!walletToReconnect);
-            
-            if (walletToReconnect) {
-              console.log('[handleDisconnectAptos] Starting reconnect for:', savedSolanaName);
-              
-              // Select the wallet first
-              select(savedSolanaName as WalletName);
-              
-              // Try connecting directly on the adapter (more reliable than hook's connect)
-              setTimeout(async () => {
-                try {
-                  const adapter = walletToReconnect.adapter;
-                  console.log('[handleDisconnectAptos] Adapter state before connect:', {
-                    name: adapter.name,
-                    connected: adapter.connected,
-                    publicKey: adapter.publicKey?.toBase58(),
-                  });
-                  
-                  // Call adapter's connect directly
-                  if (!adapter.connected) {
-                    console.log('[handleDisconnectAptos] Calling adapter.connect()');
-                    await adapter.connect();
-                    console.log('[handleDisconnectAptos] Adapter connected:', {
-                      connected: adapter.connected,
-                      publicKey: adapter.publicKey?.toBase58(),
-                    });
-                  }
-                  
-                  // Also call hook's connect to sync React state
-                  console.log('[handleDisconnectAptos] Calling connectSolana() to sync state');
-                  await connectSolana();
-                  console.log('[handleDisconnectAptos] connectSolana() resolved');
-                  
-                } catch (e: unknown) {
-                  const err = e as { name?: string; message?: string };
-                  console.log('[handleDisconnectAptos] Connect failed:', err?.name, err?.message);
-                  
-                  // Retry
-                  setTimeout(async () => {
-                    try {
-                      select(savedSolanaName as WalletName);
-                      const adapter = walletToReconnect.adapter;
-                      if (!adapter.connected) {
-                        await adapter.connect();
-                      }
-                      await connectSolana();
-                      console.log('[handleDisconnectAptos] Retry succeeded');
-                    } catch (e2) {
-                      console.log('[handleDisconnectAptos] Retry failed:', (e2 as { name?: string })?.name);
-                    }
-                  }, 500);
-                }
-              }, 300);
-            }
+            // Trigger reconnect via state (useEffect will handle with fresh references)
+            console.log('[handleDisconnectAptos] Setting pendingReconnectWallet:', savedSolanaName);
+            setPendingReconnectWallet(savedSolanaName);
           } else {
             console.log('[handleDisconnectAptos] No restore needed, wallet still connected');
           }
