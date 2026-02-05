@@ -289,13 +289,20 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
       if (typeof console !== "undefined" && console.log) {
         console.log(LOG, "Calling connect() for", wallet.adapter.name);
       }
-      connect().catch((err) => {
-        if (typeof console !== "undefined" && console.warn) {
-          console.warn(LOG, "connect() failed:", err?.message ?? err);
-        }
-        // allow retries on next timer tick(s)
-        hasTriggeredConnect.current = false;
-      });
+      connect()
+        .then(() => {
+          console.log(LOG, "connect() succeeded for", wallet.adapter.name, {
+            adapterConnected: wallet.adapter.connected,
+            adapterPublicKey: wallet.adapter.publicKey?.toBase58() ?? null,
+          });
+        })
+        .catch((err) => {
+          if (typeof console !== "undefined" && console.warn) {
+            console.warn(LOG, "connect() failed:", err?.message ?? err);
+          }
+          // allow retries on next timer tick(s)
+          hasTriggeredConnect.current = false;
+        });
       return true;
     };
 
@@ -308,7 +315,22 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
         tryConnect();
       }, ms)
     );
-    return () => timers.forEach((t) => clearTimeout(t));
+    
+    // Also check adapter state periodically after connect attempt
+    const checkAdapterState = setTimeout(() => {
+      if (wallet?.adapter) {
+        console.log(LOG, "Post-connect adapter state check:", {
+          name: wallet.adapter.name,
+          connected: wallet.adapter.connected,
+          publicKey: wallet.adapter.publicKey?.toBase58() ?? null,
+        });
+      }
+    }, 2000);
+    
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      clearTimeout(checkAdapterState);
+    };
   }, [wallet, connected, connect]);
 
   return <>{children}</>;
