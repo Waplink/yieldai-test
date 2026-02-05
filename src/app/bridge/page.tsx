@@ -1007,6 +1007,10 @@ function BridgePageContent() {
     }
 
     let disconnectSucceeded = false;
+    
+    // If wallet is already undefined/disconnected, consider it a success
+    const walletAlreadyDisconnected = !aptosWallet;
+    
     try {
       await disconnectAptos();
       disconnectSucceeded = true;
@@ -1016,7 +1020,7 @@ function BridgePageContent() {
       });
     } catch (error: unknown) {
       const name = (error as { name?: string })?.name;
-      const msg = error instanceof Error ? error.message : "";
+      const msg = error instanceof Error ? error.message : String(error);
       const isBenignDisconnect =
         name === "WalletDisconnectedError" ||
         name === "WalletNotConnectedError" ||
@@ -1029,13 +1033,17 @@ function BridgePageContent() {
 
       // Для derived-кошельков любые ошибки (кроме явного отказа пользователя) считаем мягкими:
       // адаптер часто уже отключён, а ошибка не важна для UX.
+      // Also if wallet was already undefined, treat any error as benign.
       const isDerivedSoftError = isDerived && !isUserRejected;
+      const isAlreadyDisconnectedError = walletAlreadyDisconnected && !isUserRejected;
+
+      console.log('[handleDisconnectAptos] Error:', { name, msg, isDerived, isBenignDisconnect, isDerivedSoftError, isAlreadyDisconnectedError, walletAlreadyDisconnected });
 
       if (isUserRejected) {
         // User explicitly rejected the disconnect - don't continue
         console.log('[handleDisconnectAptos] User rejected disconnect, stopping');
         return; // Stop execution, don't try to restore Solana
-      } else if (isBenignDisconnect || isDerivedSoftError) {
+      } else if (isBenignDisconnect || isDerivedSoftError || isAlreadyDisconnectedError) {
         // Кошелёк уже считался отключённым или это мягкая ошибка для derived — считаем disconnect успешным.
         disconnectSucceeded = true;
         toast({
