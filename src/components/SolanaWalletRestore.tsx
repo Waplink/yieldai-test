@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet as useAptosWallet } from "@aptos-labs/wallet-adapter-react";
 import { WalletName, WalletReadyState } from "@solana/wallet-adapter-base";
 
 const STORAGE_KEY = "walletName";
@@ -36,9 +37,38 @@ function isWalletReady(readyState: WalletReadyState): boolean {
  */
 export function SolanaWalletRestore({ children }: { children: React.ReactNode }) {
   const { wallets, wallet, connected, select, connect } = useWallet();
+  const { connected: aptosConnected, wallet: aptosWallet } = useAptosWallet();
   const hasTriggeredSelect = useRef(false);
   const hasTriggeredConnect = useRef(false);
   const prevConnected = useRef<boolean>(connected);
+  
+  // Sync walletName when Aptos DERIVED wallet connects (e.g. "Trust (Solana)")
+  // This ensures walletName is set even when connecting via Aptos WalletSelector on main page
+  useEffect(() => {
+    if (typeof window === "undefined" || !aptosConnected || !aptosWallet) return;
+    
+    const aptosWalletName = aptosWallet.name;
+    if (!aptosWalletName || !aptosWalletName.endsWith(SOLANA_SUFFIX)) return;
+    
+    // Extract Solana wallet name from derived name (e.g. "Trust (Solana)" -> "Trust")
+    const solanaWalletName = aptosWalletName.slice(0, -SOLANA_SUFFIX.length).trim();
+    if (!solanaWalletName) return;
+    
+    // Check if this Solana wallet exists in our list
+    const solanaWalletExists = wallets.some(w => w.adapter.name === solanaWalletName);
+    if (!solanaWalletExists) return;
+    
+    try {
+      const currentWalletName = window.localStorage.getItem(STORAGE_KEY);
+      const expectedValue = JSON.stringify(solanaWalletName);
+      
+      // Set walletName if not already set correctly
+      if (currentWalletName !== expectedValue) {
+        console.log(LOG, "Syncing walletName from Aptos derived wallet:", solanaWalletName);
+        window.localStorage.setItem(STORAGE_KEY, expectedValue);
+      }
+    } catch {}
+  }, [aptosConnected, aptosWallet, wallets]);
 
   // If wallet gets disconnected externally (e.g. Trust disconnect cascade), allow restore again
   // Also clear skip flag to allow restore after external disconnect

@@ -556,17 +556,18 @@ function BridgePageContent() {
   
   // Effect to reconnect Aptos native after Solana disconnect cascade
   useEffect(() => {
-    if (!pendingAptosReconnect || aptosConnected) {
-      if (pendingAptosReconnect && aptosConnected) {
-        console.log('[pendingAptosReconnect] Already connected, clearing pending');
-        setPendingAptosReconnect(null);
-      }
-      return;
-    }
+    if (!pendingAptosReconnect) return;
     
     // Only reconnect if it's a native wallet (not derived)
     if (pendingAptosReconnect.endsWith(' (Solana)')) {
       console.log('[pendingAptosReconnect] Skipping derived wallet:', pendingAptosReconnect);
+      setPendingAptosReconnect(null);
+      return;
+    }
+    
+    // Check if already connected to this wallet
+    if (aptosConnected && aptosWallet?.name === pendingAptosReconnect) {
+      console.log('[pendingAptosReconnect] Already connected to:', pendingAptosReconnect);
       setPendingAptosReconnect(null);
       return;
     }
@@ -578,10 +579,10 @@ function BridgePageContent() {
       return;
     }
     
-    console.log('[pendingAptosReconnect] Reconnecting native Aptos:', pendingAptosReconnect);
+    console.log('[pendingAptosReconnect] Reconnecting native Aptos:', pendingAptosReconnect, 'aptosConnected:', aptosConnected);
     connectAptos(pendingAptosReconnect);
     setPendingAptosReconnect(null);
-  }, [pendingAptosReconnect, aptosConnected, aptosWallets, connectAptos]);
+  }, [pendingAptosReconnect, aptosConnected, aptosWallet?.name, aptosWallets, connectAptos]);
 
   const handleDisconnectSolana = async () => {
     // Get Aptos native wallet name from localStorage (most reliable source, independent of React state)
@@ -628,27 +629,17 @@ function BridgePageContent() {
       // If we had a native Aptos wallet, ensure it stays connected
       // Aptos native should be independent of Solana - only tied to AptosWalletName
       if (savedAptosNativeName) {
-        // Wait for any cascade effects to settle
+        // Wait for any cascade effects to settle (use longer delay to ensure cascade is complete)
         setTimeout(() => {
           if (typeof window === "undefined") return;
           
-          // Ensure AptosWalletName is preserved (it might have been cleared by cascade)
-          const currentAptosName = window.localStorage.getItem("AptosWalletName");
-          console.log('[handleDisconnectSolana] Post-disconnect check:', { 
-            savedAptosNativeName, 
-            currentAptosName,
-            aptosConnected,
-          });
+          // Always ensure AptosWalletName is set
+          console.log('[handleDisconnectSolana] Post-disconnect: restoring AptosWalletName:', savedAptosNativeName);
+          window.localStorage.setItem("AptosWalletName", savedAptosNativeName);
           
-          // Restore AptosWalletName if it was cleared
-          if (!currentAptosName) {
-            console.log('[handleDisconnectSolana] Restoring AptosWalletName:', savedAptosNativeName);
-            window.localStorage.setItem("AptosWalletName", savedAptosNativeName);
-          }
-          
-          // Trigger reconnect via state
+          // Always trigger reconnect - the effect will handle if already connected
           setPendingAptosReconnect(savedAptosNativeName);
-        }, 400);
+        }, 600);
       }
       
     } catch (error) {
