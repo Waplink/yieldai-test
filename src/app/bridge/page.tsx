@@ -494,12 +494,23 @@ function BridgePageContent() {
     (aptosNativeFallback && !aptosConnected)
   );
   
-  // Clear fallback when Aptos actually reconnects
+  // Track previous aptosConnected state to detect reconnection (false -> true transition)
+  const prevAptosConnectedRef = useRef(aptosConnected);
+  
+  // Clear fallback only when Aptos reconnects AFTER being disconnected (false -> true)
+  // This prevents clearing the fallback when it's set while still connected
   useEffect(() => {
-    if (aptosConnected && aptosAccount && aptosNativeFallback) {
-      console.log('[aptosNativeFallback] Clearing fallback, adapter reconnected:', aptosAccount.address.toString());
+    const wasDisconnected = !prevAptosConnectedRef.current;
+    const isNowConnected = aptosConnected && aptosAccount;
+    
+    // Only clear fallback on actual reconnection (was disconnected, now connected)
+    if (wasDisconnected && isNowConnected && aptosNativeFallback) {
+      console.log('[aptosNativeFallback] Clearing fallback, adapter reconnected after disconnect:', aptosAccount.address.toString());
       setAptosNativeFallback(null);
     }
+    
+    // Update previous state ref
+    prevAptosConnectedRef.current = aptosConnected;
   }, [aptosConnected, aptosAccount, aptosNativeFallback]);
 
   const DOMAIN_APTOS = 9;
