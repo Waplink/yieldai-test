@@ -389,7 +389,20 @@ function BridgePageContent() {
     const exists = aptosWallets.some((w) => w.name === stored);
     if (!exists) return;
     hasRestoredNativeAptosRef.current = true;
-    connectAptos(stored);
+    // Wrap in async IIFE to catch errors (user may reject popup)
+    (async () => {
+      try {
+        await connectAptos(stored);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Silently ignore user rejection and already connected errors
+        if (msg.includes("User") || msg.includes("rejected") || msg.includes("already connected")) {
+          console.log('[native-aptos-restore] User rejected or already connected:', msg);
+        } else {
+          console.error('[native-aptos-restore] Connect error:', e);
+        }
+      }
+    })();
   }, [aptosWallets, aptosConnected, aptosWallet?.name, connectAptos]);
   useEffect(() => {
     // Use effectiveSolanaConnected to account for adapter state desync
@@ -407,7 +420,20 @@ function BridgePageContent() {
     const derived = aptosWallets.find((w) => w.name === derivedNameForCurrentSolana);
     if (derived && !hasTriedAutoConnectDerived.current) {
       hasTriedAutoConnectDerived.current = true;
-      connectAptos(derived.name);
+      // Wrap in async IIFE to catch errors (user may reject popup)
+      (async () => {
+        try {
+          await connectAptos(derived.name);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          // Silently ignore user rejection and already connected errors
+          if (msg.includes("User") || msg.includes("rejected") || msg.includes("already connected")) {
+            console.log('[derived-auto-connect] User rejected or already connected:', msg);
+          } else {
+            console.error('[derived-auto-connect] Connect error:', e);
+          }
+        }
+      })();
     }
   }, [effectiveSolanaConnected, aptosConnected, aptosWallets, connectAptos, solanaWallet]);
 
@@ -425,7 +451,20 @@ function BridgePageContent() {
     if (String(stored).trim().endsWith(" (Solana)")) return; // only resync native
     if (hasTriedAptosResyncRef.current) return;
     hasTriedAptosResyncRef.current = true;
-    connectAptos(aptosWallet.name);
+    // Wrap in async IIFE to catch errors (user may reject popup)
+    (async () => {
+      try {
+        await connectAptos(aptosWallet.name);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Silently ignore user rejection and already connected errors
+        if (msg.includes("User") || msg.includes("rejected") || msg.includes("already connected")) {
+          console.log('[aptos-resync] User rejected or already connected:', msg);
+        } else {
+          console.error('[aptos-resync] Connect error:', e);
+        }
+      }
+    })();
   }, [aptosConnected, aptosWallet, connectAptos]);
 
   // Suppress WalletDisconnectedError from wallet adapters (Aptos derived disconnect triggers Solana disconnect on Vercel).
