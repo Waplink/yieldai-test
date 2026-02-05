@@ -5,6 +5,7 @@ import { SolanaWalletCard } from "./portfolio/SolanaWalletCard";
 import { SolanaSignMessageButton } from "./SolanaSignMessageButton";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useEffect, useState, useCallback } from "react";
+import { useAptosNativeRestore } from "@/hooks/useAptosNativeRestore";
 import { AptosPortfolioService } from "@/lib/services/aptos/portfolio";
 import { Token } from "@/lib/types/token";
 import { Logo } from "./ui/logo";
@@ -35,7 +36,10 @@ import { CollapsibleControls } from "@/components/ui/collapsible-controls";
 import { cn } from "@/lib/utils";
 
 export default function Sidebar() {
-  const { account } = useWallet();
+  // Use native restore hook to ensure native Aptos wallets are reconnected
+  const { account } = useAptosNativeRestore();
+  // Also keep useWallet for other functionality
+  useWallet(); // Keep adapter state synced
   const {
     address: solanaAddress,
     tokens: solanaTokens,

@@ -18,6 +18,7 @@ import { PositionsList as AavePositionsList } from "./protocols/aave/PositionsLi
 import { PositionsList as MoarPositionsList } from "./protocols/moar/PositionsList";
 import { PositionsList as ThalaPositionsList } from "./protocols/thala/PositionsList";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
+import { useAptosNativeRestore } from "@/hooks/useAptosNativeRestore";
 import { AptosPortfolioService } from "@/lib/services/aptos/portfolio";
 import { Token } from "@/lib/types/token";
 import { Logo } from "./ui/logo";
@@ -28,7 +29,10 @@ import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 
 function MobileTabsContent() {
   const [tab, setTab] = useState<"ideas" | "assets" | "chat">("assets");
-  const { account } = useWallet();
+  // Use native restore hook to ensure native Aptos wallets are reconnected
+  const { account } = useAptosNativeRestore();
+  // Also keep useWallet for other functionality
+  useWallet(); // Keep adapter state synced
   const {
     address: solanaAddress,
     tokens: solanaTokens,
