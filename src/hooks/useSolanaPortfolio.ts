@@ -16,7 +16,7 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
   // 1) Aptos cross-chain wallet (Trust / derived) — даёт solanaWallet внутри себя.
   const { wallet: aptosWallet } = useAptosWallet();
   // 2) Обычный Solana-адаптер — независимое подключение Solana.
-  const { publicKey: solanaPublicKey } = useSolanaWallet();
+  const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet } = useSolanaWallet();
   const [address, setAddress] = useState<string | null>(null);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [totalValueUsd, setTotalValueUsd] = useState<number | null>(null);
@@ -36,6 +36,10 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
       fallbackAddress,
       effectiveAddress,
       hasSolanaPublicKey: !!solanaPublicKey,
+      solanaConnected,
+      solanaWalletName: solanaWallet?.adapter?.name ?? null,
+      solanaAdapterConnected: solanaWallet?.adapter?.connected ?? false,
+      solanaAdapterPublicKey: solanaWallet?.adapter?.publicKey?.toBase58() ?? null,
     });
 
     setAddress(effectiveAddress);
@@ -44,7 +48,7 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
       setTokens([]);
       setTotalValueUsd(null);
     }
-  }, [aptosWallet, solanaPublicKey]);
+  }, [aptosWallet, solanaPublicKey, solanaConnected, solanaWallet]);
 
   const refresh = useCallback(async () => {
     if (!addressRef.current) {

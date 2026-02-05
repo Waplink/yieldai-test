@@ -2,7 +2,6 @@
 
 import { WalletProvider as SolanaWalletProvider, ConnectionProvider } from "@solana/wallet-adapter-react";
 import {
-  PhantomWalletAdapter,
   SolflareWalletAdapter,
   CoinbaseWalletAdapter,
   TorusWalletAdapter,
@@ -40,12 +39,10 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
     []
   );
   
-  // Most wallets register themselves as Standard Wallets automatically,
-  // but Phantom may not work correctly when Aptos cross-chain is also enabled.
-  // Explicitly include PhantomWalletAdapter to ensure Phantom Solana works independently.
+  // Most wallets (Phantom, Trust, OKX) register themselves as Standard Wallets automatically.
+  // We only include wallets that don't auto-register to avoid conflicts.
   const wallets = useMemo(
     () => [
-      new PhantomWalletAdapter(),
       new SolflareWalletAdapter(),
       new CoinbaseWalletAdapter(),
       new TorusWalletAdapter(),
