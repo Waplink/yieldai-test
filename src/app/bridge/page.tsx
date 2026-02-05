@@ -115,6 +115,13 @@ function BridgePageContent() {
   // Aptos wallet selector state
   const [isAptosDialogOpen, setIsAptosDialogOpen] = useState(false);
   const [isAptosConnecting, setIsAptosConnecting] = useState(false);
+  
+  // Fallback state for Aptos native when React state desyncs (e.g., after Solana disconnect)
+  // This keeps track of the Aptos native wallet info so UI can show it while adapter reconnects
+  const [aptosNativeFallback, setAptosNativeFallback] = useState<{
+    address: string;
+    name: string;
+  } | null>(null);
 
   // Balance expansion state
   const [isSolanaBalanceExpanded, setIsSolanaBalanceExpanded] = useState(false);
@@ -475,12 +482,25 @@ function BridgePageContent() {
   }, [aptosConnected, aptosWallet?.name]);
 
   // Show Aptos as connected when adapter says so OR when native is selected and connecting (so UI doesn't stay on button)
+  // Also use fallback state when React state desyncs from actual adapter state (e.g., after Solana disconnect)
   const aptosNativeSelected = Boolean(storedAptosName && !String(storedAptosName).trim().endsWith(" (Solana)"));
   const showAptosAsConnected = Boolean(
     (aptosConnected && aptosAccount) ||
-    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected)
+    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
+    (aptosNativeFallback && aptosNativeFallback.name === storedAptosName && aptosNativeSelected)
   );
-  const aptosConnecting = Boolean(aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected);
+  const aptosConnecting = Boolean(
+    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected) ||
+    (aptosNativeFallback && !aptosConnected)
+  );
+  
+  // Clear fallback when Aptos actually reconnects
+  useEffect(() => {
+    if (aptosConnected && aptosAccount && aptosNativeFallback) {
+      console.log('[aptosNativeFallback] Clearing fallback, adapter reconnected:', aptosAccount.address.toString());
+      setAptosNativeFallback(null);
+    }
+  }, [aptosConnected, aptosAccount, aptosNativeFallback]);
 
   const DOMAIN_APTOS = 9;
 
@@ -534,9 +554,10 @@ function BridgePageContent() {
   };
 
   const copyAptosAddress = async () => {
-    if (!aptosAccount?.address) return;
+    const address = aptosAccount?.address?.toString() || aptosNativeFallback?.address;
+    if (!address) return;
     try {
-      await navigator.clipboard.writeText(aptosAccount.address.toString());
+      await navigator.clipboard.writeText(address);
       toast({
         title: "Success",
         description: "Copied Aptos address to clipboard",
@@ -594,6 +615,17 @@ function BridgePageContent() {
     }
     
     console.log('[handleDisconnectSolana] Starting disconnect, savedAptosNativeName:', savedAptosNativeName);
+    
+    // Save Aptos native wallet info to fallback state BEFORE disconnecting
+    // This ensures UI can show the wallet while React state potentially desyncs
+    if (savedAptosNativeName && aptosConnected && aptosAccount) {
+      const fallbackInfo = {
+        address: aptosAccount.address.toString(),
+        name: savedAptosNativeName,
+      };
+      console.log('[handleDisconnectSolana] Setting aptosNativeFallback:', fallbackInfo);
+      setAptosNativeFallback(fallbackInfo);
+    }
     
     try {
       if (typeof window !== "undefined") {
@@ -722,6 +754,8 @@ function BridgePageContent() {
       } catch {}
     }
     setStoredAptosName(null);
+    // Clear Aptos native fallback since user explicitly disconnected
+    setAptosNativeFallback(null);
 
     // When disconnecting Aptos derived, Trust (and on Vercel) can disconnect Solana and clear walletName.
     // Save Solana name so we can restore connection and localStorage after.
@@ -1701,11 +1735,11 @@ function BridgePageContent() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                               <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate" disabled={aptosConnecting}>
-                                {aptosConnecting ? "Connecting…" : aptosAccount ? truncateAddress(aptosAccount.address.toString()) : "…"}
+                                {aptosConnecting ? "Connecting…" : (aptosAccount ? truncateAddress(aptosAccount.address.toString()) : (aptosNativeFallback ? truncateAddress(aptosNativeFallback.address) : "…"))}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2" disabled={!aptosAccount}>
+                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2" disabled={!aptosAccount && !aptosNativeFallback}>
                                 <Copy className="h-4 w-4" /> Copy address
                               </DropdownMenuItem>
                               <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2" disabled={aptosConnecting}>
