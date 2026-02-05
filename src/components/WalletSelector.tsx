@@ -140,16 +140,6 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
     }
   }, [aptosConnected, solanaConnected, disconnect, disconnectSolana, toast]);
 
-  if (!mounted) {
-    return null;
-  }
-
-  // Determine what address to show in the button
-  const displayAddress = account?.ansName || 
-    truncateAddress(account?.address?.toString()) || 
-    (solanaAddress ? truncateAddress(solanaAddress) : null) ||
-    "Unknown";
-
   // Handler for disconnecting only Solana
   const handleDisconnectSolanaOnly = useCallback(async () => {
     try {
@@ -196,6 +186,16 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
       });
     }
   }, [aptosConnected, disconnect, toast]);
+
+  if (!mounted) {
+    return null;
+  }
+
+  // Determine what address to show in the button
+  const displayAddress = account?.ansName || 
+    truncateAddress(account?.address?.toString()) || 
+    (solanaAddress ? truncateAddress(solanaAddress) : null) ||
+    "Unknown";
 
   return isAnyWalletConnected ? (
     <DropdownMenu>
