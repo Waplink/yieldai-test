@@ -548,6 +548,23 @@ function BridgePageContent() {
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected)
   );
   
+  // Debug log for showAptosAsConnected
+  useEffect(() => {
+    console.log('[showAptosAsConnected] Debug:', {
+      showAptosAsConnected,
+      aptosConnecting,
+      condition1_adapterConnected: Boolean(aptosConnected && aptosAccount),
+      condition2_walletMatch: Boolean(aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected),
+      condition3_fallbackIsNative: fallbackIsNative,
+      aptosConnected,
+      aptosAccount: aptosAccount?.address?.toString() || null,
+      aptosWallet: aptosWallet?.name || null,
+      storedAptosName,
+      aptosNativeSelected,
+      aptosNativeFallback: aptosNativeFallback ? { name: aptosNativeFallback.name, address: aptosNativeFallback.address.slice(0, 10) + '...' } : null,
+    });
+  }, [showAptosAsConnected, aptosConnecting, aptosConnected, aptosAccount, aptosWallet, storedAptosName, aptosNativeSelected, fallbackIsNative, aptosNativeFallback]);
+  
   // Track previous aptosConnected state to detect reconnection (false -> true transition)
   const prevAptosConnectedRef = useRef(aptosConnected);
   
