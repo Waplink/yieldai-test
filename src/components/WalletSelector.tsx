@@ -15,6 +15,7 @@ import {
   truncateAddress,
   useWallet,
 } from "@aptos-labs/wallet-adapter-react";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -48,13 +49,27 @@ import { useToast } from "./ui/use-toast";
 import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
 
 export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
-  const { account, connected, disconnect, wallet } = useWallet();
+  const { account, connected: aptosConnected, disconnect, wallet } = useWallet();
+  const { publicKey: solanaPublicKey, connected: solanaConnected, wallet: solanaWallet, disconnect: disconnectSolana } = useSolanaWallet();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
 
-  const solanaAddress = useMemo(() => getSolanaWalletAddress(wallet), [wallet]);
+  // Cross-chain Solana address (from Aptos derived wallet)
+  const crossChainSolanaAddress = useMemo(() => getSolanaWalletAddress(wallet), [wallet]);
+  
+  // Direct Solana address (from Solana adapter)
+  const directSolanaAddress = useMemo(() => solanaPublicKey?.toBase58() ?? null, [solanaPublicKey]);
+  
+  // Also check adapter state directly for Phantom
+  const adapterSolanaAddress = useMemo(() => solanaWallet?.adapter?.publicKey?.toBase58() ?? null, [solanaWallet]);
+  
+  // Effective Solana address - prefer cross-chain, then direct, then adapter
+  const solanaAddress = crossChainSolanaAddress ?? directSolanaAddress ?? adapterSolanaAddress;
+  
+  // Check if any wallet is connected
+  const isAnyWalletConnected = aptosConnected || solanaConnected || !!solanaAddress;
 
   useEffect(() => {
     setMounted(true);
@@ -62,10 +77,10 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
 
   // Reset connecting state when wallet connects
   useEffect(() => {
-    if (connected) {
+    if (aptosConnected || solanaConnected) {
       // connecting state from wallet adapter will be reset automatically
     }
-  }, [connected]);
+  }, [aptosConnected, solanaConnected]);
 
   const closeDialog = useCallback(() => setIsDialogOpen(false), []);
 
@@ -105,13 +120,17 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
 
   const handleDisconnect = useCallback(async () => {
     try {
-      if (connected) {
+      // Disconnect both Aptos and Solana if connected
+      if (aptosConnected) {
         await disconnect();
-        toast({
-          title: "Success",
-          description: "Wallet disconnected successfully",
-        });
       }
+      if (solanaConnected) {
+        await disconnectSolana();
+      }
+      toast({
+        title: "Success",
+        description: "Wallet disconnected successfully",
+      });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -119,46 +138,82 @@ export function WalletSelector(walletSortingOptions: WalletSortingOptions) {
         description: error instanceof Error ? error.message : "Failed to disconnect wallet",
       });
     }
-  }, [connected, disconnect, toast]);
+  }, [aptosConnected, solanaConnected, disconnect, disconnectSolana, toast]);
 
   if (!mounted) {
     return null;
   }
 
-  return connected ? (
+  // Determine what address to show in the button
+  const displayAddress = account?.ansName || 
+    truncateAddress(account?.address?.toString()) || 
+    (solanaAddress ? truncateAddress(solanaAddress) : null) ||
+    "Unknown";
+
+  return isAnyWalletConnected ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button>
-          {account?.ansName ||
-            truncateAddress(account?.address?.toString()) ||
-            "Unknown"}
+          {displayAddress}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {/* Show Aptos address if connected */}
+        {aptosConnected && account?.address && (
+          <div className="px-4 py-3 text-sm border-b">
+            <p className="text-xs uppercase text-muted-foreground">
+              Aptos
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="font-mono text-xs">
+                {truncateAddress(account.address.toString())}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                onClick={copyAddress}
+                aria-label="Copy Aptos address"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        )}
+        {/* Show Solana address if available */}
         {solanaAddress && (
           <div className="px-4 py-3 text-sm">
             <p className="text-xs uppercase text-muted-foreground">
-              Cross-chain Solana wallet
+              {crossChainSolanaAddress ? "Cross-chain Solana" : "Solana"}
             </p>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-2">
               <span className="font-mono text-xs">
                 {truncateAddress(solanaAddress)}
               </span>
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 onClick={copySolanaAddress}
                 aria-label="Copy Solana address"
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-3 w-3" />
               </Button>
             </div>
           </div>
         )}
-        <DropdownMenuItem onSelect={copyAddress} className="gap-2">
-          <Copy className="h-4 w-4" /> Copy address
-        </DropdownMenuItem>
+        {/* Copy address menu item - only show if Aptos connected */}
+        {aptosConnected && (
+          <DropdownMenuItem onSelect={copyAddress} className="gap-2">
+            <Copy className="h-4 w-4" /> Copy Aptos address
+          </DropdownMenuItem>
+        )}
+        {/* Copy Solana address menu item */}
+        {solanaAddress && (
+          <DropdownMenuItem onSelect={copySolanaAddress} className="gap-2">
+            <Copy className="h-4 w-4" /> Copy Solana address
+          </DropdownMenuItem>
+        )}
         {wallet && isAptosConnectWallet(wallet) && (
           <DropdownMenuItem asChild>
             <a
