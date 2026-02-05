@@ -633,10 +633,11 @@ function BridgePageContent() {
               currentWalletName,
             });
             
-            // If already connected with the same wallet, skip reconnect
+            // Note: Even if ref shows connected, React state may be out of sync
+            // So we still call connectAptos to sync the state
+            // The adapter will handle "already connected" gracefully
             if (currentlyConnected && currentWalletName === walletName) {
-              console.log(`[handleDisconnectSolana] Already connected to ${walletName}, skipping attempt ${attempt}`);
-              return;
+              console.log(`[handleDisconnectSolana] Ref shows connected to ${walletName}, but calling connectAptos to sync React state (attempt ${attempt})`);
             }
             
             // Check if wallet exists in available wallets
@@ -654,8 +655,13 @@ function BridgePageContent() {
             }
             
             console.log(`[handleDisconnectSolana] Calling connectAptos (attempt ${attempt}) for:`, walletName);
-            connectAptos(walletName);
-            console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
+            try {
+              connectAptos(walletName);
+              console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
+            } catch (connectError) {
+              // Ignore "already connected" errors - we just want to sync React state
+              console.log(`[handleDisconnectSolana] connectAptos error (attempt ${attempt}), likely already connected:`, connectError);
+            }
           } catch (e) {
             console.error(`[handleDisconnectSolana] Error in attempt ${attempt}:`, e);
           }
