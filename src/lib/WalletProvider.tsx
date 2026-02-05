@@ -21,6 +21,36 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
     setupAutomaticSolanaWalletDerivation({
       defaultNetwork: Network.MAINNET,
     });
+    
+    // Global handler to suppress benign wallet adapter promise rejections
+    // These errors are thrown internally by wallet adapters and can't be caught elsewhere
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const error = event.reason;
+      const name = error?.name || '';
+      const message = error?.message || String(error) || '';
+      
+      // List of benign wallet errors that should be suppressed
+      const isBenignWalletError = 
+        name === 'WalletNotConnectedError' ||
+        name === 'WalletDisconnectedError' ||
+        name === 'WalletNotSelectedError' ||
+        message.includes('WalletNotConnectedError') ||
+        message.includes('WalletDisconnectedError') ||
+        message.includes('WalletNotSelectedError') ||
+        message.includes('User has rejected the request') ||
+        message.includes('User rejected');
+      
+      if (isBenignWalletError) {
+        console.log('[WalletProvider] Suppressing benign wallet error:', name || message);
+        event.preventDefault(); // Prevent the error from showing in console as uncaught
+      }
+    };
+    
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
   }, []);
 
   // Initialize gas station
