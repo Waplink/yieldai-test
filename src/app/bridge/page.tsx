@@ -542,9 +542,10 @@ function BridgePageContent() {
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
     fallbackIsNative  // Simplified: if fallback exists and is native, show it regardless of storedAptosName
   );
+  // Don't show "Connecting..." when we have fallback - fallback means we have a cached address to display
   const aptosConnecting = Boolean(
-    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected) ||
-    (fallbackIsNative && !aptosConnected)
+    !aptosNativeFallback &&  // Don't show connecting when we have fallback address
+    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected && !aptosConnected)
   );
   
   // Track previous aptosConnected state to detect reconnection (false -> true transition)
@@ -729,11 +730,12 @@ function BridgePageContent() {
               currentWalletName,
             });
             
-            // Note: Even if ref shows connected, React state may be out of sync
-            // So we still call connectAptos to sync the state
-            // The adapter will handle "already connected" gracefully
+            // If ref shows already connected to the right wallet, skip reconnect attempts
+            // The fallback UI will display the cached address - no need to call connectAptos
+            // which would just throw "already connected" error
             if (currentlyConnected && currentWalletName === walletName) {
-              console.log(`[handleDisconnectSolana] Ref shows connected to ${walletName}, but calling connectAptos to sync React state (attempt ${attempt})`);
+              console.log(`[handleDisconnectSolana] Ref shows already connected to ${walletName}, skipping reconnect (using fallback UI)`);
+              return;
             }
             
             // Check if wallet exists in available wallets
@@ -751,13 +753,21 @@ function BridgePageContent() {
             }
             
             console.log(`[handleDisconnectSolana] Calling connectAptos (attempt ${attempt}) for:`, walletName);
-            try {
-              connectAptos(walletName);
-              console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
-            } catch (connectError) {
-              // Ignore "already connected" errors - we just want to sync React state
-              console.log(`[handleDisconnectSolana] connectAptos error (attempt ${attempt}), likely already connected:`, connectError);
-            }
+            // Wrap in async IIFE to catch errors
+            (async () => {
+              try {
+                await connectAptos(walletName);
+                console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
+              } catch (connectError) {
+                const msg = connectError instanceof Error ? connectError.message : String(connectError);
+                // Silently ignore "already connected" errors
+                if (msg.includes("already connected")) {
+                  console.log(`[handleDisconnectSolana] connectAptos (attempt ${attempt}) - already connected, using fallback`);
+                } else {
+                  console.log(`[handleDisconnectSolana] connectAptos error (attempt ${attempt}):`, connectError);
+                }
+              }
+            })();
           } catch (e) {
             console.error(`[handleDisconnectSolana] Error in attempt ${attempt}:`, e);
           }
