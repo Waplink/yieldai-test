@@ -116,55 +116,119 @@ function BridgePageContent() {
   const [isAptosDialogOpen, setIsAptosDialogOpen] = useState(false);
   const [isAptosConnecting, setIsAptosConnecting] = useState(false);
   
-  // Restoring states - show loading while wallets are being auto-restored on page load
+  // Restoring/Reconnecting states - show loading while wallets are being restored/reconnected
   const [isSolanaRestoring, setIsSolanaRestoring] = useState(false);
   const [isAptosRestoring, setIsAptosRestoring] = useState(false);
+  const [isSolanaReconnecting, setIsSolanaReconnecting] = useState(false);
+  const [isAptosReconnecting, setIsAptosReconnecting] = useState(false);
   
   // Check if there's a saved wallet in localStorage on mount to show restoring indicator
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    
+    // Already connected - no need to restore
+    if (solanaConnected || effectiveSolanaConnected) {
+      setIsSolanaRestoring(false);
+      return;
+    }
+    if (aptosConnected) {
+      setIsAptosRestoring(false);
+    }
     
     // Check for saved Solana wallet
     const savedSolana = window.localStorage.getItem('walletName');
     const savedAptosDerived = window.localStorage.getItem('AptosWalletName');
     const skipSolana = window.sessionStorage.getItem('skip_auto_connect_solana') === '1';
     
-    // Show Solana restoring if there's a saved wallet and not connected yet
-    if (!skipSolana && (savedSolana || (savedAptosDerived && savedAptosDerived.includes('(Solana)')))) {
-      if (!solanaConnected && !effectiveSolanaConnected) {
-        setIsSolanaRestoring(true);
+    // Parse savedSolana to check if it's valid
+    let hasSavedSolana = false;
+    if (savedSolana) {
+      try {
+        const parsed = JSON.parse(savedSolana);
+        hasSavedSolana = typeof parsed === 'string' && parsed.length > 0;
+      } catch {
+        hasSavedSolana = savedSolana.length > 0;
       }
     }
     
-    // Check for saved Aptos wallet (native only, not derived)
-    if (savedAptosDerived && !savedAptosDerived.includes('(Solana)')) {
-      if (!aptosConnected) {
-        setIsAptosRestoring(true);
+    // Check if saved Aptos is derived (ends with " (Solana)")
+    let hasDerivedAptos = false;
+    if (savedAptosDerived) {
+      try {
+        const parsed = JSON.parse(savedAptosDerived);
+        hasDerivedAptos = typeof parsed === 'string' && parsed.includes('(Solana)');
+      } catch {
+        hasDerivedAptos = savedAptosDerived.includes('(Solana)');
       }
     }
-  }, []); // Only on mount
+    
+    // Show Solana restoring if there's a valid saved wallet
+    if (!skipSolana && (hasSavedSolana || hasDerivedAptos)) {
+      setIsSolanaRestoring(true);
+    } else {
+      setIsSolanaRestoring(false);
+    }
+    
+    // Check for saved Aptos wallet (native only, not derived)
+    let hasNativeAptos = false;
+    if (savedAptosDerived && !hasDerivedAptos) {
+      try {
+        const parsed = JSON.parse(savedAptosDerived);
+        hasNativeAptos = typeof parsed === 'string' && parsed.length > 0;
+      } catch {
+        hasNativeAptos = savedAptosDerived.length > 0;
+      }
+    }
+    
+    if (hasNativeAptos && !aptosConnected) {
+      setIsAptosRestoring(true);
+    } else {
+      setIsAptosRestoring(false);
+    }
+  }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
   
   // Clear restoring state when connected
   useEffect(() => {
     if (solanaConnected || effectiveSolanaConnected) {
       setIsSolanaRestoring(false);
+      setIsSolanaReconnecting(false);
     }
   }, [solanaConnected, effectiveSolanaConnected]);
   
   useEffect(() => {
     if (aptosConnected) {
       setIsAptosRestoring(false);
+      setIsAptosReconnecting(false);
     }
   }, [aptosConnected]);
   
-  // Also clear restoring after timeout (in case restoration fails silently)
+  // Clear restoring after shorter timeout (3s) - if not connected by then, wallet likely not available
   useEffect(() => {
     const timer = setTimeout(() => {
-      setIsSolanaRestoring(false);
-      setIsAptosRestoring(false);
-    }, 8000); // 8 seconds timeout
+      if (!solanaConnected && !effectiveSolanaConnected) {
+        setIsSolanaRestoring(false);
+      }
+      if (!aptosConnected) {
+        setIsAptosRestoring(false);
+      }
+    }, 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
+  
+  // Clear reconnecting after timeout
+  useEffect(() => {
+    if (isSolanaReconnecting) {
+      const timer = setTimeout(() => setIsSolanaReconnecting(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSolanaReconnecting]);
+  
+  useEffect(() => {
+    if (isAptosReconnecting) {
+      const timer = setTimeout(() => setIsAptosReconnecting(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isAptosReconnecting]);
   
   // Fallback state for Aptos native when React state desyncs (e.g., after Solana disconnect)
   // This keeps track of the Aptos native wallet info so UI can show it while adapter reconnects
@@ -263,14 +327,17 @@ function BridgePageContent() {
         // Force re-render to pick up new state
         forceUpdate(n => n + 1);
         setPendingReconnectWallet(null);
+        setIsSolanaReconnecting(false);
         
       } catch (e) {
         console.log('[pendingReconnect] Failed:', (e as Error)?.message);
         setPendingReconnectWallet(null);
+        setIsSolanaReconnecting(false);
       }
     };
     
     doReconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingReconnectWallet, effectiveSolanaConnected, wallets, select]);
   
   // Reset restore flag when Solana disconnects (allows re-restore on reconnect attempt)
@@ -788,6 +855,9 @@ function BridgePageContent() {
       if (savedAptosNativeName) {
         console.log('[handleDisconnectSolana] Will restore Aptos native after delay:', savedAptosNativeName);
         
+        // Show reconnecting indicator for Aptos
+        setIsAptosReconnecting(true);
+        
         const walletName = savedAptosNativeName;
         
         // Direct reconnect function without using state
@@ -807,6 +877,7 @@ function BridgePageContent() {
             // which would just throw "already connected" error
             if (currentlyConnected && currentWalletName === walletName) {
               console.log(`[handleDisconnectSolana] Ref shows already connected to ${walletName}, skipping reconnect (using fallback UI)`);
+              setIsAptosReconnecting(false);
               return;
             }
             
@@ -815,12 +886,14 @@ function BridgePageContent() {
             const walletToConnect = aptosWallets?.find(w => w.name === walletName);
             if (!walletToConnect) {
               console.log(`[handleDisconnectSolana] Wallet not found for attempt ${attempt}:`, walletName);
+              setIsAptosReconnecting(false);
               return;
             }
             
             // Skip derived wallets
             if (walletName.endsWith(' (Solana)')) {
               console.log(`[handleDisconnectSolana] Skipping derived wallet for attempt ${attempt}:`, walletName);
+              setIsAptosReconnecting(false);
               return;
             }
             
@@ -830,11 +903,13 @@ function BridgePageContent() {
               try {
                 await connectAptos(walletName);
                 console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
+                setIsAptosReconnecting(false);
               } catch (connectError) {
                 const msg = connectError instanceof Error ? connectError.message : String(connectError);
                 // Silently ignore "already connected" errors
                 if (msg.includes("already connected")) {
                   console.log(`[handleDisconnectSolana] connectAptos (attempt ${attempt}) - already connected, using fallback`);
+                  setIsAptosReconnecting(false);
                 } else {
                   console.log(`[handleDisconnectSolana] connectAptos error (attempt ${attempt}):`, connectError);
                 }
@@ -1002,6 +1077,9 @@ function BridgePageContent() {
           if (!currentWalletName || !adapterConnected) {
             console.log('[handleDisconnectAptos] Need to restore, setting walletName:', savedSolanaName);
             window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+            
+            // Show reconnecting indicator
+            setIsSolanaReconnecting(true);
             
             // Trigger reconnect via state (useEffect will handle with fresh references)
             console.log('[handleDisconnectAptos] Setting pendingReconnectWallet:', savedSolanaName);
@@ -1899,11 +1977,11 @@ function BridgePageContent() {
                 ) : (
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" className="w-full" disabled={isSolanaConnecting || isSolanaRestoring}>
-                        {isSolanaConnecting || isSolanaRestoring ? (
+                      <Button size="sm" className="w-full" disabled={isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting}>
+                        {isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {isSolanaRestoring ? 'Restoring...' : 'Connecting...'}
+                            {isSolanaRestoring ? 'Restoring...' : isSolanaReconnecting ? 'Reconnecting...' : 'Connecting...'}
                           </>
                         ) : (
                           'Connect Solana Wallet'
@@ -2002,7 +2080,7 @@ function BridgePageContent() {
                     <Button 
                       size="sm" 
                       className="w-full"
-                      disabled={isAptosConnecting || isAptosRestoring}
+                      disabled={isAptosConnecting || isAptosRestoring || isAptosReconnecting}
                       onClick={(e) => {
                         e.stopPropagation();
                         const wrapper = e.currentTarget.parentElement;
@@ -2012,10 +2090,10 @@ function BridgePageContent() {
                         }
                       }}
                     >
-                      {isAptosConnecting || isAptosRestoring ? (
+                      {isAptosConnecting || isAptosRestoring || isAptosReconnecting ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {isAptosRestoring ? 'Restoring...' : 'Connecting...'}
+                          {isAptosRestoring ? 'Restoring...' : isAptosReconnecting ? 'Reconnecting...' : 'Connecting...'}
                         </>
                       ) : (
                         'Connect Aptos Wallet'
