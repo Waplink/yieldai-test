@@ -380,12 +380,10 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
         </Dialog>
       )}
 
-      {/* Dialog for connecting wallets when already connected to one chain */}
-      {isAnyWalletConnected && (
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
-        </Dialog>
-      )}
+      {/* Dialog for connecting Aptos wallets (external control) - always render for external open */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <ConnectWalletDialog close={closeDialog} isConnecting={isConnecting} {...walletSortingOptions} />
+      </Dialog>
 
       {/* Dialog for connecting Solana wallets */}
       <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
