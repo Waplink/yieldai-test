@@ -116,6 +116,56 @@ function BridgePageContent() {
   const [isAptosDialogOpen, setIsAptosDialogOpen] = useState(false);
   const [isAptosConnecting, setIsAptosConnecting] = useState(false);
   
+  // Restoring states - show loading while wallets are being auto-restored on page load
+  const [isSolanaRestoring, setIsSolanaRestoring] = useState(false);
+  const [isAptosRestoring, setIsAptosRestoring] = useState(false);
+  
+  // Check if there's a saved wallet in localStorage on mount to show restoring indicator
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Check for saved Solana wallet
+    const savedSolana = window.localStorage.getItem('walletName');
+    const savedAptosDerived = window.localStorage.getItem('AptosWalletName');
+    const skipSolana = window.sessionStorage.getItem('skip_auto_connect_solana') === '1';
+    
+    // Show Solana restoring if there's a saved wallet and not connected yet
+    if (!skipSolana && (savedSolana || (savedAptosDerived && savedAptosDerived.includes('(Solana)')))) {
+      if (!solanaConnected && !effectiveSolanaConnected) {
+        setIsSolanaRestoring(true);
+      }
+    }
+    
+    // Check for saved Aptos wallet (native only, not derived)
+    if (savedAptosDerived && !savedAptosDerived.includes('(Solana)')) {
+      if (!aptosConnected) {
+        setIsAptosRestoring(true);
+      }
+    }
+  }, []); // Only on mount
+  
+  // Clear restoring state when connected
+  useEffect(() => {
+    if (solanaConnected || effectiveSolanaConnected) {
+      setIsSolanaRestoring(false);
+    }
+  }, [solanaConnected, effectiveSolanaConnected]);
+  
+  useEffect(() => {
+    if (aptosConnected) {
+      setIsAptosRestoring(false);
+    }
+  }, [aptosConnected]);
+  
+  // Also clear restoring after timeout (in case restoration fails silently)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsSolanaRestoring(false);
+      setIsAptosRestoring(false);
+    }, 8000); // 8 seconds timeout
+    return () => clearTimeout(timer);
+  }, []);
+  
   // Fallback state for Aptos native when React state desyncs (e.g., after Solana disconnect)
   // This keeps track of the Aptos native wallet info so UI can show it while adapter reconnects
   const [aptosNativeFallback, setAptosNativeFallback] = useState<{
@@ -1849,11 +1899,11 @@ function BridgePageContent() {
                 ) : (
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" className="w-full" disabled={isSolanaConnecting}>
-                        {isSolanaConnecting ? (
+                      <Button size="sm" className="w-full" disabled={isSolanaConnecting || isSolanaRestoring}>
+                        {isSolanaConnecting || isSolanaRestoring ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Connecting...
+                            {isSolanaRestoring ? 'Restoring...' : 'Connecting...'}
                           </>
                         ) : (
                           'Connect Solana Wallet'
@@ -1952,7 +2002,7 @@ function BridgePageContent() {
                     <Button 
                       size="sm" 
                       className="w-full"
-                      disabled={isAptosConnecting}
+                      disabled={isAptosConnecting || isAptosRestoring}
                       onClick={(e) => {
                         e.stopPropagation();
                         const wrapper = e.currentTarget.parentElement;
@@ -1962,10 +2012,10 @@ function BridgePageContent() {
                         }
                       }}
                     >
-                      {isAptosConnecting ? (
+                      {isAptosConnecting || isAptosRestoring ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Connecting...
+                          {isAptosRestoring ? 'Restoring...' : 'Connecting...'}
                         </>
                       ) : (
                         'Connect Aptos Wallet'
