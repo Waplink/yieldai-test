@@ -54,14 +54,52 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
   }, [connected]);
 
   // 0) Keep localStorage in sync when connected (so other tabs / new tab get the key)
+  // Also handles initial connection where adapter might not set the key
   useEffect(() => {
-    if (typeof window === "undefined" || !connected || !wallet) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(wallet.adapter.name));
-      // Любое успешное подключение Solana снимает запрет на авто-восстановление
-      window.sessionStorage.removeItem(SKIP_SOLANA_KEY);
-    } catch {}
+    if (typeof window === "undefined") return;
+    
+    // When connected, ensure walletName is set
+    if (connected && wallet?.adapter?.name) {
+      try {
+        const currentValue = window.localStorage.getItem(STORAGE_KEY);
+        const expectedValue = JSON.stringify(wallet.adapter.name);
+        
+        // Always ensure walletName is set correctly when connected
+        if (currentValue !== expectedValue) {
+          console.log(LOG, "Setting walletName in localStorage:", wallet.adapter.name);
+          window.localStorage.setItem(STORAGE_KEY, expectedValue);
+        }
+        
+        // Любое успешное подключение Solana снимает запрет на авто-восстановление
+        window.sessionStorage.removeItem(SKIP_SOLANA_KEY);
+      } catch {}
+    }
   }, [connected, wallet]);
+  
+  // Also check adapter state directly (in case React state is out of sync)
+  useEffect(() => {
+    if (typeof window === "undefined" || !wallet?.adapter) return;
+    
+    const checkAndSync = () => {
+      if (wallet.adapter.connected && wallet.adapter.publicKey) {
+        const currentValue = window.localStorage.getItem(STORAGE_KEY);
+        if (!currentValue) {
+          console.log(LOG, "Syncing walletName from adapter state:", wallet.adapter.name);
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(wallet.adapter.name));
+        }
+      }
+    };
+    
+    // Check immediately and after short delays
+    checkAndSync();
+    const t1 = setTimeout(checkAndSync, 500);
+    const t2 = setTimeout(checkAndSync, 1500);
+    
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [wallet]);
 
   // 1) Restore selection from localStorage — same key as WalletProvider ('walletName'), retry so we run after hydration
   useEffect(() => {

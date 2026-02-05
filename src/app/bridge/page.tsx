@@ -584,12 +584,27 @@ function BridgePageContent() {
   }, [pendingAptosReconnect, aptosConnected, aptosWallets, connectAptos]);
 
   const handleDisconnectSolana = async () => {
-    // Check if we have a native Aptos wallet connected that we should preserve
-    const currentAptosName = aptosWallet?.name;
-    const isNativeAptos = currentAptosName && !currentAptosName.endsWith(' (Solana)');
-    const savedAptosName = isNativeAptos ? currentAptosName : null;
+    // Get Aptos native wallet name from localStorage (most reliable source, independent of React state)
+    // This is the key change: Aptos native should ONLY depend on AptosWalletName, not walletName
+    let savedAptosNativeName: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const storedAptos = window.localStorage.getItem("AptosWalletName");
+        if (storedAptos) {
+          // Parse if JSON, otherwise use raw
+          let parsed = storedAptos;
+          try {
+            parsed = JSON.parse(storedAptos) as string;
+          } catch {}
+          // Only save if it's a native wallet (not derived)
+          if (parsed && !parsed.endsWith(' (Solana)')) {
+            savedAptosNativeName = parsed;
+          }
+        }
+      } catch {}
+    }
     
-    console.log('[handleDisconnectSolana] Starting disconnect, savedAptosName:', savedAptosName);
+    console.log('[handleDisconnectSolana] Starting disconnect, savedAptosNativeName:', savedAptosNativeName);
     
     try {
       if (typeof window !== "undefined") {
@@ -610,24 +625,30 @@ function BridgePageContent() {
         description: "Solana wallet disconnected",
       });
       
-      // If we had a native Aptos wallet, schedule reconnect in case it got disconnected
-      if (savedAptosName) {
-        // Wait a bit for any cascade disconnect to happen
+      // If we had a native Aptos wallet, ensure it stays connected
+      // Aptos native should be independent of Solana - only tied to AptosWalletName
+      if (savedAptosNativeName) {
+        // Wait for any cascade effects to settle
         setTimeout(() => {
-          // Check if Aptos got disconnected
-          const stillConnected = aptosWallet?.name === savedAptosName;
-          console.log('[handleDisconnectSolana] Post-disconnect check:', { savedAptosName, stillConnected, currentWallet: aptosWallet?.name });
+          if (typeof window === "undefined") return;
           
-          if (!stillConnected) {
-            // Restore AptosWalletName in localStorage
-            if (typeof window !== "undefined") {
-              try {
-                window.localStorage.setItem("AptosWalletName", savedAptosName);
-              } catch {}
-            }
-            setPendingAptosReconnect(savedAptosName);
+          // Ensure AptosWalletName is preserved (it might have been cleared by cascade)
+          const currentAptosName = window.localStorage.getItem("AptosWalletName");
+          console.log('[handleDisconnectSolana] Post-disconnect check:', { 
+            savedAptosNativeName, 
+            currentAptosName,
+            aptosConnected,
+          });
+          
+          // Restore AptosWalletName if it was cleared
+          if (!currentAptosName) {
+            console.log('[handleDisconnectSolana] Restoring AptosWalletName:', savedAptosNativeName);
+            window.localStorage.setItem("AptosWalletName", savedAptosNativeName);
           }
-        }, 300);
+          
+          // Trigger reconnect via state
+          setPendingAptosReconnect(savedAptosNativeName);
+        }, 400);
       }
       
     } catch (error) {
