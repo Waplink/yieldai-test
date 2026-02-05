@@ -510,15 +510,58 @@ function PrivacyBridgeContent() {
   const handleDisconnectAptos = async () => {
     skipAutoConnectDerivedRef.current = true;
     if (typeof window !== "undefined") sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+    
+    // Determine if this is a derived wallet BEFORE removing localStorage
+    const isDerived = aptosWallet && isDerivedAptosWalletReliable(aptosWallet);
+    
+    // Clear localStorage to prevent auto-restore
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem("AptosWalletName");
+      } catch {}
+    }
+    
+    // If wallet is already undefined/disconnected, consider it a success
+    const walletAlreadyDisconnected = !aptosWallet;
+    
     try {
       await disconnectAptos();
       toast({ title: "Success", description: "Aptos wallet disconnected" });
     } catch (err: unknown) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to disconnect",
-      });
+      const name = (err as { name?: string })?.name;
+      const msg = err instanceof Error ? err.message : String(err);
+      
+      // Check for benign disconnect errors
+      const isBenignDisconnect =
+        name === "WalletDisconnectedError" ||
+        name === "WalletNotConnectedError" ||
+        (typeof msg === "string" &&
+          (msg.includes("WalletDisconnectedError") || msg.includes("WalletNotConnectedError")));
+      
+      const isUserRejected =
+        msg === "User has rejected the request" ||
+        msg.includes("User rejected") ||
+        msg.includes("rejected the request");
+      
+      // For derived wallets, non-user-rejection errors are often just noise
+      const isDerivedSoftError = isDerived && !isUserRejected;
+      
+      // If wallet was already disconnected, treat as success
+      const isAlreadyDisconnectedError = walletAlreadyDisconnected && !isUserRejected;
+      
+      if (isUserRejected) {
+        // User explicitly rejected - do nothing
+        return;
+      } else if (isBenignDisconnect || isDerivedSoftError || isAlreadyDisconnectedError) {
+        // Wallet was already disconnected or it's a soft error - show success
+        toast({ title: "Success", description: "Aptos wallet disconnected" });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: msg || "Failed to disconnect",
+        });
+      }
     }
   };
 
