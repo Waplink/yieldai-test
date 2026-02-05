@@ -609,6 +609,7 @@ function BridgePageContent() {
     console.log('[pendingAptosReconnect] Scheduling 4 reconnect attempts...');
     
     // Attempt with longer delays to account for slow cascade disconnect
+    // Note: Do NOT call setPendingAptosReconnect(null) here - it would trigger cleanup and cancel timeouts!
     const t0 = setTimeout(() => {
       console.log('[pendingAptosReconnect] Timeout 1 fired');
       attemptReconnect(1);
@@ -624,16 +625,12 @@ function BridgePageContent() {
     const t3 = setTimeout(() => {
       console.log('[pendingAptosReconnect] Timeout 4 fired');
       attemptReconnect(4);
+      // Clear pending state after last attempt
+      setPendingAptosReconnect(null);
     }, 3000);
     
-    setPendingAptosReconnect(null);
-    
-    return () => {
-      clearTimeout(t0);
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
+    // Don't return cleanup - let timeouts run to completion
+    // The effect won't re-run because pendingAptosReconnect stays the same until timeout 4 clears it
   }, [pendingAptosReconnect, aptosWallets, connectAptos]);
 
   const handleDisconnectSolana = async () => {
