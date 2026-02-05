@@ -551,87 +551,12 @@ function BridgePageContent() {
   };
 
   // Disconnect handlers
-  // State for pending Aptos reconnect after Solana disconnect
-  const [pendingAptosReconnect, setPendingAptosReconnect] = useState<string | null>(null);
-  
   // Ref to track current Aptos wallet name (avoids stale closures in timeouts)
   // Note: aptosConnectedRef already exists at component level for mint state tracking
   const aptosWalletNameRef = useRef(aptosWallet?.name);
   useEffect(() => {
     aptosWalletNameRef.current = aptosWallet?.name;
   }, [aptosWallet?.name]);
-  
-  // Effect to reconnect Aptos native after Solana disconnect cascade
-  // Uses multiple attempts with delays because cascade disconnect timing is unpredictable
-  useEffect(() => {
-    if (!pendingAptosReconnect) return;
-    
-    // Only reconnect if it's a native wallet (not derived)
-    if (pendingAptosReconnect.endsWith(' (Solana)')) {
-      console.log('[pendingAptosReconnect] Skipping derived wallet:', pendingAptosReconnect);
-      setPendingAptosReconnect(null);
-      return;
-    }
-    
-    const walletName = pendingAptosReconnect;
-    
-    const walletToConnect = aptosWallets?.find(w => w.name === walletName);
-    if (!walletToConnect) {
-      console.log('[pendingAptosReconnect] Wallet not found:', walletName);
-      setPendingAptosReconnect(null);
-      return;
-    }
-    
-    console.log('[pendingAptosReconnect] Starting reconnect sequence for:', walletName);
-    
-    // Multiple reconnect attempts with increasing delays
-    // ALWAYS call connectAptos - let the adapter handle if already connected
-    const attemptReconnect = (attempt: number) => {
-      try {
-        const currentlyConnected = aptosConnectedRef.current;
-        const currentWalletName = aptosWalletNameRef.current;
-        
-        console.log(`[pendingAptosReconnect] Attempt ${attempt}:`, {
-          walletName,
-          currentlyConnected,
-          currentWalletName,
-        });
-        
-        // Always call connectAptos - the adapter will handle if already connected
-        console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt}) for:`, walletName);
-        connectAptos(walletName);
-        console.log(`[pendingAptosReconnect] connectAptos returned (attempt ${attempt})`);
-      } catch (e) {
-        console.error(`[pendingAptosReconnect] Error in attempt ${attempt}:`, e);
-      }
-    };
-    
-    console.log('[pendingAptosReconnect] Scheduling 4 reconnect attempts...');
-    
-    // Attempt with longer delays to account for slow cascade disconnect
-    // Note: Do NOT call setPendingAptosReconnect(null) here - it would trigger cleanup and cancel timeouts!
-    const t0 = setTimeout(() => {
-      console.log('[pendingAptosReconnect] Timeout 1 fired');
-      attemptReconnect(1);
-    }, 100);
-    const t1 = setTimeout(() => {
-      console.log('[pendingAptosReconnect] Timeout 2 fired');
-      attemptReconnect(2);
-    }, 500);
-    const t2 = setTimeout(() => {
-      console.log('[pendingAptosReconnect] Timeout 3 fired');
-      attemptReconnect(3);
-    }, 1500);
-    const t3 = setTimeout(() => {
-      console.log('[pendingAptosReconnect] Timeout 4 fired');
-      attemptReconnect(4);
-      // Clear pending state after last attempt
-      setPendingAptosReconnect(null);
-    }, 3000);
-    
-    // Don't return cleanup - let timeouts run to completion
-    // The effect won't re-run because pendingAptosReconnect stays the same until timeout 4 clears it
-  }, [pendingAptosReconnect, aptosWallets, connectAptos]);
 
   const handleDisconnectSolana = async () => {
     // Get Aptos native wallet name from multiple sources
@@ -694,25 +619,73 @@ function BridgePageContent() {
       if (savedAptosNativeName) {
         console.log('[handleDisconnectSolana] Will restore Aptos native after delay:', savedAptosNativeName);
         
-        // Wait for cascade effects to settle
-        // The cascade disconnect can take 1-2 seconds, so we use a longer delay
-        setTimeout(() => {
+        const walletName = savedAptosNativeName;
+        
+        // Direct reconnect function without using state
+        const attemptReconnect = (attempt: number) => {
+          try {
+            const currentlyConnected = aptosConnectedRef.current;
+            const currentWalletName = aptosWalletNameRef.current;
+            
+            console.log(`[handleDisconnectSolana] Reconnect attempt ${attempt}:`, {
+              walletName,
+              currentlyConnected,
+              currentWalletName,
+            });
+            
+            // Check if wallet exists in available wallets
+            // Note: aptosWallets is captured from closure - this is intentional
+            const walletToConnect = aptosWallets?.find(w => w.name === walletName);
+            if (!walletToConnect) {
+              console.log(`[handleDisconnectSolana] Wallet not found for attempt ${attempt}:`, walletName);
+              return;
+            }
+            
+            // Skip derived wallets
+            if (walletName.endsWith(' (Solana)')) {
+              console.log(`[handleDisconnectSolana] Skipping derived wallet for attempt ${attempt}:`, walletName);
+              return;
+            }
+            
+            console.log(`[handleDisconnectSolana] Calling connectAptos (attempt ${attempt}) for:`, walletName);
+            connectAptos(walletName);
+            console.log(`[handleDisconnectSolana] connectAptos returned (attempt ${attempt})`);
+          } catch (e) {
+            console.error(`[handleDisconnectSolana] Error in attempt ${attempt}:`, e);
+          }
+        };
+        
+        // Schedule reconnect attempts at various intervals
+        // Starting after 1500ms to let cascade disconnect settle
+        console.log('[handleDisconnectSolana] Scheduling reconnect attempts...');
+        
+        // First ensure AptosWalletName is preserved
+        window.setTimeout(() => {
           if (typeof window === "undefined") return;
-          
-          // Always ensure AptosWalletName is set
-          console.log('[handleDisconnectSolana] Post-disconnect (1500ms): restoring AptosWalletName:', savedAptosNativeName);
-          window.localStorage.setItem("AptosWalletName", savedAptosNativeName);
-          
-          // Check current state
-          console.log('[handleDisconnectSolana] Current state before reconnect:', {
-            aptosConnectedRef: aptosConnectedRef.current,
-            aptosWalletNameRef: aptosWalletNameRef.current,
-          });
-          
-          // Trigger reconnect
-          console.log('[handleDisconnectSolana] Setting pendingAptosReconnect:', savedAptosNativeName);
-          setPendingAptosReconnect(savedAptosNativeName);
+          console.log('[handleDisconnectSolana] Ensuring AptosWalletName is set:', walletName);
+          window.localStorage.setItem("AptosWalletName", walletName);
+        }, 500);
+        
+        // Reconnect attempts at increasing intervals
+        window.setTimeout(() => {
+          console.log('[handleDisconnectSolana] Timeout 1 (1500ms) fired');
+          attemptReconnect(1);
         }, 1500);
+        
+        window.setTimeout(() => {
+          console.log('[handleDisconnectSolana] Timeout 2 (2000ms) fired');
+          attemptReconnect(2);
+        }, 2000);
+        
+        window.setTimeout(() => {
+          console.log('[handleDisconnectSolana] Timeout 3 (3000ms) fired');
+          attemptReconnect(3);
+        }, 3000);
+        
+        window.setTimeout(() => {
+          console.log('[handleDisconnectSolana] Timeout 4 (5000ms) fired');
+          attemptReconnect(4);
+        }, 5000);
       }
       
     } catch (error) {
