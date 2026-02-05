@@ -555,19 +555,13 @@ function BridgePageContent() {
   const [pendingAptosReconnect, setPendingAptosReconnect] = useState<string | null>(null);
   
   // Effect to reconnect Aptos native after Solana disconnect cascade
+  // Uses multiple attempts with delays because cascade disconnect timing is unpredictable
   useEffect(() => {
     if (!pendingAptosReconnect) return;
     
     // Only reconnect if it's a native wallet (not derived)
     if (pendingAptosReconnect.endsWith(' (Solana)')) {
       console.log('[pendingAptosReconnect] Skipping derived wallet:', pendingAptosReconnect);
-      setPendingAptosReconnect(null);
-      return;
-    }
-    
-    // Check if already connected to this wallet
-    if (aptosConnected && aptosWallet?.name === pendingAptosReconnect) {
-      console.log('[pendingAptosReconnect] Already connected to:', pendingAptosReconnect);
       setPendingAptosReconnect(null);
       return;
     }
@@ -579,30 +573,72 @@ function BridgePageContent() {
       return;
     }
     
-    console.log('[pendingAptosReconnect] Reconnecting native Aptos:', pendingAptosReconnect, 'aptosConnected:', aptosConnected);
-    connectAptos(pendingAptosReconnect);
+    // Multiple reconnect attempts with increasing delays
+    // This handles the race condition where aptosConnected may still be true
+    const attemptReconnect = (attempt: number) => {
+      console.log(`[pendingAptosReconnect] Attempt ${attempt}:`, {
+        walletName: pendingAptosReconnect,
+        aptosConnected,
+        currentWallet: aptosWallet?.name,
+      });
+      
+      // Only reconnect if actually disconnected or connected to wrong wallet
+      if (!aptosConnected || aptosWallet?.name !== pendingAptosReconnect) {
+        console.log(`[pendingAptosReconnect] Calling connectAptos (attempt ${attempt})`);
+        connectAptos(pendingAptosReconnect);
+      } else {
+        console.log(`[pendingAptosReconnect] Already connected correctly (attempt ${attempt})`);
+      }
+    };
+    
+    // Attempt immediately and with delays
+    attemptReconnect(1);
+    const t1 = setTimeout(() => attemptReconnect(2), 300);
+    const t2 = setTimeout(() => attemptReconnect(3), 800);
+    const t3 = setTimeout(() => attemptReconnect(4), 1500);
+    
     setPendingAptosReconnect(null);
+    
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [pendingAptosReconnect, aptosConnected, aptosWallet?.name, aptosWallets, connectAptos]);
 
   const handleDisconnectSolana = async () => {
-    // Get Aptos native wallet name from localStorage (most reliable source, independent of React state)
-    // This is the key change: Aptos native should ONLY depend on AptosWalletName, not walletName
+    // Get Aptos native wallet name from multiple sources
+    // 1. From localStorage AptosWalletName
+    // 2. From current aptosWallet.name (React state)
     let savedAptosNativeName: string | null = null;
-    if (typeof window !== "undefined") {
+    
+    // Debug: log all sources
+    const rawAptosStorage = typeof window !== "undefined" ? window.localStorage.getItem("AptosWalletName") : null;
+    const currentAptosWalletName = aptosWallet?.name;
+    
+    console.log('[handleDisconnectSolana] Debug sources:', {
+      rawAptosStorage,
+      currentAptosWalletName,
+      aptosConnected,
+    });
+    
+    // Try to get native Aptos wallet name
+    // First from localStorage
+    if (typeof window !== "undefined" && rawAptosStorage) {
       try {
-        const storedAptos = window.localStorage.getItem("AptosWalletName");
-        if (storedAptos) {
-          // Parse if JSON, otherwise use raw
-          let parsed = storedAptos;
-          try {
-            parsed = JSON.parse(storedAptos) as string;
-          } catch {}
-          // Only save if it's a native wallet (not derived)
-          if (parsed && !parsed.endsWith(' (Solana)')) {
-            savedAptosNativeName = parsed;
-          }
+        let parsed = rawAptosStorage;
+        try {
+          parsed = JSON.parse(rawAptosStorage) as string;
+        } catch {}
+        if (parsed && !parsed.endsWith(' (Solana)')) {
+          savedAptosNativeName = parsed;
         }
       } catch {}
+    }
+    
+    // If not found in localStorage, try from React state (aptosWallet.name)
+    if (!savedAptosNativeName && currentAptosWalletName && !currentAptosWalletName.endsWith(' (Solana)')) {
+      savedAptosNativeName = currentAptosWalletName;
     }
     
     console.log('[handleDisconnectSolana] Starting disconnect, savedAptosNativeName:', savedAptosNativeName);
