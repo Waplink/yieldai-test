@@ -493,7 +493,22 @@ function PrivacyBridgeContent() {
 
   const handleDisconnectSolana = async () => {
     try {
+      // Set skip flag BEFORE disconnect to prevent SolanaWalletRestore from reconnecting
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.setItem("skip_auto_connect_solana", "1");
+        } catch {}
+      }
+      
       await disconnectSolana();
+      
+      // Remove walletName AFTER disconnect to prevent immediate reconnect by autoConnect
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem("walletName");
+        } catch {}
+      }
+      
       lastFetchedBalanceForAddress.current = null;
       setPrivacyBalanceUsdc(null);
       setPrivacyBalanceUsdcError(null);
