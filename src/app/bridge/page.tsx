@@ -606,11 +606,12 @@ function BridgePageContent() {
       }
     };
     
-    // Attempt with delays (first attempt after short delay to let cascade happen)
-    const t0 = setTimeout(() => attemptReconnect(1), 100);
-    const t1 = setTimeout(() => attemptReconnect(2), 400);
-    const t2 = setTimeout(() => attemptReconnect(3), 900);
-    const t3 = setTimeout(() => attemptReconnect(4), 1600);
+    // Attempt with delays
+    // By now (1500ms after disconnect), the cascade should be complete
+    const t0 = setTimeout(() => attemptReconnect(1), 50);
+    const t1 = setTimeout(() => attemptReconnect(2), 300);
+    const t2 = setTimeout(() => attemptReconnect(3), 700);
+    const t3 = setTimeout(() => attemptReconnect(4), 1200);
     
     setPendingAptosReconnect(null);
     
@@ -683,13 +684,13 @@ function BridgePageContent() {
       if (savedAptosNativeName) {
         console.log('[handleDisconnectSolana] Will restore Aptos native after delay:', savedAptosNativeName);
         
-        // Wait for cascade effects to settle (use longer delay to ensure cascade is complete)
-        // The cascade disconnect can take varying amounts of time
+        // Wait for cascade effects to settle
+        // The cascade disconnect can take 1-2 seconds, so we use a longer delay
         setTimeout(() => {
           if (typeof window === "undefined") return;
           
           // Always ensure AptosWalletName is set
-          console.log('[handleDisconnectSolana] Post-disconnect (800ms): restoring AptosWalletName:', savedAptosNativeName);
+          console.log('[handleDisconnectSolana] Post-disconnect (1500ms): restoring AptosWalletName:', savedAptosNativeName);
           window.localStorage.setItem("AptosWalletName", savedAptosNativeName);
           
           // Check current state
@@ -701,7 +702,7 @@ function BridgePageContent() {
           // Trigger reconnect
           console.log('[handleDisconnectSolana] Setting pendingAptosReconnect:', savedAptosNativeName);
           setPendingAptosReconnect(savedAptosNativeName);
-        }, 800);
+        }, 1500);
       }
       
     } catch (error) {
