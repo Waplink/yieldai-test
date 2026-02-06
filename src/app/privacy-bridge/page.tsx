@@ -1778,7 +1778,7 @@ function PrivacyBridgeContent() {
                   ) : (
                     <Button
                       size="sm"
-                      variant="outline"
+                      className="w-full"
                       disabled={aptosConnecting || isAptosRestoring || isAptosReconnecting}
                       onClick={() => setIsAptosDialogOpen(true)}
                     >
