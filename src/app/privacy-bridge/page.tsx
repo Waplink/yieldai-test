@@ -196,13 +196,35 @@ function PrivacyBridgeContent() {
       setIsAptosReconnecting(false);
     }
   }, [aptosConnected]);
+  // Clear restoring after timeout - increased to 10s for Phantom which needs multiple retries
   useEffect(() => {
     const t = setTimeout(() => {
       if (!solanaConnected && !effectiveSolanaConnected) setIsSolanaRestoring(false);
       if (!aptosConnected) setIsAptosRestoring(false);
-    }, 3000);
+    }, 10000);
     return () => clearTimeout(t);
   }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
+
+  // Additional check: clear restoring early if adapter is not attempting to connect
+  // This helps when there's no saved wallet or wallet extension is not installed
+  useEffect(() => {
+    if (!isSolanaRestoring) return;
+    // Check adapter state after SolanaWalletRestore had time to start (2s)
+    const checkTimer = setTimeout(() => {
+      const adapter = solanaWallet?.adapter;
+      // If no wallet selected or adapter explicitly not connecting, clear restoring
+      if (!adapter || (!adapter.connected && !adapter.connecting)) {
+        // Check if there's actually a saved wallet to restore
+        const savedWallet = typeof window !== 'undefined' ? window.localStorage.getItem('walletName') : null;
+        const savedAptos = typeof window !== 'undefined' ? window.localStorage.getItem('AptosWalletName') : null;
+        const hasDerived = savedAptos?.includes('(Solana)');
+        if (!savedWallet && !hasDerived) {
+          setIsSolanaRestoring(false);
+        }
+      }
+    }, 2000);
+    return () => clearTimeout(checkTimer);
+  }, [isSolanaRestoring, solanaWallet]);
   useEffect(() => {
     if (isSolanaReconnecting) {
       const t = setTimeout(() => setIsSolanaReconnecting(false), 5000);
@@ -254,6 +276,14 @@ function PrivacyBridgeContent() {
   const lastFetchedBalanceForAddress = useRef<string | null>(null);
   /** Блокировка одновременных вызовов signMessage (кошелёк допускает только один pending запрос) */
   const isFetchingPrivacyBalanceRef = useRef(false);
+  /** Флаг: нужно загрузить приватный баланс когда signMessage станет доступен (для Phantom) */
+  const pendingBalanceFetchRef = useRef(false);
+  /** Ref для актуального signMessage (чтобы retry мог видеть обновленное значение) */
+  const signMessageRef = useRef(effectiveSolanaSignMessage);
+  // Обновляем ref при каждом изменении effectiveSolanaSignMessage
+  useEffect(() => {
+    signMessageRef.current = effectiveSolanaSignMessage;
+  }, [effectiveSolanaSignMessage]);
 
   /** По умолчанию в поле withdraw — весь баланс (реальное значение, не placeholder) */
   useEffect(() => {
@@ -1501,58 +1531,61 @@ function PrivacyBridgeContent() {
     }
   };
 
-  // Авто-загрузка приватного баланса только при первом подключении кошелька (по адресу).
-  // Не зависяем от solanaConnection/solanaSignMessage — иначе после burn/mint ре-рендер
-  // перезапускал эффект и снова открывал кошелёк на подпись (burn/mint сами кошелёк не используют).
-  // Задержка, чтобы не пересекаться с авто-подключением derived Aptos (тот тоже может дергать кошелёк).
-  // Для Phantom требуется retry логика, так как signMessage может быть недоступен сразу после загрузки страницы.
+  // Авто-загрузка приватного баланса: два эффекта для надежной работы с Phantom.
+  // Эффект 1: Когда подключается новый адрес, устанавливаем флаг pending.
   useEffect(() => {
     const address = solanaAddress;
     if (!effectiveSolanaConnected || !address || address === lastFetchedBalanceForAddress.current) {
       return;
     }
+    // Новый адрес подключен - нужно загрузить баланс
     lastFetchedBalanceForAddress.current = address;
-    
-    // Retry logic for Phantom and other wallets that may need time to initialize signMessage
-    let attempt = 0;
-    const maxAttempts = 5;
-    const baseDelay = 500;
-    const timeouts: NodeJS.Timeout[] = [];
-    
-    const tryFetchBalance = () => {
-      attempt++;
-      // Check current signMessage availability (may have changed since last attempt)
-      const currentSignMessage = solanaSignMessage ?? 
-        (solanaWallet?.adapter as unknown as { signMessage?: (msg: Uint8Array) => Promise<any> })?.signMessage;
-      
-      if (!currentSignMessage) {
-        if (attempt < maxAttempts) {
-          const delay = baseDelay * attempt; // Exponential backoff: 500ms, 1000ms, 1500ms, 2000ms, 2500ms
-          pushLog("info", `Waiting for signMessage to become available (attempt ${attempt}/${maxAttempts})...`);
-          const t = setTimeout(() => {
-            tryFetchBalance();
-          }, delay);
-          timeouts.push(t);
-        } else {
-          pushLog("warning", `Cannot load USDC balance: signMessage still not available after ${maxAttempts} attempts.`);
-        }
-      } else {
-        // signMessage is available, proceed with fetch after base delay
-        pushLog("info", `signMessage available, fetching Privacy Cash balance...`);
-        const t = setTimeout(() => {
-          void fetchPrivacyUsdcBalance();
-        }, baseDelay);
-        timeouts.push(t);
-      }
-    };
-    
-    tryFetchBalance();
-    
-    return () => {
-      timeouts.forEach(t => clearTimeout(t));
-    };
+    pendingBalanceFetchRef.current = true;
+    pushLog("info", `New wallet connected (${address.slice(0, 8)}...), pending balance fetch.`);
+  }, [effectiveSolanaConnected, solanaAddress]);
+
+  // Эффект 2: Когда signMessage становится доступен и есть pending fetch - загружаем баланс.
+  // Этот эффект срабатывает каждый раз когда меняется effectiveSolanaSignMessage.
+  useEffect(() => {
+    if (!pendingBalanceFetchRef.current) {
+      return;
+    }
+    if (!effectiveSolanaSignMessage) {
+      // signMessage еще не доступен - ждем следующего рендера
+      return;
+    }
+    // signMessage доступен, сбрасываем флаг и загружаем баланс
+    pendingBalanceFetchRef.current = false;
+    pushLog("info", `signMessage available, fetching Privacy Cash balance...`);
+    const t = setTimeout(() => {
+      void fetchPrivacyUsdcBalance();
+    }, 500);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSolanaConnected, solanaAddress, effectiveSolanaSignMessage]);
+  }, [effectiveSolanaSignMessage]);
+
+  // Эффект 3: Fallback retry для Phantom - если signMessage не появился за 3 секунды, пробуем еще раз
+  useEffect(() => {
+    if (!pendingBalanceFetchRef.current || !effectiveSolanaConnected || !solanaAddress) {
+      return;
+    }
+    // Запускаем таймер на 3 секунды - если к тому моменту pending все еще true, пробуем загрузить
+    const fallbackTimer = setTimeout(() => {
+      if (!pendingBalanceFetchRef.current) return;
+      // Проверяем ref напрямую (актуальное значение)
+      const currentSignMessage = signMessageRef.current;
+      if (currentSignMessage) {
+        pendingBalanceFetchRef.current = false;
+        pushLog("info", `Fallback: signMessage available via ref, fetching Privacy Cash balance...`);
+        void fetchPrivacyUsdcBalance();
+      } else {
+        pushLog("warning", `Fallback: signMessage still not available after 3s timeout.`);
+        pendingBalanceFetchRef.current = false;
+      }
+    }, 3000);
+    return () => clearTimeout(fallbackTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSolanaConnected, solanaAddress]);
 
   // Keep/update native Aptos fallback when connected (so UI doesn't flicker on Solana disconnect)
   useEffect(() => {

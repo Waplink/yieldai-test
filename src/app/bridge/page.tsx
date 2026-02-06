@@ -202,7 +202,7 @@ function BridgePageContent() {
     }
   }, [aptosConnected]);
   
-  // Clear restoring after shorter timeout (3s) - if not connected by then, wallet likely not available
+  // Clear restoring after timeout - increased to 10s for Phantom which needs multiple retries
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!solanaConnected && !effectiveSolanaConnected) {
@@ -211,9 +211,30 @@ function BridgePageContent() {
       if (!aptosConnected) {
         setIsAptosRestoring(false);
       }
-    }, 3000);
+    }, 10000);
     return () => clearTimeout(timer);
   }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
+
+  // Additional check: clear restoring early if adapter is not attempting to connect
+  // This helps when there's no saved wallet or wallet extension is not installed
+  useEffect(() => {
+    if (!isSolanaRestoring) return;
+    // Check adapter state after SolanaWalletRestore had time to start (2s)
+    const checkTimer = setTimeout(() => {
+      const adapter = solanaWallet?.adapter;
+      // If no wallet selected or adapter explicitly not connecting, clear restoring
+      if (!adapter || (!adapter.connected && !adapter.connecting)) {
+        // Check if there's actually a saved wallet to restore
+        const savedWallet = typeof window !== 'undefined' ? window.localStorage.getItem('walletName') : null;
+        const savedAptos = typeof window !== 'undefined' ? window.localStorage.getItem('AptosWalletName') : null;
+        const hasDerived = savedAptos?.includes('(Solana)');
+        if (!savedWallet && !hasDerived) {
+          setIsSolanaRestoring(false);
+        }
+      }
+    }, 2000);
+    return () => clearTimeout(checkTimer);
+  }, [isSolanaRestoring, solanaWallet]);
   
   // Clear reconnecting after timeout
   useEffect(() => {
@@ -386,16 +407,16 @@ function BridgePageContent() {
     let savedName: string | null = null;
     
     // Primary: walletName — canonical Solana wallet key (prioritizes standalone wallets like Phantom)
-    if (raw) {
-      try {
-        const p = JSON.parse(raw) as string | null;
+      if (raw) {
+        try {
+          const p = JSON.parse(raw) as string | null;
         console.log('[bridge-restore] Parsed walletName:', p, 'exists in wallets:', p ? walletNames.has(p) : false);
-        if (p && walletNames.has(p)) savedName = p;
-      } catch {
+          if (p && walletNames.has(p)) savedName = p;
+        } catch {
         console.log('[bridge-restore] walletName not JSON, raw value:', raw, 'exists:', walletNames.has(raw));
-        if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
+          if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
+        }
       }
-    }
     
     // Secondary: AptosWalletName for derived wallets (e.g. "Trust (Solana)")
     if (!savedName && aptosRaw) {
@@ -486,9 +507,9 @@ function BridgePageContent() {
   useEffect(() => {
     if (!aptosConnected || !aptosWallet || typeof window === "undefined") return;
     // Any successful connection means user intent is explicit again; allow derived auto-connect later.
-    sessionStorage.removeItem("skip_auto_connect_derived_aptos");
-    skipAutoConnectDerivedRef.current = false;
-    hasTriedAutoConnectDerived.current = false;
+      sessionStorage.removeItem("skip_auto_connect_derived_aptos");
+      skipAutoConnectDerivedRef.current = false;
+      hasTriedAutoConnectDerived.current = false;
   }, [aptosConnected, aptosWallet, solanaWalletNameForDerived]);
 
   // Restore native Aptos wallet after refresh if user selected native (Petra, etc.)
@@ -1010,7 +1031,7 @@ function BridgePageContent() {
     
     // If wallet is already undefined/disconnected, consider it a success
     const walletAlreadyDisconnected = !aptosWallet;
-    
+
     try {
       await disconnectAptos();
       disconnectSucceeded = true;
@@ -1177,13 +1198,13 @@ function BridgePageContent() {
             // Retry with increasing delay
             setTimeout(tryConnect, 200 * attempt);
           } else {
-            toast({
-              variant: "destructive",
-              title: "Connection Failed",
-              description: error.message || "Failed to connect wallet",
-            });
-            setIsSolanaConnecting(false);
-          }
+          toast({
+            variant: "destructive",
+            title: "Connection Failed",
+            description: error.message || "Failed to connect wallet",
+          });
+          setIsSolanaConnecting(false);
+        }
         }
       };
       
@@ -1937,7 +1958,7 @@ function BridgePageContent() {
               <div>{bridgeButtonAlert}</div>
             ) : null}
             walletSection={
-              <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
+                <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
                 {/* Solana Wallet: Connected or Connect Button */}
                 {effectiveSolanaConnected && solanaAddress ? (
                   <div>
@@ -2088,8 +2109,8 @@ function BridgePageContent() {
                         onExternalOpenChange={setIsAptosDialogOpen} 
                       />
                     </div>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       className="w-full"
                       disabled={isAptosConnecting || isAptosRestoring || isAptosReconnecting}
                       onClick={() => setIsAptosDialogOpen(true)}
@@ -2105,7 +2126,7 @@ function BridgePageContent() {
                     </Button>
                   </div>
                 )}
-              </div>
+                </div>
             }
           />
 
