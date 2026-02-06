@@ -42,6 +42,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const PRIVACY_SIGN_MESSAGE = "Privacy Money account sign in";
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 const TMP_WALLET_STORAGE_KEY = "privacy_cash_tmp_wallet_usdc";
+const APTOS_NATIVE_FALLBACK_STORAGE_KEY = "privacy_bridge_aptos_native_fallback";
 
 const TMP_SEED_WORDS = [
   "alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
@@ -281,6 +282,28 @@ function PrivacyBridgeContent() {
   );
   const aptosDisplayAddress =
     aptosAccount?.address?.toString() ?? aptosNativeFallback?.address ?? null;
+
+  // Load persisted Aptos native fallback for UI (helps after refresh / adapter desync)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (aptosConnected && aptosAccount?.address) return;
+    if (aptosNativeFallback) return;
+    const storedName = getAptosWalletNameFromStorage();
+    if (!storedName || storedName.endsWith(" (Solana)")) return; // only native
+    try {
+      const raw = window.sessionStorage.getItem(APTOS_NATIVE_FALLBACK_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { name?: string; address?: string } | null;
+      if (parsed?.address && typeof parsed.address === "string") {
+        setAptosNativeFallback({
+          name: typeof parsed.name === "string" ? parsed.name : storedName,
+          address: parsed.address,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }, [aptosConnected, aptosAccount?.address, aptosNativeFallback]);
 
   // Restore Solana wallet from localStorage — same logic as /bridge (walletName first, then AptosWalletName derived)
   const hasTriggeredRestore = useRef(false);
@@ -749,8 +772,13 @@ function PrivacyBridgeContent() {
     
     // If wallet is already undefined/disconnected, consider it a success
     const walletAlreadyDisconnected = !aptosWallet;
-    // User explicitly disconnecting Aptos: clear UI fallback
+    // User explicitly disconnecting Aptos: clear UI fallback (state + persisted)
     setAptosNativeFallback(null);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(APTOS_NATIVE_FALLBACK_STORAGE_KEY);
+      } catch {}
+    }
 
     let disconnectSucceeded = false;
     
@@ -1415,7 +1443,11 @@ function PrivacyBridgeContent() {
     if (!aptosConnected || !aptosAccount?.address) return;
     const name = aptosWallet?.name;
     if (!name || name.endsWith(" (Solana)")) return; // only native
-    setAptosNativeFallback({ name, address: aptosAccount.address.toString() });
+    const next = { name, address: aptosAccount.address.toString() };
+    setAptosNativeFallback(next);
+    try {
+      window.sessionStorage.setItem(APTOS_NATIVE_FALLBACK_STORAGE_KEY, JSON.stringify(next));
+    } catch {}
   }, [aptosConnected, aptosAccount?.address, aptosWallet?.name]);
 
   return (
