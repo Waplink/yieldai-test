@@ -118,68 +118,78 @@ function PrivacyBridgeContent() {
     setWalletConnectMounted(true);
   }, []);
   
-  // Check if there's a saved wallet in localStorage on mount to show restoring indicator
+  // Restoring indicators — same logic as /bridge
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
-    // Already connected - no need to restore
+    if (solanaConnected || effectiveSolanaConnected) setIsSolanaRestoring(false);
+    if (aptosConnected) setIsAptosRestoring(false);
+    const savedSolana = window.localStorage.getItem('walletName');
+    const savedAptosDerived = window.localStorage.getItem('AptosWalletName');
+    const skipSolana = window.sessionStorage.getItem('skip_auto_connect_solana') === '1';
+    let hasSavedSolana = false;
+    if (savedSolana) {
+      try {
+        const parsed = JSON.parse(savedSolana);
+        hasSavedSolana = typeof parsed === 'string' && parsed.length > 0;
+      } catch {
+        hasSavedSolana = savedSolana.length > 0;
+      }
+    }
+    let hasDerivedAptos = false;
+    if (savedAptosDerived) {
+      try {
+        const parsed = JSON.parse(savedAptosDerived);
+        hasDerivedAptos = typeof parsed === 'string' && parsed.includes('(Solana)');
+      } catch {
+        hasDerivedAptos = savedAptosDerived.includes('(Solana)');
+      }
+    }
+    if (!skipSolana && (hasSavedSolana || hasDerivedAptos)) setIsSolanaRestoring(true);
+    else setIsSolanaRestoring(false);
+    let hasNativeAptos = false;
+    if (savedAptosDerived && !hasDerivedAptos) {
+      try {
+        const parsed = JSON.parse(savedAptosDerived);
+        hasNativeAptos = typeof parsed === 'string' && parsed.length > 0;
+      } catch {
+        hasNativeAptos = savedAptosDerived.length > 0;
+      }
+    }
+    if (hasNativeAptos && !aptosConnected) setIsAptosRestoring(true);
+    else setIsAptosRestoring(false);
+  }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
+
+  useEffect(() => {
     if (solanaConnected || effectiveSolanaConnected) {
       setIsSolanaRestoring(false);
-      return;
-    }
-    
-    // Check for saved Solana wallet
-    let hasSavedSolana = false;
-    try {
-      const raw = window.localStorage.getItem('walletName');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed === 'string' && parsed.length > 0) {
-          hasSavedSolana = true;
-        }
-      }
-    } catch {
-      // Also check if raw value is a valid wallet name
-      const raw = window.localStorage.getItem('walletName');
-      if (raw && typeof raw === 'string' && raw.length > 0 && raw.length < 50) {
-        hasSavedSolana = true;
-      }
-    }
-    
-    if (hasSavedSolana) {
-      setIsSolanaRestoring(true);
-      // Clear after 3s or when connected
-      const timeout = setTimeout(() => setIsSolanaRestoring(false), 3000);
-      return () => clearTimeout(timeout);
+      setIsSolanaReconnecting(false);
     }
   }, [solanaConnected, effectiveSolanaConnected]);
-  
-  // Same for Aptos
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
     if (aptosConnected) {
       setIsAptosRestoring(false);
-      return;
-    }
-    
-    let hasSavedAptos = false;
-    try {
-      const raw = window.localStorage.getItem('AptosWalletName');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed === 'string' && parsed.length > 0) {
-          hasSavedAptos = true;
-        }
-      }
-    } catch {}
-    
-    if (hasSavedAptos) {
-      setIsAptosRestoring(true);
-      const timeout = setTimeout(() => setIsAptosRestoring(false), 3000);
-      return () => clearTimeout(timeout);
+      setIsAptosReconnecting(false);
     }
   }, [aptosConnected]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!solanaConnected && !effectiveSolanaConnected) setIsSolanaRestoring(false);
+      if (!aptosConnected) setIsAptosRestoring(false);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [solanaConnected, effectiveSolanaConnected, aptosConnected]);
+  useEffect(() => {
+    if (isSolanaReconnecting) {
+      const t = setTimeout(() => setIsSolanaReconnecting(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [isSolanaReconnecting]);
+  useEffect(() => {
+    if (isAptosReconnecting) {
+      const t = setTimeout(() => setIsAptosReconnecting(false), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [isAptosReconnecting]);
 
   /** Один раз за сессию для текущего адреса — чтобы не дергать кошелёк на подпись после burn/mint */
   const lastFetchedBalanceForAddress = useRef<string | null>(null);
@@ -210,33 +220,43 @@ function PrivacyBridgeContent() {
     return Boolean(stored != null && stored !== "" && String(stored).trim().endsWith(" (Solana)"));
   }, [aptosWallet, solanaWalletNameForDerived]);
 
-  // Restore Solana wallet from localStorage on bridge load (AptosWalletName e.g. "Trust (Solana)" first, then walletName)
+  // Restore Solana wallet from localStorage — same logic as /bridge (walletName first, then AptosWalletName derived)
   const hasTriggeredRestore = useRef(false);
+  const prevSolanaConnected = useRef(solanaConnected);
+  const prevEffectiveSolanaConnected = useRef(effectiveSolanaConnected);
+  useEffect(() => {
+    const wasConnected = prevSolanaConnected.current || prevEffectiveSolanaConnected.current;
+    const isNowDisconnected = !solanaConnected && !effectiveSolanaConnected;
+    if (wasConnected && isNowDisconnected) hasTriggeredRestore.current = false;
+    prevSolanaConnected.current = solanaConnected;
+    prevEffectiveSolanaConnected.current = effectiveSolanaConnected;
+  }, [solanaConnected, effectiveSolanaConnected]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (solanaConnected) return;
+    if (window.sessionStorage.getItem("skip_auto_connect_solana") === "1") return;
     const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
     let savedName: string | null = null;
-    const aptosRaw = window.localStorage.getItem("AptosWalletName");
-    if (aptosRaw) {
+    const raw = window.localStorage.getItem("walletName");
+    if (raw) {
       try {
-        const parsed = JSON.parse(aptosRaw) as string | null;
-        const aptosName = typeof parsed === "string" ? parsed : aptosRaw;
-        if (aptosName?.endsWith(" (Solana)")) {
-          const name = aptosName.slice(0, -" (Solana)".length).trim();
-          if (name && walletNames.has(name)) savedName = name;
-        }
-      } catch {}
+        const p = JSON.parse(raw) as string | null;
+        if (p && walletNames.has(p)) savedName = p;
+      } catch {
+        if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
+      }
     }
     if (!savedName) {
-      const raw = window.localStorage.getItem("walletName");
-      if (raw) {
+      const aptosRaw = window.localStorage.getItem("AptosWalletName");
+      if (aptosRaw) {
         try {
-          const p = JSON.parse(raw) as string | null;
-          if (p && walletNames.has(p)) savedName = p;
-        } catch {
-          if (typeof raw === "string" && raw.length > 0 && walletNames.has(raw)) savedName = raw;
-        }
+          const parsed = JSON.parse(aptosRaw) as string | null;
+          const aptosName = typeof parsed === "string" ? parsed : aptosRaw;
+          if (aptosName?.endsWith(" (Solana)")) {
+            const name = aptosName.slice(0, -" (Solana)".length).trim();
+            if (name && walletNames.has(name)) savedName = name;
+          }
+        } catch {}
       }
     }
     if (!savedName) return;
@@ -248,8 +268,16 @@ function PrivacyBridgeContent() {
       if (hasTriggeredRestore.current) return;
       hasTriggeredRestore.current = true;
       select(savedName as WalletName);
-      setTimeout(() => connectSolana().catch(() => {}), 100);
-      setTimeout(() => connectSolana().catch(() => {}), 600);
+      const doConnect = async (attempt: number) => {
+        try {
+          await connectSolana();
+        } catch {
+          if (attempt < 3) select(savedName as WalletName);
+        }
+      };
+      setTimeout(() => doConnect(1), 150);
+      setTimeout(() => doConnect(2), 500);
+      setTimeout(() => doConnect(3), 1200);
     };
 
     tryRestore();
@@ -462,25 +490,43 @@ function PrivacyBridgeContent() {
   const handleSolanaWalletSelect = async (walletName: string) => {
     try {
       setIsSolanaConnecting(true);
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.removeItem("skip_auto_connect_solana");
+          window.localStorage.setItem("walletName", JSON.stringify(walletName));
+        } catch {}
+      }
+      const targetWallet = wallets.find((w) => w.adapter.name === walletName);
+      if (!targetWallet) {
+        throw new Error(`Wallet ${walletName} not found in available wallets`);
+      }
       select(walletName as WalletName);
       setIsSolanaDialogOpen(false);
-      setTimeout(async () => {
+      const maxAttempts = 10;
+      let attempt = 0;
+      const tryConnect = async () => {
+        attempt++;
         try {
           await connectSolana();
           toast({
             title: "Wallet Connected",
             description: `Connected to ${walletName}`,
           });
-        } catch (err: unknown) {
-          toast({
-            variant: "destructive",
-            title: "Connection Failed",
-            description: err instanceof Error ? err.message : "Failed to connect wallet",
-          });
-        } finally {
           setIsSolanaConnecting(false);
+        } catch (error: unknown) {
+          if (attempt < maxAttempts) {
+            setTimeout(tryConnect, 200 * attempt);
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Connection Failed",
+              description: error instanceof Error ? error.message : "Failed to connect wallet",
+            });
+            setIsSolanaConnecting(false);
+          }
         }
-      }, 100);
+      };
+      setTimeout(tryConnect, 150);
     } catch (err: unknown) {
       setIsSolanaConnecting(false);
       toast({
