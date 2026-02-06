@@ -31,6 +31,7 @@ import bs58 from "bs58";
 import { ActionLog, type ActionLogItem } from "@/components/bridge/ActionLog";
 import { isDerivedAptosWalletReliable, getAptosWalletNameFromStorage } from "@/lib/aptosWalletUtils";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import { useAptosNativeRestore } from "@/hooks/useAptosNativeRestore";
 import { AptosPortfolioService } from "@/lib/services/aptos/portfolio";
 import { Token } from "@/lib/types/token";
 import { TokenList } from "@/components/portfolio/TokenList";
@@ -71,15 +72,17 @@ function PrivacyBridgeContent() {
     signMessage: solanaSignMessage,
     signTransaction: solanaSignTransaction,
   } = useSolanaWallet();
+  const aptosNative = useAptosNativeRestore();
   const {
-    account: aptosAccount,
-    connected: aptosConnected,
-    wallet: aptosWallet,
     wallets: aptosWallets,
     connect: connectAptos,
     disconnect: disconnectAptos,
     isLoading: aptosConnecting,
   } = useAptosWallet();
+  // Prefer restored native Aptos state for UI consistency (prevents UI "disconnect" flicker)
+  const aptosAccount = aptosNative.account;
+  const aptosConnected = aptosNative.connected;
+  const aptosWallet = aptosNative.wallet;
 
   const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
   const [isSolanaConnecting, setIsSolanaConnecting] = useState(false);
@@ -94,6 +97,7 @@ function PrivacyBridgeContent() {
   const [isSolanaReconnecting, setIsSolanaReconnecting] = useState(false);
   const [isAptosReconnecting, setIsAptosReconnecting] = useState(false);
   const [pendingReconnectWallet, setPendingReconnectWallet] = useState<string | null>(null);
+  const [aptosNativeFallback, setAptosNativeFallback] = useState<{ name: string; address: string } | null>(null);
   
   // Get Solana address - prefer adapter state over hook state for reliability
   const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
@@ -269,6 +273,14 @@ function PrivacyBridgeContent() {
     const stored = getAptosWalletNameFromStorage();
     return Boolean(stored != null && stored !== "" && String(stored).trim().endsWith(" (Solana)"));
   }, [aptosWallet, solanaWalletNameForDerived]);
+
+  // If we have a native Aptos fallback, show Aptos as connected even if adapter state flickers.
+  const showAptosAsConnected = Boolean(
+    (aptosConnected && aptosAccount?.address) ||
+      (aptosNativeFallback && !aptosNativeFallback.name.endsWith(" (Solana)") && aptosNativeFallback.address)
+  );
+  const aptosDisplayAddress =
+    aptosAccount?.address?.toString() ?? aptosNativeFallback?.address ?? null;
 
   // Restore Solana wallet from localStorage — same logic as /bridge (walletName first, then AptosWalletName derived)
   const hasTriggeredRestore = useRef(false);
@@ -608,6 +620,14 @@ function PrivacyBridgeContent() {
       savedAptosNativeName = aptosWallet.name;
     }
 
+    // Save native Aptos address for UI fallback BEFORE disconnecting Solana
+    if (savedAptosNativeName && aptosConnected && aptosAccount?.address) {
+      setAptosNativeFallback({
+        name: savedAptosNativeName,
+        address: aptosAccount.address.toString(),
+      });
+    }
+
     try {
       // Set skip flag BEFORE disconnect to prevent SolanaWalletRestore from reconnecting
       if (typeof window !== "undefined") {
@@ -729,6 +749,9 @@ function PrivacyBridgeContent() {
     
     // If wallet is already undefined/disconnected, consider it a success
     const walletAlreadyDisconnected = !aptosWallet;
+    // User explicitly disconnecting Aptos: clear UI fallback
+    setAptosNativeFallback(null);
+
     let disconnectSucceeded = false;
     
     try {
@@ -805,9 +828,9 @@ function PrivacyBridgeContent() {
   };
 
   const copyAptosAddress = async () => {
-    if (!aptosAccount?.address) return;
+    if (!aptosDisplayAddress) return;
     try {
-      await navigator.clipboard.writeText(aptosAccount.address.toString());
+      await navigator.clipboard.writeText(aptosDisplayAddress);
       toast({ title: "Copied", description: "Aptos address copied to clipboard" });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Failed to copy address" });
@@ -1387,6 +1410,14 @@ function PrivacyBridgeContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSolanaConnected, solanaAddress, effectiveSolanaSignMessage]);
 
+  // Keep/update native Aptos fallback when connected (so UI doesn't flicker on Solana disconnect)
+  useEffect(() => {
+    if (!aptosConnected || !aptosAccount?.address) return;
+    const name = aptosWallet?.name;
+    if (!name || name.endsWith(" (Solana)")) return; // only native
+    setAptosNativeFallback({ name, address: aptosAccount.address.toString() });
+  }, [aptosConnected, aptosAccount?.address, aptosWallet?.name]);
+
   return (
     <div className="w-full h-screen overflow-y-auto bg-gradient-to-br from-gray-50 via-white to-gray-100">
       <div className="w-full min-h-full flex items-center justify-center p-4">
@@ -1483,7 +1514,7 @@ function PrivacyBridgeContent() {
                   </div>
 
                   {/* Aptos Wallet */}
-                  {aptosConnected && aptosAccount ? (
+                  {showAptosAsConnected && aptosDisplayAddress ? (
                     <div>
                       <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
                         <div className="flex items-center gap-2 min-w-0">
@@ -1493,7 +1524,7 @@ function PrivacyBridgeContent() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                               <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
-                                {truncateAddress(aptosAccount.address.toString())}
+                                {truncateAddress(aptosDisplayAddress)}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
