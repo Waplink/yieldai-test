@@ -1505,16 +1505,52 @@ function PrivacyBridgeContent() {
   // Не зависяем от solanaConnection/solanaSignMessage — иначе после burn/mint ре-рендер
   // перезапускал эффект и снова открывал кошелёк на подпись (burn/mint сами кошелёк не используют).
   // Задержка, чтобы не пересекаться с авто-подключением derived Aptos (тот тоже может дергать кошелёк).
+  // Для Phantom требуется retry логика, так как signMessage может быть недоступен сразу после загрузки страницы.
   useEffect(() => {
     const address = solanaAddress;
     if (!effectiveSolanaConnected || !address || address === lastFetchedBalanceForAddress.current) {
       return;
     }
     lastFetchedBalanceForAddress.current = address;
-    const t = setTimeout(() => {
-      void fetchPrivacyUsdcBalance();
-    }, 500);
-    return () => clearTimeout(t);
+    
+    // Retry logic for Phantom and other wallets that may need time to initialize signMessage
+    let attempt = 0;
+    const maxAttempts = 5;
+    const baseDelay = 500;
+    const timeouts: NodeJS.Timeout[] = [];
+    
+    const tryFetchBalance = () => {
+      attempt++;
+      // Check current signMessage availability (may have changed since last attempt)
+      const currentSignMessage = solanaSignMessage ?? 
+        (solanaWallet?.adapter as unknown as { signMessage?: (msg: Uint8Array) => Promise<any> })?.signMessage;
+      
+      if (!currentSignMessage) {
+        if (attempt < maxAttempts) {
+          const delay = baseDelay * attempt; // Exponential backoff: 500ms, 1000ms, 1500ms, 2000ms, 2500ms
+          pushLog("info", `Waiting for signMessage to become available (attempt ${attempt}/${maxAttempts})...`);
+          const t = setTimeout(() => {
+            tryFetchBalance();
+          }, delay);
+          timeouts.push(t);
+        } else {
+          pushLog("warning", `Cannot load USDC balance: signMessage still not available after ${maxAttempts} attempts.`);
+        }
+      } else {
+        // signMessage is available, proceed with fetch after base delay
+        pushLog("info", `signMessage available, fetching Privacy Cash balance...`);
+        const t = setTimeout(() => {
+          void fetchPrivacyUsdcBalance();
+        }, baseDelay);
+        timeouts.push(t);
+      }
+    };
+    
+    tryFetchBalance();
+    
+    return () => {
+      timeouts.forEach(t => clearTimeout(t));
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSolanaConnected, solanaAddress, effectiveSolanaSignMessage]);
 
