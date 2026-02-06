@@ -345,6 +345,46 @@ function PrivacyBridgeContent() {
     }
   }, [aptosConnected, aptosAccount?.address, aptosNativeFallback]);
 
+  // Debug log for Aptos UI state (mirror /bridge)
+  useEffect(() => {
+    // Keep payload compact but informative
+    console.log("[privacy-bridge][AptosUI] Debug:", {
+      showAptosAsConnected,
+      aptosConnecting,
+      aptosConnected,
+      aptosAccount: aptosAccount?.address?.toString() || null,
+      aptosWalletName: aptosWallet?.name || null,
+      storedAptosName,
+      aptosNativeSelected,
+      fallbackIsNative,
+      isCurrentAptosDerived,
+      aptosNativeFallback: aptosNativeFallback
+        ? {
+            name: aptosNativeFallback.name,
+            address: aptosNativeFallback.address.slice(0, 10) + "...",
+          }
+        : null,
+      effectiveSolanaConnected,
+      effectiveSolanaPublicKey:
+        effectiveSolanaPublicKey && "toBase58" in effectiveSolanaPublicKey
+          ? (effectiveSolanaPublicKey as any).toBase58()
+          : null,
+    });
+  }, [
+    showAptosAsConnected,
+    aptosConnecting,
+    aptosConnected,
+    aptosAccount?.address,
+    aptosWallet?.name,
+    storedAptosName,
+    aptosNativeSelected,
+    fallbackIsNative,
+    isCurrentAptosDerived,
+    aptosNativeFallback,
+    effectiveSolanaConnected,
+    effectiveSolanaPublicKey,
+  ]);
+
   // Restore Solana wallet from localStorage — same logic as /bridge (walletName first, then AptosWalletName derived)
   const hasTriggeredRestore = useRef(false);
   const prevSolanaConnected = useRef(solanaConnected);
