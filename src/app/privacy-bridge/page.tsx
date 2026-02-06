@@ -93,6 +93,7 @@ function PrivacyBridgeContent() {
   const [isAptosRestoring, setIsAptosRestoring] = useState(false);
   const [isSolanaReconnecting, setIsSolanaReconnecting] = useState(false);
   const [isAptosReconnecting, setIsAptosReconnecting] = useState(false);
+  const [pendingReconnectWallet, setPendingReconnectWallet] = useState<string | null>(null);
   
   // Get Solana address - prefer adapter state over hook state for reliability
   const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
@@ -207,6 +208,40 @@ function PrivacyBridgeContent() {
       return () => clearTimeout(t);
     }
   }, [isAptosReconnecting]);
+
+  // Reconnect Solana after derived Aptos disconnect (same idea as /bridge)
+  useEffect(() => {
+    if (!pendingReconnectWallet || effectiveSolanaConnected) {
+      if (pendingReconnectWallet && effectiveSolanaConnected) {
+        setPendingReconnectWallet(null);
+        setIsSolanaReconnecting(false);
+      }
+      return;
+    }
+    const walletToConnect = wallets.find((w) => w.adapter.name === pendingReconnectWallet);
+    if (!walletToConnect) {
+      setPendingReconnectWallet(null);
+      setIsSolanaReconnecting(false);
+      return;
+    }
+    const doReconnect = async () => {
+      try {
+        select(pendingReconnectWallet as WalletName);
+        await new Promise((r) => setTimeout(r, 100));
+        const adapter = walletToConnect.adapter;
+        if (!adapter.connected) {
+          await adapter.connect();
+        }
+      } catch {
+        // ignore
+      } finally {
+        setPendingReconnectWallet(null);
+        setIsSolanaReconnecting(false);
+      }
+    };
+    void doReconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingReconnectWallet, effectiveSolanaConnected, wallets, select]);
 
   /** Один раз за сессию для текущего адреса — чтобы не дергать кошелёк на подпись после burn/mint */
   const lastFetchedBalanceForAddress = useRef<string | null>(null);
@@ -589,19 +624,45 @@ function PrivacyBridgeContent() {
     
     // Determine if this is a derived wallet BEFORE removing localStorage
     const isDerived = aptosWallet && isDerivedAptosWalletReliable(aptosWallet);
+
+    // If disconnecting derived Aptos, the adapter can cascade-disconnect Solana and clear walletName.
+    // Save Solana wallet name so we can restore it after.
+    let savedSolanaName: string | null = null;
+    if (isDerived && typeof window !== "undefined") {
+      const fromAdapter =
+        (solanaWallet as { adapter?: { name?: string } })?.adapter?.name ??
+        (solanaWallet as { name?: string })?.name;
+      const fromStorage = window.localStorage.getItem("walletName");
+      const fromAptos = (() => {
+        const a = window.localStorage.getItem("AptosWalletName");
+        if (a?.endsWith(" (Solana)")) return a.slice(0, -" (Solana)".length).trim();
+        return null;
+      })();
+      let raw = fromAdapter ?? fromStorage ?? fromAptos;
+      if (typeof raw === "string" && raw.startsWith('"') && raw.endsWith('"')) {
+        try {
+          raw = JSON.parse(raw) as string;
+        } catch {}
+      }
+      savedSolanaName = (typeof raw === "string" ? raw.trim() : null) || null;
+    }
     
     // Clear localStorage to prevent auto-restore
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem("AptosWalletName");
+        // Allow standalone Solana restore/reconnect after derived disconnect
+        window.sessionStorage.removeItem("skip_auto_connect_solana");
       } catch {}
     }
     
     // If wallet is already undefined/disconnected, consider it a success
     const walletAlreadyDisconnected = !aptosWallet;
+    let disconnectSucceeded = false;
     
     try {
       await disconnectAptos();
+      disconnectSucceeded = true;
       toast({ title: "Success", description: "Aptos wallet disconnected" });
     } catch (err: unknown) {
       const name = (err as { name?: string })?.name;
@@ -630,6 +691,7 @@ function PrivacyBridgeContent() {
         return;
       } else if (isBenignDisconnect || isDerivedSoftError || isAlreadyDisconnectedError) {
         // Wallet was already disconnected or it's a soft error - show success
+        disconnectSucceeded = true;
         toast({ title: "Success", description: "Aptos wallet disconnected" });
       } else {
         toast({
@@ -637,7 +699,27 @@ function PrivacyBridgeContent() {
           title: "Error",
           description: msg || "Failed to disconnect",
         });
+        return;
       }
+    }
+
+    if (!disconnectSucceeded) return;
+
+    // Restore Solana after derived Aptos disconnect (if cascade happened)
+    if (isDerived && savedSolanaName && typeof window !== "undefined") {
+      setTimeout(() => {
+        try {
+          const currentWalletName = window.localStorage.getItem("walletName");
+          const adapterConnected = solanaWallet?.adapter?.connected ?? false;
+          if (!currentWalletName || !adapterConnected) {
+            window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+            setIsSolanaReconnecting(true);
+            setPendingReconnectWallet(savedSolanaName);
+          }
+        } catch {
+          // ignore
+        }
+      }, 500);
     }
   };
 
