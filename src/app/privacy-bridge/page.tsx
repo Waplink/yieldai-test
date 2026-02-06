@@ -1767,17 +1767,59 @@ function PrivacyBridgeContent() {
                     />
                   </div>
                   {showAptosAsConnected && aptosDisplayAddress ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full font-mono justify-between"
-                      onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}
-                    >
-                      <span className="truncate">{truncateAddress(aptosDisplayAddress)}</span>
-                      <span className="text-xs text-muted-foreground ml-2">
-                        {isDerivedWallet ? "(Derived)" : "(Native)"}
-                      </span>
-                    </Button>
+                    // Use the same detailed Aptos wallet layout as when Solana is connected (matches /bridge)
+                    <div className="flex flex-col items-start w-full">
+                      <div
+                        className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
+                        onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-sm font-medium text-muted-foreground shrink-0">
+                            Aptos {isDerivedWallet ? "(Derived)" : "(Native)"}
+                          </span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                className="h-auto p-0 font-mono text-sm truncate"
+                              >
+                                {truncateAddress(aptosDisplayAddress)}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2">
+                                <Copy className="h-4 w-4" /> Copy address
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2">
+                                <LogOut className="h-4 w-4" /> Disconnect
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 shrink-0 transition-transform text-muted-foreground",
+                            isAptosBalanceExpanded ? "transform rotate-0" : "transform -rotate-90"
+                          )}
+                        />
+                      </div>
+                      {isAptosBalanceExpanded && (
+                        <div className="mt-2 pt-2 border-t w-full">
+                          <div className="text-sm font-medium pb-2">
+                            {isAptosLoading ? "..." : formatCurrency(aptosTotalValue, 2)}
+                          </div>
+                          <ScrollArea className="max-h-48">
+                            {aptosTokens.length > 0 ? (
+                              <TokenList tokens={aptosTokens} disableDrag={true} />
+                            ) : (
+                              <div className="text-sm text-muted-foreground p-2">
+                                No tokens found
+                              </div>
+                            )}
+                          </ScrollArea>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <Button
                       size="sm"
@@ -1788,7 +1830,11 @@ function PrivacyBridgeContent() {
                       {aptosConnecting || isAptosRestoring || isAptosReconnecting ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {isAptosRestoring ? 'Restoring...' : isAptosReconnecting ? 'Reconnecting...' : 'Connecting...'}
+                          {isAptosRestoring
+                            ? "Restoring..."
+                            : isAptosReconnecting
+                              ? "Reconnecting..."
+                              : "Connecting..."}
                         </>
                       ) : (
                         "Connect Aptos Wallet"
