@@ -1547,48 +1547,56 @@ function PrivacyBridgeContent() {
           <div className="flex flex-col gap-4 w-full p-4 border rounded-lg bg-card">
             <h1 className="text-xl font-semibold text-center">Privacy Bridge</h1>
 
-            {/* Блок комиссий слева, блок кошельков справа */}
-            {effectiveSolanaConnected ? (
-              <div className="flex flex-wrap items-start gap-4">
-                <div className="w-full md:flex-[0_0_calc(50%-0.5rem)] md:min-w-0 p-3 border rounded-lg bg-card">
-                  <span className="text-sm font-medium text-muted-foreground block mb-2">
-                    Withdraw fees
-                  </span>
-                  {withdrawConfig ? (
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      <p>
-                        USDC protocol fee:{" "}
-                        {typeof withdrawConfig.withdraw_fee_rate === "number"
-                          ? `${(withdrawConfig.withdraw_fee_rate * 100).toFixed(3)}% of amount`
-                          : "see relayer config"}
-                        {withdrawConfig.usdc_withdraw_rent_fee
-                          ? ` + ${withdrawConfig.usdc_withdraw_rent_fee} USDC rent`
-                          : ""}
-                        .
-                      </p>
-                      <p>
-                        SOL network fee: approximately{" "}
-                        <span className="font-mono">0.002 SOL</span> required for on-chain tx fees.
-                      </p>
-                    </div>
-                  ) : withdrawConfigError ? (
-                    <p className="text-sm text-muted-foreground">
-                      Failed to load withdraw fees: {withdrawConfigError}
+            {/* Блок комиссий слева, блок кошельков справа (одинаковый layout при подключенной и отключенной Solana) */}
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="w-full md:flex-[0_0_calc(50%-0.5rem)] md:min-w-0 p-3 border rounded-lg bg-card">
+                <span className="text-sm font-medium text-muted-foreground block mb-2">
+                  Withdraw fees
+                </span>
+                {withdrawConfig ? (
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <p>
+                      USDC protocol fee:{" "}
+                      {typeof withdrawConfig.withdraw_fee_rate === "number"
+                        ? `${(withdrawConfig.withdraw_fee_rate * 100).toFixed(3)}% of amount`
+                        : "see relayer config"}
+                      {withdrawConfig.usdc_withdraw_rent_fee
+                        ? ` + ${withdrawConfig.usdc_withdraw_rent_fee} USDC rent`
+                        : ""}
+                      .
                     </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Loading withdraw fees…</p>
-                  )}
-                </div>
-                {solanaAddress ? (
+                    <p>
+                      SOL network fee: approximately{" "}
+                      <span className="font-mono">0.002 SOL</span> required for on-chain tx fees.
+                    </p>
+                  </div>
+                ) : withdrawConfigError ? (
+                  <p className="text-sm text-muted-foreground">
+                    Failed to load withdraw fees: {withdrawConfigError}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Loading withdraw fees…</p>
+                )}
+              </div>
+
               <div className="w-full md:flex-[0_0_calc(50%-0.5rem)] md:min-w-0 p-3 border rounded-lg bg-card space-y-2">
-                  {/* Solana Wallet */}
+                {/* Solana Wallet: подключённый или кнопка коннекта */}
+                {effectiveSolanaConnected && solanaAddress ? (
                   <div>
-                    <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
+                    <div
+                      className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
+                      onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}
+                    >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium text-muted-foreground shrink-0">Solana</span>
+                        <span className="text-sm font-medium text-muted-foreground shrink-0">
+                          Solana
+                        </span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
+                            <Button
+                              variant="ghost"
+                              className="h-auto p-0 font-mono text-sm truncate"
+                            >
                               {truncateAddress(solanaAddress)}
                             </Button>
                           </DropdownMenuTrigger>
@@ -1612,162 +1620,109 @@ function PrivacyBridgeContent() {
                     {isSolanaBalanceExpanded && (
                       <div className="mt-2 pt-2 border-t">
                         <div className="text-sm font-medium pb-2">
-                          {isSolanaLoading ? "..." : solanaTotalValue !== null ? formatCurrency(solanaTotalValue, 2) : "N/A"}
+                          {isSolanaLoading
+                            ? "..."
+                            : solanaTotalValue !== null
+                              ? formatCurrency(solanaTotalValue, 2)
+                              : "N/A"}
                         </div>
                         <ScrollArea className="max-h-48">
                           {solanaTokens.length > 0 ? (
                             <TokenList tokens={solanaTokens} disableDrag={true} />
                           ) : (
-                            <div className="text-sm text-muted-foreground p-2">No tokens found</div>
+                            <div className="text-sm text-muted-foreground p-2">
+                              No tokens found
+                            </div>
                           )}
                         </ScrollArea>
                       </div>
                     )}
                   </div>
-
-                  {/* Aptos Wallet */}
-                  {showAptosAsConnected && aptosDisplayAddress ? (
-                    <div>
-                      <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm font-medium text-muted-foreground shrink-0">
-                            Aptos {isDerivedWallet ? "(Derived)" : "(Native)"}
-                          </span>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                              <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
-                                {truncateAddress(aptosDisplayAddress)}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={copyAptosAddress} className="gap-2">
-                                <Copy className="h-4 w-4" /> Copy address
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={handleDisconnectAptos} className="gap-2">
-                                <LogOut className="h-4 w-4" /> Disconnect
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-transform text-muted-foreground",
-                            isAptosBalanceExpanded ? "transform rotate-0" : "transform -rotate-90"
-                          )}
-                        />
-                      </div>
-                      {isAptosBalanceExpanded && (
-                        <div className="mt-2 pt-2 border-t">
-                          <div className="text-sm font-medium pb-2">
-                            {isAptosLoading ? "..." : formatCurrency(aptosTotalValue, 2)}
-                          </div>
-                          <ScrollArea className="max-h-48">
-                            {aptosTokens.length > 0 ? (
-                              <TokenList tokens={aptosTokens} disableDrag={true} />
+                ) : (
+                  <div>
+                    {walletConnectMounted ? (
+                      <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            className="w-full"
+                            disabled={
+                              isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting
+                            }
+                          >
+                            {isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                {isSolanaRestoring
+                                  ? "Restoring..."
+                                  : isSolanaReconnecting
+                                    ? "Reconnecting..."
+                                    : "Connecting..."}
+                              </>
                             ) : (
-                              <div className="text-sm text-muted-foreground p-2">No tokens found</div>
+                              "Connect Solana Wallet"
                             )}
-                          </ScrollArea>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                  <div className="relative">
-                    <div className="hidden">
-                      <WalletSelector 
-                        externalOpen={isAptosDialogOpen} 
-                        onExternalOpenChange={setIsAptosDialogOpen} 
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      disabled={aptosConnecting || isAptosRestoring || isAptosReconnecting}
-                      onClick={() => setIsAptosDialogOpen(true)}
-                    >
-                      {aptosConnecting || isAptosRestoring || isAptosReconnecting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {isAptosRestoring ? 'Restoring...' : isAptosReconnecting ? 'Reconnecting...' : 'Connecting...'}
-                        </>
-                      ) : (
-                        "Connect Aptos Wallet"
-                      )}
-                    </Button>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Select Solana Wallet</DialogTitle>
+                            <DialogDescription>
+                              Choose a wallet to connect to your Solana account
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-2 mt-4">
+                            {availableSolanaWallets.length === 0 ? (
+                              <div className="text-sm text-muted-foreground p-4 text-center">
+                                No Solana wallets detected. Please install a wallet extension.
+                              </div>
+                            ) : (
+                              availableSolanaWallets.map((w, i) => (
+                                <Button
+                                  key={`${w.adapter.name}-${i}-${w.adapter.url ?? ""}`}
+                                  variant="outline"
+                                  className="w-full justify-start"
+                                  onClick={() => handleSolanaWalletSelect(w.adapter.name)}
+                                  disabled={isSolanaConnecting}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {w.adapter.icon && (
+                                      <img
+                                        src={w.adapter.icon}
+                                        alt={w.adapter.name}
+                                        className="w-6 h-6"
+                                      />
+                                    )}
+                                    <span>{w.adapter.name}</span>
+                                    {w.readyState === WalletReadyState.Loadable && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        (Install)
+                                      </span>
+                                    )}
+                                  </div>
+                                </Button>
+                              ))
+                            )}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    ) : (
+                      <Button size="sm" className="w-full" disabled>
+                        Connect Solana Wallet
+                      </Button>
+                    )}
                   </div>
                 )}
-                </div>
-              ) : null}
-              </div>
-            ) : !effectiveSolanaConnected ? (
-              <div className="flex flex-col items-end gap-2">
-                {/* Solana connect button */}
-                {walletConnectMounted ? (
-                  <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" disabled={isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting}>
-                        {isSolanaConnecting || isSolanaRestoring || isSolanaReconnecting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {isSolanaRestoring ? 'Restoring...' : isSolanaReconnecting ? 'Reconnecting...' : 'Connecting...'}
-                          </>
-                        ) : (
-                          "Connect Solana Wallet"
-                        )}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Select Solana Wallet</DialogTitle>
-                        <DialogDescription>
-                          Choose a wallet to connect to your Solana account
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-2 mt-4">
-                        {availableSolanaWallets.length === 0 ? (
-                          <div className="text-sm text-muted-foreground p-4 text-center">
-                            No Solana wallets detected. Please install a wallet extension.
-                          </div>
-                        ) : (
-                          availableSolanaWallets.map((w, i) => (
-                            <Button
-                              key={`${w.adapter.name}-${i}-${w.adapter.url ?? ""}`}
-                              variant="outline"
-                              className="w-full justify-start"
-                              onClick={() => handleSolanaWalletSelect(w.adapter.name)}
-                              disabled={isSolanaConnecting}
-                            >
-                              <div className="flex items-center gap-2">
-                                {w.adapter.icon && (
-                                  <img src={w.adapter.icon} alt={w.adapter.name} className="w-6 h-6" />
-                                )}
-                                <span>{w.adapter.name}</span>
-                                {w.readyState === WalletReadyState.Loadable && (
-                                  <span className="ml-auto text-xs text-muted-foreground">(Install)</span>
-                                )}
-                              </div>
-                            </Button>
-                          ))
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                ) : (
-                  <Button size="sm" disabled>
-                    Connect Solana Wallet
-                  </Button>
-                )}
 
-                {/* Aptos: show connected state even when Solana is disconnected, if we know it's connected */}
-                <div className="relative mt-2 w-full max-w-xs">
+                {/* Aptos Wallet — тот же layout, что и при подключённой Solana */}
+                <div className="relative mt-2 w-full">
                   <div className="hidden">
-                    <WalletSelector 
-                      externalOpen={isAptosDialogOpen} 
-                      onExternalOpenChange={setIsAptosDialogOpen} 
+                    <WalletSelector
+                      externalOpen={isAptosDialogOpen}
+                      onExternalOpenChange={setIsAptosDialogOpen}
                     />
                   </div>
                   {showAptosAsConnected && aptosDisplayAddress ? (
-                    // Use the same detailed Aptos wallet layout as when Solana is connected (matches /bridge)
                     <div className="flex flex-col items-start w-full">
                       <div
                         className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
@@ -1843,7 +1798,7 @@ function PrivacyBridgeContent() {
                   )}
                 </div>
               </div>
-            ) : null}
+            </div>
 
             {/* Ниже блока кошельков: баланс Privacy, депозит, вывод, Burn to Aptos и т.д. (только если подключён Solana) */}
             {effectiveSolanaConnected && (
