@@ -123,7 +123,8 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
             message.includes("WalletNotConnectedError") || 
             message.includes("WalletNotSelectedError") ||
             message.includes("disconnect") ||
-            message.includes("Disconnect")
+            message.includes("Disconnect") ||
+            message.includes("already connected")
           ))
         ) {
           console.log('[WalletProvider] Suppressing error:', name || message);
