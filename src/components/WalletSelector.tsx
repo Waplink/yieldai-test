@@ -80,8 +80,11 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   // Also check adapter state directly for Phantom
   const adapterSolanaAddress = useMemo(() => solanaWallet?.adapter?.publicKey?.toBase58() ?? null, [solanaWallet]);
   
-  // Effective Solana address - prefer cross-chain, then direct, then adapter
-  const solanaAddress = crossChainSolanaAddress ?? directSolanaAddress ?? adapterSolanaAddress;
+  // Polled address state for Phantom (which doesn't trigger React updates properly)
+  const [polledSolanaAddress, setPolledSolanaAddress] = useState<string | null>(null);
+  
+  // Effective Solana address - prefer cross-chain, then direct, then adapter, then polled
+  const solanaAddress = crossChainSolanaAddress ?? directSolanaAddress ?? adapterSolanaAddress ?? polledSolanaAddress;
   
   // Check if any wallet is connected
   const isAnyWalletConnected = aptosConnected || solanaConnected || !!solanaAddress;
@@ -89,6 +92,37 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Poll adapter state for Phantom (which doesn't trigger React state updates properly)
+  useEffect(() => {
+    if (!solanaWallet?.adapter) return;
+    
+    // If we already have an address from other sources, no need to poll
+    if (crossChainSolanaAddress || directSolanaAddress || adapterSolanaAddress) {
+      setPolledSolanaAddress(null);
+      return;
+    }
+    
+    const checkAdapter = () => {
+      const adapterPk = solanaWallet.adapter.publicKey?.toBase58() ?? null;
+      if (adapterPk && adapterPk !== polledSolanaAddress) {
+        console.log('[WalletSelector] Adapter publicKey detected via polling:', adapterPk);
+        setPolledSolanaAddress(adapterPk);
+      }
+    };
+    
+    // Check immediately and then poll
+    checkAdapter();
+    const interval = setInterval(checkAdapter, 500);
+    
+    // Stop polling after 10 seconds
+    const timeout = setTimeout(() => clearInterval(interval), 10000);
+    
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [solanaWallet, crossChainSolanaAddress, directSolanaAddress, adapterSolanaAddress, polledSolanaAddress]);
 
   // Reset connecting state when wallet connects
   useEffect(() => {
