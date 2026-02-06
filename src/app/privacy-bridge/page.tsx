@@ -588,6 +588,26 @@ function PrivacyBridgeContent() {
   };
 
   const handleDisconnectSolana = async () => {
+    // Preserve native Aptos wallet (if any). Derived Aptos is expected to disconnect with Solana.
+    let savedAptosNativeName: string | null = null;
+    if (typeof window !== "undefined") {
+      const rawAptos = window.localStorage.getItem("AptosWalletName");
+      if (rawAptos) {
+        try {
+          let parsed = rawAptos;
+          try {
+            parsed = JSON.parse(rawAptos) as string;
+          } catch {}
+          if (typeof parsed === "string" && parsed.length > 0 && !parsed.endsWith(" (Solana)")) {
+            savedAptosNativeName = parsed;
+          }
+        } catch {}
+      }
+    }
+    if (!savedAptosNativeName && aptosWallet?.name && !aptosWallet.name.endsWith(" (Solana)")) {
+      savedAptosNativeName = aptosWallet.name;
+    }
+
     try {
       // Set skip flag BEFORE disconnect to prevent SolanaWalletRestore from reconnecting
       if (typeof window !== "undefined") {
@@ -609,6 +629,57 @@ function PrivacyBridgeContent() {
       setPrivacyBalanceUsdc(null);
       setPrivacyBalanceUsdcError(null);
       toast({ title: "Success", description: "Solana wallet disconnected" });
+
+      // If Aptos native was connected, try to keep/restore it (same intent as /bridge).
+      if (savedAptosNativeName) {
+        setIsAptosReconnecting(true);
+        const walletName = savedAptosNativeName;
+
+        // Ensure AptosWalletName is preserved
+        window.setTimeout(() => {
+          if (typeof window === "undefined") return;
+          try {
+            window.localStorage.setItem("AptosWalletName", JSON.stringify(walletName));
+          } catch {}
+        }, 500);
+
+        const attemptReconnect = (attempt: number) => {
+          try {
+            // If already connected, no need to reconnect
+            if (aptosConnected && aptosWallet?.name === walletName) {
+              setIsAptosReconnecting(false);
+              return;
+            }
+            const walletToConnect = aptosWallets?.find((w) => w.name === walletName);
+            if (!walletToConnect) {
+              setIsAptosReconnecting(false);
+              return;
+            }
+            if (walletName.endsWith(" (Solana)")) {
+              setIsAptosReconnecting(false);
+              return;
+            }
+            (async () => {
+              try {
+                await connectAptos(walletName);
+                setIsAptosReconnecting(false);
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                if (msg.includes("already connected")) {
+                  setIsAptosReconnecting(false);
+                }
+              }
+            })();
+          } catch {
+            // ignore
+          }
+        };
+
+        window.setTimeout(() => attemptReconnect(1), 1500);
+        window.setTimeout(() => attemptReconnect(2), 2000);
+        window.setTimeout(() => attemptReconnect(3), 3000);
+        window.setTimeout(() => attemptReconnect(4), 5000);
+      }
     } catch (err: unknown) {
       toast({
         variant: "destructive",
