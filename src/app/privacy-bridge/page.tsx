@@ -100,6 +100,16 @@ function PrivacyBridgeContent() {
   const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
   const effectiveSolanaPublicKey = solanaPublicKey ?? solanaAdapterPublicKey ?? null;
   const solanaAddress = effectiveSolanaPublicKey?.toBase58() ?? null;
+  // Some wallets (notably Phantom via standard wallet path) can desync hook helpers.
+  // Use adapter methods as fallback.
+  const effectiveSolanaSignMessage = useMemo(() => {
+    const adapterSign = (solanaWallet?.adapter as unknown as { signMessage?: (msg: Uint8Array) => Promise<any> })?.signMessage;
+    return solanaSignMessage ?? adapterSign ?? null;
+  }, [solanaSignMessage, solanaWallet]);
+  const effectiveSolanaSignTransaction = useMemo(() => {
+    const adapterSign = (solanaWallet?.adapter as unknown as { signTransaction?: (tx: any) => Promise<any> })?.signTransaction;
+    return solanaSignTransaction ?? adapterSign ?? null;
+  }, [solanaSignTransaction, solanaWallet]);
   const [privacyBalanceUsdc, setPrivacyBalanceUsdc] = useState<number | null>(null);
   const [privacyBalanceUsdcLoading, setPrivacyBalanceUsdcLoading] = useState(false);
   const [privacyBalanceUsdcError, setPrivacyBalanceUsdcError] = useState<string | null>(null);
@@ -652,13 +662,10 @@ function PrivacyBridgeContent() {
   };
 
   const fetchPrivacyUsdcBalance = async () => {
-    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage) {
-      toast({
-        variant: "destructive",
-        title: "Cannot load USDC balance",
-        description: "Connect a Solana wallet that supports message signing (e.g. Phantom, Solflare).",
-      });
-      pushLog("warning", "Cannot load USDC balance: Solana wallet or signMessage not available.");
+    if (!effectiveSolanaPublicKey || !solanaConnection || !effectiveSolanaSignMessage) {
+      // This can happen briefly right after adapter connects (especially on Vercel/Phantom).
+      // Don't show a scary toast; we'll retry on next render when signMessage becomes available.
+      pushLog("warning", "Cannot load USDC balance yet: Solana wallet or signMessage not available.");
       return;
     }
     setPrivacyBalanceUsdcLoading(true);
@@ -668,7 +675,7 @@ function PrivacyBridgeContent() {
       const msg = new TextEncoder().encode(PRIVACY_SIGN_MESSAGE);
       let sig: Uint8Array;
       try {
-        const raw = await solanaSignMessage(msg);
+        const raw = await effectiveSolanaSignMessage(msg);
         if (typeof raw === "object" && raw !== null && "signature" in raw && raw.signature instanceof Uint8Array) {
           sig = raw.signature;
         } else {
@@ -762,7 +769,7 @@ function PrivacyBridgeContent() {
   }, []);
 
   const handleSendToDeposit = async () => {
-    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
+    if (!effectiveSolanaPublicKey || !solanaConnection || !effectiveSolanaSignMessage || !effectiveSolanaSignTransaction) {
       toast({
         variant: "destructive",
         title: "Cannot prepare deposit",
@@ -789,7 +796,7 @@ function PrivacyBridgeContent() {
       const msg = new TextEncoder().encode(PRIVACY_SIGN_MESSAGE);
       let sig: Uint8Array;
       try {
-        const raw = await solanaSignMessage(msg);
+        const raw = await effectiveSolanaSignMessage(msg);
         if (typeof raw === "object" && raw !== null && "signature" in raw && raw.signature instanceof Uint8Array) {
           sig = raw.signature;
         } else {
@@ -831,7 +838,7 @@ function PrivacyBridgeContent() {
         encryptionService: enc,
         mintAddress: USDC_MINT,
         transactionSigner: async (tx: any) => {
-          const signed = await solanaSignTransaction(tx);
+          const signed = await effectiveSolanaSignTransaction(tx);
           pushLog("info", "Transaction signed by wallet. Sending to Privacy Cash relayer / network...");
           return signed;
         },
@@ -1079,7 +1086,7 @@ function PrivacyBridgeContent() {
 
   /** Withdraw из Privacy Cash на tmp-кошелёк, затем сразу burn на Solana + mint на Aptos. Одна связка. */
   const handleWithdrawUsdc = async () => {
-    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
+    if (!effectiveSolanaPublicKey || !solanaConnection || !effectiveSolanaSignMessage || !effectiveSolanaSignTransaction) {
       toast({
         variant: "destructive",
         title: "Cannot prepare withdraw",
@@ -1126,7 +1133,7 @@ function PrivacyBridgeContent() {
       const msg = new TextEncoder().encode(PRIVACY_SIGN_MESSAGE);
       let sig: Uint8Array;
       try {
-        const raw = await solanaSignMessage(msg);
+        const raw = await effectiveSolanaSignMessage(msg);
         if (typeof raw === "object" && raw !== null && "signature" in raw && raw.signature instanceof Uint8Array) {
           sig = raw.signature;
         } else {
@@ -1225,7 +1232,7 @@ function PrivacyBridgeContent() {
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSolanaConnected, solanaAddress]);
+  }, [effectiveSolanaConnected, solanaAddress, effectiveSolanaSignMessage]);
 
   return (
     <div className="w-full h-screen overflow-y-auto bg-gradient-to-br from-gray-50 via-white to-gray-100">
