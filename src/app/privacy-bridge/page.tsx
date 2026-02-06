@@ -98,6 +98,8 @@ function PrivacyBridgeContent() {
   const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
   const solanaAdapterPublicKey = solanaWallet?.adapter?.publicKey;
   const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
+  const effectiveSolanaPublicKey = solanaPublicKey ?? solanaAdapterPublicKey ?? null;
+  const solanaAddress = effectiveSolanaPublicKey?.toBase58() ?? null;
   const [privacyBalanceUsdc, setPrivacyBalanceUsdc] = useState<number | null>(null);
   const [privacyBalanceUsdcLoading, setPrivacyBalanceUsdcLoading] = useState(false);
   const [privacyBalanceUsdcError, setPrivacyBalanceUsdcError] = useState<string | null>(null);
@@ -121,7 +123,12 @@ function PrivacyBridgeContent() {
   // Restoring indicators — same logic as /bridge
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (solanaConnected || effectiveSolanaConnected) setIsSolanaRestoring(false);
+    // IMPORTANT: match /bridge behavior — if already connected, stop here
+    // Otherwise we'll re-enable "Restoring..." just because localStorage keys exist.
+    if (solanaConnected || effectiveSolanaConnected) {
+      setIsSolanaRestoring(false);
+      return;
+    }
     if (aptosConnected) setIsAptosRestoring(false);
     const savedSolana = window.localStorage.getItem('walletName');
     const savedAptosDerived = window.localStorage.getItem('AptosWalletName');
@@ -205,8 +212,6 @@ function PrivacyBridgeContent() {
     }
   }, [privacyBalanceUsdc]);
 
-  const solanaAddress = solanaPublicKey?.toBase58() ?? null;
-
   const solanaWalletNameForDerived =
     (solanaWallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ??
     (solanaWallet as { name?: string })?.name ??
@@ -233,7 +238,7 @@ function PrivacyBridgeContent() {
   }, [solanaConnected, effectiveSolanaConnected]);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (solanaConnected) return;
+    if (solanaConnected || effectiveSolanaConnected) return;
     if (window.sessionStorage.getItem("skip_auto_connect_solana") === "1") return;
     const walletNames = new Set<string>(wallets?.map((w) => String(w.adapter.name)) ?? []);
     let savedName: string | null = null;
@@ -262,7 +267,7 @@ function PrivacyBridgeContent() {
     if (!savedName) return;
 
     const tryRestore = () => {
-      if (solanaConnected || !wallets?.length) return;
+      if (solanaConnected || effectiveSolanaConnected || !wallets?.length) return;
       const exists = wallets.some((w) => w.adapter.name === savedName);
       if (!exists) return;
       if (hasTriggeredRestore.current) return;
@@ -287,7 +292,7 @@ function PrivacyBridgeContent() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [wallets, solanaConnected, select, connectSolana]);
+  }, [wallets, solanaConnected, effectiveSolanaConnected, select, connectSolana]);
 
   const skipAutoConnectDerivedRef = useRef(false);
   const hasTriedAutoConnectDerived = useRef(false);
@@ -301,7 +306,7 @@ function PrivacyBridgeContent() {
     }
   }, [aptosConnected, aptosWallet, solanaWalletNameForDerived]);
   useEffect(() => {
-    if (!solanaConnected || aptosConnected || !aptosWallets?.length || !solanaWallet) return;
+    if (!effectiveSolanaConnected || aptosConnected || !aptosWallets?.length || !solanaWallet) return;
     if (skipAutoConnectDerivedRef.current) return;
     if (typeof window !== "undefined" && sessionStorage.getItem("skip_auto_connect_derived_aptos") === "1") return;
     const solanaWalletName =
@@ -316,7 +321,7 @@ function PrivacyBridgeContent() {
       hasTriedAutoConnectDerived.current = true;
       connectAptos(derived.name);
     }
-  }, [solanaConnected, aptosConnected, aptosWallets, connectAptos, solanaWallet]);
+  }, [effectiveSolanaConnected, aptosConnected, aptosWallets, connectAptos, solanaWallet]);
 
   const truncateAddress = (addr: string) =>
     addr ? `${addr.slice(0, 8)}...${addr.slice(-8)}` : "";
@@ -647,7 +652,7 @@ function PrivacyBridgeContent() {
   };
 
   const fetchPrivacyUsdcBalance = async () => {
-    if (!solanaPublicKey || !solanaConnection || !solanaSignMessage) {
+    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage) {
       toast({
         variant: "destructive",
         title: "Cannot load USDC balance",
@@ -687,9 +692,9 @@ function PrivacyBridgeContent() {
       const enc = new EncryptionService();
       enc.deriveEncryptionKeyFromSignature(sig);
 
-      const publicKey = solanaPublicKey instanceof PublicKey
-        ? solanaPublicKey
-        : new PublicKey(solanaPublicKey);
+      const publicKey = effectiveSolanaPublicKey instanceof PublicKey
+        ? effectiveSolanaPublicKey
+        : new PublicKey(effectiveSolanaPublicKey);
 
       const utxos = await getUtxosSPL({
         publicKey,
@@ -757,7 +762,7 @@ function PrivacyBridgeContent() {
   }, []);
 
   const handleSendToDeposit = async () => {
-    if (!solanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
+    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
       toast({
         variant: "destructive",
         title: "Cannot prepare deposit",
@@ -812,9 +817,9 @@ function PrivacyBridgeContent() {
       enc.deriveEncryptionKeyFromSignature(sig);
       pushLog("info", "Initialized EncryptionService with derived key.");
 
-      const publicKey = solanaPublicKey instanceof PublicKey
-        ? solanaPublicKey
-        : new PublicKey(solanaPublicKey);
+      const publicKey = effectiveSolanaPublicKey instanceof PublicKey
+        ? effectiveSolanaPublicKey
+        : new PublicKey(effectiveSolanaPublicKey);
 
       await depositSPL({
         lightWasm,
@@ -1074,7 +1079,7 @@ function PrivacyBridgeContent() {
 
   /** Withdraw из Privacy Cash на tmp-кошелёк, затем сразу burn на Solana + mint на Aptos. Одна связка. */
   const handleWithdrawUsdc = async () => {
-    if (!solanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
+    if (!effectiveSolanaPublicKey || !solanaConnection || !solanaSignMessage || !solanaSignTransaction) {
       toast({
         variant: "destructive",
         title: "Cannot prepare withdraw",
@@ -1152,9 +1157,9 @@ function PrivacyBridgeContent() {
       const wallet = await ensureTmpWallet();
       const recipientPubkey = new PublicKey(wallet.address);
 
-      const publicKey = solanaPublicKey instanceof PublicKey
-        ? solanaPublicKey
-        : new PublicKey(solanaPublicKey);
+      const publicKey = effectiveSolanaPublicKey instanceof PublicKey
+        ? effectiveSolanaPublicKey
+        : new PublicKey(effectiveSolanaPublicKey);
 
       await withdrawSPL({
         lightWasm,
@@ -1210,8 +1215,8 @@ function PrivacyBridgeContent() {
   // перезапускал эффект и снова открывал кошелёк на подпись (burn/mint сами кошелёк не используют).
   // Задержка, чтобы не пересекаться с авто-подключением derived Aptos (тот тоже может дергать кошелёк).
   useEffect(() => {
-    const address = solanaPublicKey?.toBase58() ?? null;
-    if (!solanaConnected || !address || address === lastFetchedBalanceForAddress.current) {
+    const address = solanaAddress;
+    if (!effectiveSolanaConnected || !address || address === lastFetchedBalanceForAddress.current) {
       return;
     }
     lastFetchedBalanceForAddress.current = address;
@@ -1220,7 +1225,7 @@ function PrivacyBridgeContent() {
     }, 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [solanaConnected, solanaPublicKey?.toBase58()]);
+  }, [effectiveSolanaConnected, solanaAddress]);
 
   return (
     <div className="w-full h-screen overflow-y-auto bg-gradient-to-br from-gray-50 via-white to-gray-100">
@@ -1240,7 +1245,7 @@ function PrivacyBridgeContent() {
             <h1 className="text-xl font-semibold text-center">Privacy Bridge</h1>
 
             {/* Блок комиссий слева, блок кошельков справа */}
-            {solanaConnected ? (
+            {effectiveSolanaConnected ? (
               <div className="flex flex-wrap items-start gap-4">
                 <div className="w-full md:flex-[0_0_calc(50%-0.5rem)] md:min-w-0 p-3 border rounded-lg bg-card">
                   <span className="text-sm font-medium text-muted-foreground block mb-2">
@@ -1391,7 +1396,7 @@ function PrivacyBridgeContent() {
                 </div>
               ) : null}
               </div>
-            ) : !solanaConnected ? (
+            ) : !effectiveSolanaConnected ? (
               <div className="flex flex-col items-end gap-2">
                 {walletConnectMounted ? (
                   <Dialog open={isSolanaDialogOpen} onOpenChange={setIsSolanaDialogOpen}>
@@ -1475,7 +1480,7 @@ function PrivacyBridgeContent() {
             ) : null}
 
             {/* Ниже блока кошельков: баланс Privacy, депозит, вывод, Burn to Aptos и т.д. (только если подключён Solana) */}
-            {solanaConnected && (
+            {effectiveSolanaConnected && (
               <div className="pt-2 border-t space-y-3">
               <span className="text-sm font-medium text-muted-foreground block">
                 Privacy Cash Balance (USDC)
