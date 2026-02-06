@@ -1728,7 +1728,7 @@ function PrivacyBridgeContent() {
                         className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
                         onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span className="text-sm font-medium text-muted-foreground shrink-0">
                             Aptos {isDerivedWallet ? "(Derived)" : "(Native)"}
                           </span>
