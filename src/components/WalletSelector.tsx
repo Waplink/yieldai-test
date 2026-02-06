@@ -166,8 +166,9 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
           });
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : "Failed to connect wallet";
-          // Don't show error for user rejection
-          if (!message.includes("reject") && !message.includes("Reject")) {
+          // Don't show error for user rejection or if actually connected (race condition)
+          const actuallyConnected = solanaWallet?.adapter?.connected || solanaWallet?.adapter?.publicKey;
+          if (!actuallyConnected && !message.includes("reject") && !message.includes("Reject")) {
             toast({
               variant: "destructive",
               title: "Connection Failed",
@@ -186,7 +187,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
         description: err instanceof Error ? err.message : "Failed to select wallet",
       });
     }
-  }, [selectSolana, connectSolana, toast]);
+  }, [selectSolana, connectSolana, toast, solanaWallet]);
 
   const copyAddress = useCallback(async () => {
     if (!account?.address) return;

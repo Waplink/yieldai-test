@@ -1198,13 +1198,17 @@ function BridgePageContent() {
             // Retry with increasing delay
             setTimeout(tryConnect, 200 * attempt);
           } else {
-          toast({
-            variant: "destructive",
-            title: "Connection Failed",
-            description: error.message || "Failed to connect wallet",
-          });
-          setIsSolanaConnecting(false);
-        }
+            // Check if wallet actually connected despite the error (race condition)
+            const actuallyConnected = solanaWallet?.adapter?.connected || solanaWallet?.adapter?.publicKey;
+            if (!actuallyConnected) {
+              toast({
+                variant: "destructive",
+                title: "Connection Failed",
+                description: error.message || "Failed to connect wallet",
+              });
+            }
+            setIsSolanaConnecting(false);
+          }
         }
       };
       

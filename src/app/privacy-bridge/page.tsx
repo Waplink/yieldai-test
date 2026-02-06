@@ -712,11 +712,15 @@ function PrivacyBridgeContent() {
           if (attempt < maxAttempts) {
             setTimeout(tryConnect, 200 * attempt);
           } else {
-            toast({
-              variant: "destructive",
-              title: "Connection Failed",
-              description: error instanceof Error ? error.message : "Failed to connect wallet",
-            });
+            // Check if wallet actually connected despite the error (race condition)
+            const actuallyConnected = solanaWallet?.adapter?.connected || solanaWallet?.adapter?.publicKey;
+            if (!actuallyConnected) {
+              toast({
+                variant: "destructive",
+                title: "Connection Failed",
+                description: error instanceof Error ? error.message : "Failed to connect wallet",
+              });
+            }
             setIsSolanaConnecting(false);
           }
         }

@@ -73,11 +73,15 @@ export function SolanaWalletSelector({ onWalletChange }: SolanaWalletSelectorPro
             description: `Connected to ${walletName}`,
           });
         } catch (error: any) {
-          toast({
-            variant: "destructive",
-            title: "Connection Failed",
-            description: error.message || "Failed to connect wallet",
-          });
+          // Check if wallet actually connected despite the error (race condition)
+          const actuallyConnected = wallet?.adapter?.connected || wallet?.adapter?.publicKey;
+          if (!actuallyConnected) {
+            toast({
+              variant: "destructive",
+              title: "Connection Failed",
+              description: error.message || "Failed to connect wallet",
+            });
+          }
         } finally {
           setIsConnecting(false);
         }
