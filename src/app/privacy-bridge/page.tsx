@@ -78,7 +78,7 @@ function PrivacyBridgeContent() {
     wallets: aptosWallets,
     connect: connectAptos,
     disconnect: disconnectAptos,
-    isLoading: aptosConnecting,
+    isLoading: aptosAdapterLoading,
   } = useAptosWallet();
   // Prefer restored native Aptos state for UI consistency (prevents UI "disconnect" flicker)
   const aptosAccount = aptosNative.account;
@@ -99,6 +99,8 @@ function PrivacyBridgeContent() {
   const [isAptosReconnecting, setIsAptosReconnecting] = useState(false);
   const [pendingReconnectWallet, setPendingReconnectWallet] = useState<string | null>(null);
   const [aptosNativeFallback, setAptosNativeFallback] = useState<{ name: string; address: string } | null>(null);
+  // Mirror /bridge: track stored AptosWalletName and selection state
+  const [storedAptosName, setStoredAptosName] = useState<string | null>(null);
   
   // Get Solana address - prefer adapter state over hook state for reliability
   const solanaAdapterConnected = solanaWallet?.adapter?.connected ?? false;
@@ -275,11 +277,49 @@ function PrivacyBridgeContent() {
     return Boolean(stored != null && stored !== "" && String(stored).trim().endsWith(" (Solana)"));
   }, [aptosWallet, solanaWalletNameForDerived]);
 
-  // If we have a native Aptos fallback, show Aptos as connected even if adapter state flickers.
-  const showAptosAsConnected = Boolean(
-    (aptosConnected && aptosAccount?.address) ||
-      (aptosNativeFallback && !aptosNativeFallback.name.endsWith(" (Solana)") && aptosNativeFallback.address)
+  // Sync storedAptosName from storage / fallback (mirror /bridge)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setStoredAptosName(getAptosWalletNameFromStorage());
+  }, [aptosConnected, aptosWallet?.name]);
+
+  useEffect(() => {
+    if (aptosNativeFallback && aptosNativeFallback.name) {
+      setStoredAptosName(aptosNativeFallback.name);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem("AptosWalletName", aptosNativeFallback.name);
+        } catch {}
+      }
+    }
+  }, [aptosNativeFallback]);
+
+  const aptosNativeSelected = Boolean(
+    storedAptosName && !String(storedAptosName).trim().endsWith(" (Solana)")
   );
+  const fallbackIsNative = Boolean(
+    aptosNativeFallback && !aptosNativeFallback.name.endsWith(" (Solana)")
+  );
+  const isCurrentAptosDerived = aptosWallet?.name?.endsWith(" (Solana)") ?? false;
+
+  const showAptosAsConnected = Boolean(
+    // Adapter connected - but only count derived as connected if Solana is still connected
+    (aptosConnected && aptosAccount && (!isCurrentAptosDerived || effectiveSolanaConnected)) ||
+    (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
+    fallbackIsNative
+  );
+
+  // UI "connecting" state for Aptos: only when native is selected and adapter is connecting
+  const aptosConnecting =
+    !aptosNativeFallback &&
+    Boolean(
+      aptosWallet &&
+      storedAptosName === aptosWallet.name &&
+      aptosNativeSelected &&
+      !aptosConnected &&
+      aptosAdapterLoading
+    );
+
   const aptosDisplayAddress =
     aptosAccount?.address?.toString() ?? aptosNativeFallback?.address ?? null;
 
