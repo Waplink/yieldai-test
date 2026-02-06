@@ -1725,7 +1725,7 @@ function PrivacyBridgeContent() {
                   {showAptosAsConnected && aptosDisplayAddress ? (
                     <div className="flex flex-col items-start w-full">
                       <div
-                        className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
+                        className="flex items-center justify-between w-full cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors"
                         onClick={() => setIsAptosBalanceExpanded(!isAptosBalanceExpanded)}
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
