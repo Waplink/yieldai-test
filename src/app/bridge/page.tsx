@@ -800,16 +800,20 @@ function BridgePageContent() {
     return false;
   }, [bothWalletsConnected, sourceChain, destChain, sourceToken, destToken, transferAmount]);
 
-  // Source chain USDC balance for percentage buttons
+  // Source chain USDC balance for percentage buttons (human-readable, divided by decimals)
   const sourceUsdcBalance = useMemo(() => {
     if (!sourceChain) return 0;
     if (sourceChain.id === 'Solana') {
       const usdcToken = solanaTokens.find(t => t.address === USDC_SOLANA);
-      return usdcToken ? parseFloat(usdcToken.amount) : 0;
+      if (!usdcToken) return 0;
+      const raw = parseFloat(usdcToken.amount);
+      return raw / Math.pow(10, usdcToken.decimals);
     }
     if (sourceChain.id === 'Aptos') {
       const usdcToken = aptosTokens.find(t => t.address === USDC_APTOS);
-      return usdcToken ? parseFloat(usdcToken.amount) : 0;
+      if (!usdcToken) return 0;
+      const raw = parseFloat(usdcToken.amount);
+      return raw / Math.pow(10, usdcToken.decimals);
     }
     return 0;
   }, [sourceChain, solanaTokens, aptosTokens]);

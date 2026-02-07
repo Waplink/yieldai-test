@@ -60,6 +60,13 @@ interface BridgeViewProps {
   isBalanceLoading?: boolean;
 }
 
+/** Truncate number to N decimal places WITHOUT rounding */
+function truncateDecimals(value: number, decimals: number): string {
+  const factor = Math.pow(10, decimals);
+  const truncated = Math.floor(value * factor) / factor;
+  return truncated.toFixed(decimals);
+}
+
 export function BridgeView({
   sourceChain,
   sourceToken,
@@ -206,7 +213,7 @@ export function BridgeView({
                   {isBalanceLoading ? (
                     <Loader2 className="h-3 w-3 animate-spin inline" />
                   ) : (
-                    <span>{sourceBalance.toFixed(6)} {sourceToken.symbol}</span>
+                    <span>{truncateDecimals(sourceBalance, 4)} {sourceToken.symbol}</span>
                   )}
                 </p>
                 {/* Percentage buttons */}
@@ -216,7 +223,7 @@ export function BridgeView({
                       variant="outline"
                       size="sm"
                       className="h-6 text-xs px-2"
-                      onClick={() => onAmountChange((sourceBalance * 0.25).toFixed(6))}
+                      onClick={() => onAmountChange(truncateDecimals(sourceBalance * 0.25, 2))}
                     >
                       25%
                     </Button>
@@ -224,7 +231,7 @@ export function BridgeView({
                       variant="outline"
                       size="sm"
                       className="h-6 text-xs px-2"
-                      onClick={() => onAmountChange((sourceBalance * 0.5).toFixed(6))}
+                      onClick={() => onAmountChange(truncateDecimals(sourceBalance * 0.5, 2))}
                     >
                       50%
                     </Button>
@@ -232,7 +239,7 @@ export function BridgeView({
                       variant="outline"
                       size="sm"
                       className="h-6 text-xs px-2"
-                      onClick={() => onAmountChange(sourceBalance.toFixed(6))}
+                      onClick={() => onAmountChange(truncateDecimals(sourceBalance, 2))}
                     >
                       Max
                     </Button>
