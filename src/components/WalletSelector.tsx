@@ -153,6 +153,13 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   const handleSolanaWalletSelect = useCallback(async (walletName: string) => {
     try {
       setIsSolanaConnecting(true);
+      // Clear skip flags so derived Aptos auto-connects for the new Solana wallet
+      if (typeof window !== "undefined") {
+        try {
+          window.sessionStorage.removeItem("skip_auto_connect_solana");
+          window.sessionStorage.removeItem("skip_auto_connect_derived_aptos");
+        } catch {}
+      }
       selectSolana(walletName as WalletName);
       setIsSolanaDialogOpen(false);
       

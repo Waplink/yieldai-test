@@ -717,12 +717,17 @@ function PrivacyBridgeContent() {
   const handleSolanaWalletSelect = async (walletName: string) => {
     try {
       setIsSolanaConnecting(true);
+      // Clear skip flags since user is explicitly connecting a new Solana wallet
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.removeItem("skip_auto_connect_solana");
+          window.sessionStorage.removeItem("skip_auto_connect_derived_aptos");
           window.localStorage.setItem("walletName", JSON.stringify(walletName));
         } catch {}
       }
+      // Allow derived auto-connect for the new Solana wallet
+      skipAutoConnectDerivedRef.current = false;
+      hasTriedAutoConnectDerived.current = false;
       const targetWallet = wallets.find((w) => w.adapter.name === walletName);
       if (!targetWallet) {
         throw new Error(`Wallet ${walletName} not found in available wallets`);

@@ -1157,14 +1157,18 @@ function BridgePageContent() {
     try {
       setIsSolanaConnecting(true);
       
-      // Clear skip flag since user is explicitly connecting
+      // Clear skip flags since user is explicitly connecting a new Solana wallet
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.removeItem("skip_auto_connect_solana");
+          window.sessionStorage.removeItem("skip_auto_connect_derived_aptos");
           // Pre-set walletName in localStorage to help adapter find it
           window.localStorage.setItem("walletName", JSON.stringify(walletName));
         } catch {}
       }
+      // Allow derived auto-connect for the new Solana wallet
+      skipAutoConnectDerivedRef.current = false;
+      hasTriedAutoConnectDerived.current = false;
       
       // Find the wallet adapter
       const targetWallet = wallets.find(w => w.adapter.name === walletName);
