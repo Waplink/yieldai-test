@@ -159,35 +159,6 @@ export function BridgeView({
                 onTokenSelect={onSourceTokenSelect}
                 disabled={disableAssetSelection || !bothWalletsConnected}
               />
-              {/* Percentage buttons */}
-              {sourceToken && bothWalletsConnected && sourceBalance > 0 && (
-                <div className="flex justify-end gap-1 mt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs px-2"
-                    onClick={() => onAmountChange((sourceBalance * 0.25).toFixed(6))}
-                  >
-                    25%
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs px-2"
-                    onClick={() => onAmountChange((sourceBalance * 0.5).toFixed(6))}
-                  >
-                    50%
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs px-2"
-                    onClick={() => onAmountChange(sourceBalance.toFixed(6))}
-                  >
-                    Max
-                  </Button>
-                </div>
-              )}
             </div>
 
             {/* Swap Button */}
@@ -227,11 +198,44 @@ export function BridgeView({
                 maxAmount={10}
                 disabled={!bothWalletsConnected}
               />
-              {availableBalance !== null && availableBalance !== undefined && (
-                <p className="text-sm text-muted-foreground text-right">
-                  Available: {availableBalance} {sourceToken.symbol} on Solana
-                </p>
-              )}
+              <div className="flex items-center justify-between">
+                {availableBalance !== null && availableBalance !== undefined ? (
+                  <p className="text-sm text-muted-foreground">
+                    Available: {availableBalance} {sourceToken.symbol}
+                  </p>
+                ) : (
+                  <div />
+                )}
+                {/* Percentage buttons */}
+                {bothWalletsConnected && sourceBalance > 0 && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={() => onAmountChange((sourceBalance * 0.25).toFixed(6))}
+                    >
+                      25%
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={() => onAmountChange((sourceBalance * 0.5).toFixed(6))}
+                    >
+                      50%
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={() => onAmountChange(sourceBalance.toFixed(6))}
+                    >
+                      Max
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
