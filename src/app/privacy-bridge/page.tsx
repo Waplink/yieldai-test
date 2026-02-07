@@ -509,10 +509,26 @@ function PrivacyBridgeContent() {
     if (aptosConnected && aptosWallet?.name === derivedNameForCurrentSolana) return;
     
     // Wrong derived wallet connected (old Solana) — disconnect it first
+    // IMPORTANT: Save Solana wallet name BEFORE disconnect, because disconnecting derived Aptos
+    // can cascade-disconnect Solana (especially with Trust wallet)
     if (aptosConnected && aptosWallet?.name && aptosWallet.name.endsWith(' (Solana)') && aptosWallet.name !== derivedNameForCurrentSolana) {
       console.log('[derived-auto-connect] Wrong derived wallet:', aptosWallet.name, 'expected:', derivedNameForCurrentSolana);
+      const currentSolanaName = solanaWalletName;
       (async () => {
         try { await disconnectAptos(); } catch {}
+        // Restore Solana walletName in case cascade disconnect cleared it
+        if (currentSolanaName && typeof window !== "undefined") {
+          setTimeout(() => {
+            try {
+              const current = window.localStorage.getItem("walletName");
+              if (!current) {
+                console.log('[derived-auto-connect] Restoring Solana walletName after cascade:', currentSolanaName);
+                window.localStorage.setItem("walletName", JSON.stringify(currentSolanaName));
+              }
+              window.sessionStorage.removeItem("skip_auto_connect_solana");
+            } catch {}
+          }, 300);
+        }
         hasTriedAutoConnectDerived.current = false;
       })();
       return;
