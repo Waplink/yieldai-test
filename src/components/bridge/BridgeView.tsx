@@ -199,13 +199,9 @@ export function BridgeView({
                 disabled={!bothWalletsConnected}
               />
               <div className="flex items-center justify-between">
-                {availableBalance !== null && availableBalance !== undefined ? (
-                  <p className="text-sm text-muted-foreground">
-                    Available: {availableBalance} {sourceToken.symbol}
-                  </p>
-                ) : (
-                  <div />
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Balance: {sourceBalance.toFixed(6)} {sourceToken.symbol}
+                </p>
                 {/* Percentage buttons */}
                 {bothWalletsConnected && (
                   <div className="flex gap-1">
