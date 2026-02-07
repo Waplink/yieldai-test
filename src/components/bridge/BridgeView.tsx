@@ -56,6 +56,7 @@ interface BridgeViewProps {
   missingWalletAlert?: ReactNode;
   bridgeButtonDisabled?: boolean;
   bridgeButtonAlert?: ReactNode;
+  sourceBalance?: number;
 }
 
 export function BridgeView({
@@ -88,6 +89,7 @@ export function BridgeView({
   missingWalletAlert,
   bridgeButtonDisabled = false,
   bridgeButtonAlert,
+  sourceBalance = 0,
 }: BridgeViewProps) {
   const searchParams = useSearchParams();
   const { publicKey: solanaPublicKey, connected: solanaConnected } = useSolanaWallet();
@@ -146,16 +148,47 @@ export function BridgeView({
 
           {/* Source Asset */}
           <div className="space-y-4">
-            <AssetPicker
-              label="From"
-              chain={sourceChain}
-              token={sourceToken}
-              chains={chains}
-              tokens={tokens}
-              onChainSelect={onSourceChainSelect}
-              onTokenSelect={onSourceTokenSelect}
-              disabled={disableAssetSelection || !bothWalletsConnected}
-            />
+            <div>
+              <AssetPicker
+                label="From"
+                chain={sourceChain}
+                token={sourceToken}
+                chains={chains}
+                tokens={tokens}
+                onChainSelect={onSourceChainSelect}
+                onTokenSelect={onSourceTokenSelect}
+                disabled={disableAssetSelection || !bothWalletsConnected}
+              />
+              {/* Percentage buttons */}
+              {sourceToken && bothWalletsConnected && sourceBalance > 0 && (
+                <div className="flex justify-end gap-1 mt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={() => onAmountChange((sourceBalance * 0.25).toFixed(6))}
+                  >
+                    25%
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={() => onAmountChange((sourceBalance * 0.5).toFixed(6))}
+                  >
+                    50%
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={() => onAmountChange(sourceBalance.toFixed(6))}
+                  >
+                    Max
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {/* Swap Button */}
             {showSwapButton && (

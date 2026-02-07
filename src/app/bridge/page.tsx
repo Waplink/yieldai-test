@@ -785,6 +785,20 @@ function BridgePageContent() {
     return false;
   }, [bothWalletsConnected, sourceChain, destChain, sourceToken, destToken, transferAmount]);
 
+  // Source chain USDC balance for percentage buttons
+  const sourceUsdcBalance = useMemo(() => {
+    if (!sourceChain) return 0;
+    if (sourceChain.id === 'Solana') {
+      const usdcToken = solanaTokens.find(t => t.address === USDC_SOLANA);
+      return usdcToken ? parseFloat(usdcToken.amount) : 0;
+    }
+    if (sourceChain.id === 'Aptos') {
+      const usdcToken = aptosTokens.find(t => t.address === USDC_APTOS);
+      return usdcToken ? parseFloat(usdcToken.amount) : 0;
+    }
+    return 0;
+  }, [sourceChain, solanaTokens, aptosTokens]);
+
   // Bridge button alert message
   const bridgeButtonAlert = useMemo(() => {
     if (!bothWalletsConnected) return null;
@@ -1942,6 +1956,7 @@ function BridgePageContent() {
             onDestChainSelect={setDestChain as any}
             onDestTokenSelect={setDestToken as any}
             onAmountChange={setTransferAmount}
+            sourceBalance={sourceUsdcBalance}
             onDestinationAddressChange={setDestinationAddress}
             onTransfer={handleTransfer}
             isTransferring={isTransferring}
