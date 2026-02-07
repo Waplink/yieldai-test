@@ -1198,15 +1198,9 @@ function BridgePageContent() {
             // Retry with increasing delay
             setTimeout(tryConnect, 200 * attempt);
           } else {
-            // Check if wallet actually connected despite the error (race condition)
-            const actuallyConnected = solanaWallet?.adapter?.connected || solanaWallet?.adapter?.publicKey;
-            if (!actuallyConnected) {
-              toast({
-                variant: "destructive",
-                title: "Connection Failed",
-                description: error.message || "Failed to connect wallet",
-              });
-            }
+            // Don't show toast — connection often succeeds via SolanaWalletRestore
+            // even when connectSolana() throws (race condition with Phantom etc.)
+            console.log('[bridge] All connect attempts exhausted, relying on restore mechanism');
             setIsSolanaConnecting(false);
           }
         }

@@ -165,16 +165,10 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
             description: `Connected to ${walletName}`,
           });
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : "Failed to connect wallet";
-          // Don't show error for user rejection or if actually connected (race condition)
-          const actuallyConnected = solanaWallet?.adapter?.connected || solanaWallet?.adapter?.publicKey;
-          if (!actuallyConnected && !message.includes("reject") && !message.includes("Reject")) {
-            toast({
-              variant: "destructive",
-              title: "Connection Failed",
-              description: message,
-            });
-          }
+          // Don't show toast — connection often succeeds via restore mechanism
+          // even when connectSolana() throws (race condition with Phantom etc.)
+          const message = err instanceof Error ? err.message : String(err);
+          console.log('[WalletSelector] connectSolana failed (suppressed):', message);
         } finally {
           setIsSolanaConnecting(false);
         }
