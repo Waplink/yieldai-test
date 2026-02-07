@@ -59,14 +59,16 @@ const TOKENS = [
   {
     id: USDC_SOLANA,
     symbol: 'USDC',
-    name: 'USD Coin',
+    name: 'Solana USDC',
     chain: 'Solana',
+    icon: '/token_ico/usdc_solana.png',
   },
   {
     id: USDC_APTOS,
     symbol: 'USDC',
-    name: 'USD Coin',
+    name: 'Aptos USDC',
     chain: 'Aptos',
+    icon: '/token_ico/usdc_aptos.png',
   },
 ];
 
