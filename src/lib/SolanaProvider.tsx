@@ -59,17 +59,12 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
         localStorageKey="walletName"
         onError={(error) => {
           const name = (error as { name?: string })?.name;
-          const msg = error?.message ?? '';
           // Suppress expected errors during disconnect/reconnect flows
           if (
             name === "WalletDisconnectedError" ||
             name === "WalletNotConnectedError" ||
-            name === "WalletNotSelectedError" ||
-            name === "WalletConnectionError" ||
-            msg.includes("No active wallet") ||
-            msg.includes("already connected")
+            name === "WalletNotSelectedError"
           ) {
-            console.log("[SolanaProvider] Suppressing error:", name || msg);
             return;
           }
           console.error("Solana wallet error:", error);
