@@ -8,7 +8,7 @@ import { AssetPicker } from './AssetPicker';
 import { AmountInput } from './AmountInput';
 import { SolanaWalletSelector } from '@/components/SolanaWalletSelector';
 import { Input } from '@/components/ui/input';
-import { ArrowLeftRight, CheckCircle2 } from 'lucide-react';
+import { ArrowLeftRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 
@@ -57,6 +57,7 @@ interface BridgeViewProps {
   bridgeButtonDisabled?: boolean;
   bridgeButtonAlert?: ReactNode;
   sourceBalance?: number;
+  isBalanceLoading?: boolean;
 }
 
 export function BridgeView({
@@ -90,6 +91,7 @@ export function BridgeView({
   bridgeButtonDisabled = false,
   bridgeButtonAlert,
   sourceBalance = 0,
+  isBalanceLoading = false,
 }: BridgeViewProps) {
   const searchParams = useSearchParams();
   const { publicKey: solanaPublicKey, connected: solanaConnected } = useSolanaWallet();
@@ -199,8 +201,13 @@ export function BridgeView({
                 disabled={!bothWalletsConnected}
               />
               <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Balance: {sourceBalance.toFixed(6)} {sourceToken.symbol}
+                <p className="text-sm text-muted-foreground flex items-center gap-1">
+                  Balance:{' '}
+                  {isBalanceLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin inline" />
+                  ) : (
+                    <span>{sourceBalance.toFixed(6)} {sourceToken.symbol}</span>
+                  )}
                 </p>
                 {/* Percentage buttons */}
                 {bothWalletsConnected && (

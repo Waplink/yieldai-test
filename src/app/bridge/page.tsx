@@ -814,6 +814,14 @@ function BridgePageContent() {
     return 0;
   }, [sourceChain, solanaTokens, aptosTokens]);
 
+  // Whether the source chain balance is currently loading
+  const isSourceBalanceLoading = useMemo(() => {
+    if (!sourceChain) return false;
+    if (sourceChain.id === 'Solana') return isSolanaLoading;
+    if (sourceChain.id === 'Aptos') return isAptosLoading;
+    return false;
+  }, [sourceChain, isSolanaLoading, isAptosLoading]);
+
   // Bridge button alert message
   const bridgeButtonAlert = useMemo(() => {
     if (!bothWalletsConnected) return null;
@@ -1972,6 +1980,7 @@ function BridgePageContent() {
             onDestTokenSelect={setDestToken as any}
             onAmountChange={setTransferAmount}
             sourceBalance={sourceUsdcBalance}
+            isBalanceLoading={isSourceBalanceLoading}
             onDestinationAddressChange={setDestinationAddress}
             onTransfer={handleTransfer}
             isTransferring={isTransferring}
