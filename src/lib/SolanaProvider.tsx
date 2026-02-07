@@ -67,7 +67,16 @@ export function SolanaProvider({ children }: { children: ReactNode }) {
           ) {
             return;
           }
-          console.error("Solana wallet error:", error);
+          // Try to get the wallet name for a helpful hint
+          let walletHint = '';
+          try {
+            const raw = window.localStorage.getItem("walletName");
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed) walletHint = ` (wallet: ${parsed})`;
+            }
+          } catch {}
+          console.error(`Solana wallet error${walletHint}: Please check that your wallet extension is unlocked and not redirecting to an external page.`, error);
         }}
       >
         {children}
