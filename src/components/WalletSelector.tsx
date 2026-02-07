@@ -49,6 +49,7 @@ import {
 } from "./ui/dropdown-menu";
 import { useToast } from "./ui/use-toast";
 import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
+import { isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
 
 interface WalletSelectorProps extends WalletSortingOptions {
   /** External control for dialog open state */
@@ -246,42 +247,77 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
     }
   }, [aptosConnected, solanaConnected, disconnect, disconnectSolana, toast]);
 
-  // Handler for disconnecting only Solana
+  // Handler for disconnecting only Solana (mirrors /bridge handleDisconnectSolana)
   const handleDisconnectSolanaOnly = useCallback(async () => {
     try {
-      if (solanaConnected) {
-        // If Aptos is derived (name ends with " (Solana)"), disconnect it first
-        const isAptosDerived = aptosConnected && wallet?.name?.endsWith(' (Solana)');
-        if (isAptosDerived) {
-          console.log('[WalletSelector] Disconnecting derived Aptos before Solana');
-          if (typeof window !== "undefined") {
-            sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
-          }
+      // Determine if current Aptos is derived
+      const isAptosDerived = aptosConnected && wallet && isDerivedAptosWalletReliable(wallet);
+      
+      // Get native Aptos name (if any) to preserve it
+      let savedAptosNativeName: string | null = null;
+      if (typeof window !== "undefined") {
+        const rawAptos = window.localStorage.getItem("AptosWalletName");
+        if (rawAptos) {
           try {
-            await disconnect();
-          } catch (e) {
-            console.log('[WalletSelector] disconnect derived Aptos error (benign):', e);
-          }
-          // Remove AptosWalletName for derived
-          if (typeof window !== "undefined") {
-            try { window.localStorage.removeItem("AptosWalletName"); } catch {}
-          }
-        }
-        
-        await disconnectSolana();
-        
-        if (typeof window !== "undefined") {
-          try {
-            window.sessionStorage.setItem("skip_auto_connect_solana", "1");
-            window.localStorage.removeItem("walletName");
+            let parsed = rawAptos;
+            try { parsed = JSON.parse(rawAptos) as string; } catch {}
+            if (parsed && !parsed.endsWith(' (Solana)')) {
+              savedAptosNativeName = parsed;
+            }
           } catch {}
         }
-        
-        toast({
-          title: "Success",
-          description: "Solana wallet disconnected",
-        });
       }
+      if (!savedAptosNativeName && wallet?.name && !wallet.name.endsWith(' (Solana)') && aptosConnected) {
+        savedAptosNativeName = wallet.name;
+      }
+      
+      console.log('[WalletSelector] handleDisconnectSolanaOnly:', { isAptosDerived, savedAptosNativeName });
+      
+      // Set skip flags BEFORE disconnect
+      if (typeof window !== "undefined") {
+        try { window.sessionStorage.setItem("skip_auto_connect_solana", "1"); } catch {}
+      }
+      
+      // If Aptos is derived, disconnect it first (it depends on Solana)
+      if (isAptosDerived) {
+        console.log('[WalletSelector] Disconnecting derived Aptos before Solana');
+        if (typeof window !== "undefined") {
+          try {
+            sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+          } catch {}
+        }
+        try {
+          await disconnect();
+        } catch (e) {
+          console.log('[WalletSelector] disconnect derived Aptos error (benign):', e);
+        }
+        if (typeof window !== "undefined") {
+          try { window.localStorage.removeItem("AptosWalletName"); } catch {}
+        }
+      }
+      
+      // Disconnect Solana
+      if (solanaConnected) {
+        await disconnectSolana();
+      }
+      
+      // Clean up localStorage
+      if (typeof window !== "undefined") {
+        try { window.localStorage.removeItem("walletName"); } catch {}
+      }
+      
+      toast({ title: "Success", description: "Solana wallet disconnected" });
+      
+      // If native Aptos was connected, ensure its AptosWalletName is preserved
+      // (cascade disconnect from Solana might have cleared it)
+      if (savedAptosNativeName) {
+        setTimeout(() => {
+          if (typeof window !== "undefined") {
+            try { window.localStorage.setItem("AptosWalletName", savedAptosNativeName!); } catch {}
+          }
+        }, 500);
+      }
+      
     } catch (error) {
       toast({
         variant: "destructive",
@@ -291,33 +327,97 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
     }
   }, [solanaConnected, aptosConnected, wallet, disconnectSolana, disconnect, toast]);
 
-  // Handler for disconnecting only Aptos
+  // Handler for disconnecting only Aptos (mirrors /bridge handleDisconnectAptos)
   const handleDisconnectAptosOnly = useCallback(async () => {
+    const isDerived = wallet && isDerivedAptosWalletReliable(wallet);
+    console.log('[WalletSelector] handleDisconnectAptosOnly:', { isDerived, walletName: wallet?.name });
+    
+    // Set skip flag to prevent derived auto-reconnect
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+      } catch {}
+    }
+    
+    // Remove AptosWalletName from localStorage BEFORE disconnect
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem("AptosWalletName");
+        // Clear Solana skip flag so Solana can restore if needed
+        window.sessionStorage.removeItem("skip_auto_connect_solana");
+      } catch {}
+    }
+    
+    // Save Solana wallet name in case derived disconnect cascades
+    let savedSolanaName: string | null = null;
+    if (isDerived && typeof window !== "undefined") {
+      const fromAdapter = solanaWallet?.adapter?.name;
+      const fromStorage = window.localStorage.getItem("walletName");
+      let raw = fromAdapter ?? fromStorage;
+      if (typeof raw === "string" && raw.startsWith('"') && raw.endsWith('"')) {
+        try { raw = JSON.parse(raw) as string; } catch {}
+      }
+      savedSolanaName = (typeof raw === "string" ? raw.trim() : null) || null;
+    }
+    
+    let disconnectSucceeded = false;
+    
     try {
       if (aptosConnected) {
         await disconnect();
-        toast({
-          title: "Success",
-          description: "Aptos wallet disconnected",
-        });
       }
+      disconnectSucceeded = true;
+      toast({ title: "Success", description: "Aptos wallet disconnected" });
     } catch (error) {
-      // Suppress benign disconnect errors
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("WalletNotConnected") || msg.includes("WalletDisconnected")) {
+      const name = (error as { name?: string })?.name;
+      const isBenign =
+        name === "WalletDisconnectedError" ||
+        name === "WalletNotConnectedError" ||
+        msg.includes("WalletDisconnectedError") ||
+        msg.includes("WalletNotConnectedError");
+      const isUserRejected =
+        msg === "User has rejected the request" ||
+        msg.includes("User rejected") ||
+        msg.includes("rejected the request");
+      const isDerivedSoftError = isDerived && !isUserRejected;
+      
+      console.log('[WalletSelector] disconnect Aptos error:', { msg, isBenign, isDerivedSoftError, isUserRejected });
+      
+      if (isUserRejected) {
+        return; // User rejected - don't continue
+      } else if (isBenign || isDerivedSoftError) {
+        disconnectSucceeded = true;
+        toast({ title: "Success", description: "Aptos wallet disconnected" });
+      } else {
         toast({
-          title: "Success",
-          description: "Aptos wallet disconnected",
+          variant: "destructive",
+          title: "Error",
+          description: msg || "Failed to disconnect Aptos wallet",
         });
         return;
       }
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to disconnect Aptos wallet",
-      });
     }
-  }, [aptosConnected, disconnect, toast]);
+    
+    // Restore Solana if derived disconnect cascaded and cleared walletName
+    if (disconnectSucceeded && isDerived && savedSolanaName && typeof window !== "undefined") {
+      setTimeout(() => {
+        try {
+          const currentWalletName = window.localStorage.getItem("walletName");
+          const adapterConnected = solanaWallet?.adapter?.connected ?? false;
+          console.log('[WalletSelector] Post-Aptos disconnect check:', { savedSolanaName, currentWalletName, adapterConnected });
+          
+          if (!currentWalletName || !adapterConnected) {
+            console.log('[WalletSelector] Restoring Solana walletName:', savedSolanaName);
+            window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
+            // SolanaWalletRestore will pick this up and reconnect
+          }
+        } catch (e) {
+          console.log('[WalletSelector] Error restoring Solana:', e);
+        }
+      }, 500);
+    }
+  }, [aptosConnected, wallet, solanaWallet, disconnect, toast]);
 
   if (!mounted) {
     return null;
