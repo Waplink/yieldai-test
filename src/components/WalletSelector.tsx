@@ -243,7 +243,33 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
   const handleDisconnectSolanaOnly = useCallback(async () => {
     try {
       if (solanaConnected) {
+        // If Aptos is derived (name ends with " (Solana)"), disconnect it first
+        const isAptosDerived = aptosConnected && wallet?.name?.endsWith(' (Solana)');
+        if (isAptosDerived) {
+          console.log('[WalletSelector] Disconnecting derived Aptos before Solana');
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("skip_auto_connect_derived_aptos", "1");
+          }
+          try {
+            await disconnect();
+          } catch (e) {
+            console.log('[WalletSelector] disconnect derived Aptos error (benign):', e);
+          }
+          // Remove AptosWalletName for derived
+          if (typeof window !== "undefined") {
+            try { window.localStorage.removeItem("AptosWalletName"); } catch {}
+          }
+        }
+        
         await disconnectSolana();
+        
+        if (typeof window !== "undefined") {
+          try {
+            window.sessionStorage.setItem("skip_auto_connect_solana", "1");
+            window.localStorage.removeItem("walletName");
+          } catch {}
+        }
+        
         toast({
           title: "Success",
           description: "Solana wallet disconnected",
@@ -256,7 +282,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
         description: error instanceof Error ? error.message : "Failed to disconnect Solana wallet",
       });
     }
-  }, [solanaConnected, disconnectSolana, toast]);
+  }, [solanaConnected, aptosConnected, wallet, disconnectSolana, disconnect, toast]);
 
   // Handler for disconnecting only Aptos
   const handleDisconnectAptosOnly = useCallback(async () => {
