@@ -195,7 +195,7 @@ export function BridgeView({
                 value={amount}
                 onChange={onAmountChange}
                 tokenSymbol={sourceToken.symbol}
-                maxAmount={10}
+                maxAmount={undefined}
                 disabled={!bothWalletsConnected}
               />
               <div className="flex items-center justify-between">
@@ -207,7 +207,7 @@ export function BridgeView({
                   <div />
                 )}
                 {/* Percentage buttons */}
-                {bothWalletsConnected && sourceBalance > 0 && (
+                {bothWalletsConnected && (
                   <div className="flex gap-1">
                     <Button
                       variant="outline"
