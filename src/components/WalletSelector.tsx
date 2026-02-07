@@ -401,23 +401,43 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
     
     // Restore Solana if derived disconnect cascaded and cleared walletName
     if (disconnectSucceeded && isDerived && savedSolanaName && typeof window !== "undefined") {
-      setTimeout(() => {
+      // Clear skip flag so SolanaWalletRestore can reconnect
+      try { window.sessionStorage.removeItem("skip_auto_connect_solana"); } catch {}
+      
+      const restoreSolana = (attempt: number) => {
         try {
           const currentWalletName = window.localStorage.getItem("walletName");
           const adapterConnected = solanaWallet?.adapter?.connected ?? false;
-          console.log('[WalletSelector] Post-Aptos disconnect check:', { savedSolanaName, currentWalletName, adapterConnected });
+          console.log(`[WalletSelector] Solana restore check (attempt ${attempt}):`, { savedSolanaName, currentWalletName, adapterConnected });
           
           if (!currentWalletName || !adapterConnected) {
             console.log('[WalletSelector] Restoring Solana walletName:', savedSolanaName);
             window.localStorage.setItem("walletName", JSON.stringify(savedSolanaName));
-            // SolanaWalletRestore will pick this up and reconnect
+            // Also try to re-select and connect the wallet directly
+            const targetWallet = solanaWallets.find(w => w.adapter.name === savedSolanaName);
+            if (targetWallet) {
+              selectSolana(savedSolanaName as any);
+              setTimeout(async () => {
+                try {
+                  await connectSolana();
+                  console.log('[WalletSelector] Solana reconnected after derived Aptos disconnect');
+                } catch (e) {
+                  console.log('[WalletSelector] Solana reconnect attempt failed (benign):', e);
+                }
+              }, 200);
+            }
           }
         } catch (e) {
           console.log('[WalletSelector] Error restoring Solana:', e);
         }
-      }, 500);
+      };
+      
+      // Try at multiple intervals — cascade disconnect is async
+      setTimeout(() => restoreSolana(1), 500);
+      setTimeout(() => restoreSolana(2), 1500);
+      setTimeout(() => restoreSolana(3), 3000);
     }
-  }, [aptosConnected, wallet, solanaWallet, disconnect, toast]);
+  }, [aptosConnected, wallet, solanaWallet, solanaWallets, selectSolana, connectSolana, disconnect, toast]);
 
   if (!mounted) {
     return null;
