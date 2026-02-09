@@ -90,6 +90,12 @@ function BridgePageContent() {
   // Use adapter state if available, fall back to hook state
   const effectiveSolanaConnected = solanaConnected || solanaAdapterConnected;
   const solanaAddress = solanaPublicKey?.toBase58() || solanaAdapterPublicKey?.toBase58() || null;
+  
+  // Ultimate fallback: scan ALL wallet adapters for a connected one
+  // This handles the case where the hook's `wallet` is null/stale after disconnect/reconnect on another page
+  const anyAdapterConnected = wallets.some(w => w.adapter.connected && w.adapter.publicKey);
+  const effectiveSolanaConnectedFinal = effectiveSolanaConnected || anyAdapterConnected;
+  const solanaAddressFinal = solanaAddress || wallets.find(w => w.adapter.connected && w.adapter.publicKey)?.adapter.publicKey?.toBase58() || null;
 
   // Re-check both wallets before mint (state may be lost during attestation wait)
   // Note: effectiveSolanaConnected is computed later, so we track both hook state and adapter state
@@ -108,6 +114,45 @@ function BridgePageContent() {
     aptosConnectedRef.current = aptosConnected;
     aptosAccountRef.current = aptosAccount;
   }, [solanaConnected, solanaPublicKey, signSolanaTransaction, solanaWallet, aptosConnected, aptosAccount]);
+
+  // Defensive: detect adapter connected but hook state stale after navigation
+  // This handles the case where user disconnects+reconnects on main page, then navigates to bridge
+  // The hook's solanaWallet/solanaConnected can be stale while the actual adapter is connected
+  useEffect(() => {
+    // Skip if already detected as connected
+    if (effectiveSolanaConnected && solanaAddress) return;
+    
+    // Check all wallet adapters directly — the hook's `wallet` may be null/stale
+    const connectedAdapter = wallets.find(w => w.adapter.connected && w.adapter.publicKey);
+    if (!connectedAdapter) return; // No adapter is connected, nothing to fix
+    
+    console.log('[bridge-desync] Adapter connected but bridge shows disconnected:', {
+      adapterName: connectedAdapter.adapter.name,
+      adapterPublicKey: connectedAdapter.adapter.publicKey?.toBase58(),
+      hookSolanaConnected: solanaConnected,
+      hookSolanaWallet: solanaWallet?.adapter?.name ?? null,
+      effectiveSolanaConnected,
+      solanaAddress,
+    });
+    
+    // Re-select the connected wallet to force the hook state to sync
+    const name = connectedAdapter.adapter.name;
+    select(name as any);
+    
+    // After selection, the hook state should update. Give it a moment then try connect
+    const t1 = setTimeout(() => {
+      if (!solanaConnected) {
+        connectSolana().catch(() => {});
+      }
+    }, 200);
+    const t2 = setTimeout(() => {
+      if (!solanaConnected) {
+        connectSolana().catch(() => {});
+      }
+    }, 800);
+    
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [wallets, effectiveSolanaConnected, solanaAddress, solanaConnected, solanaWallet, select, connectSolana]);
 
   // Solana wallet selector state
   const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
@@ -556,11 +601,15 @@ function BridgePageContent() {
     })();
   }, [aptosWallets, aptosConnected, aptosWallet?.name, connectAptos]);
   useEffect(() => {
-    // Use effectiveSolanaConnected to account for adapter state desync
-    if (!effectiveSolanaConnected || !aptosWallets?.length || !solanaWallet) return;
+    // Use effectiveSolanaConnectedFinal to account for adapter state desync (including direct adapter scan)
+    if (!effectiveSolanaConnectedFinal || !aptosWallets?.length || (!solanaWallet && !anyAdapterConnected)) return;
     if (skipAutoConnectDerivedRef.current) return;
     if (typeof window !== "undefined" && sessionStorage.getItem("skip_auto_connect_derived_aptos") === "1") return;
-    const solanaWalletName = (solanaWallet as { adapter?: { name?: string }; name?: string }).adapter?.name ?? (solanaWallet as { name?: string }).name ?? '';
+    // Get Solana wallet name — fallback to scanning adapters if hook wallet is stale
+    const solanaWalletName = (solanaWallet as { adapter?: { name?: string }; name?: string }).adapter?.name 
+      ?? (solanaWallet as { name?: string }).name 
+      ?? wallets.find(w => w.adapter.connected)?.adapter.name 
+      ?? '';
     const derivedNameForCurrentSolana = `${solanaWalletName} (Solana)`;
     
     // Check if Aptos is already connected to the CORRECT derived wallet for current Solana
@@ -633,7 +682,8 @@ function BridgePageContent() {
         }
       })();
     }
-  }, [effectiveSolanaConnected, aptosConnected, aptosWallets, aptosWallet, connectAptos, disconnectAptos, solanaWallet]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSolanaConnectedFinal, anyAdapterConnected, aptosConnected, aptosWallets, aptosWallet, connectAptos, disconnectAptos, solanaWallet, wallets]);
 
   // On Vercel, after connecting native Aptos (e.g. Petra), adapter state can stay disconnected due to WalletDisconnectedError.
   // Resync: if localStorage says native Aptos is selected but adapter reports not connected, try connect once.
@@ -739,7 +789,7 @@ function BridgePageContent() {
   const isCurrentAptosDerived = aptosWallet?.name?.endsWith(' (Solana)') ?? false;
   const showAptosAsConnected = Boolean(
     // Adapter connected - but only count derived as connected if Solana is still connected
-    (aptosConnected && aptosAccount && (!isCurrentAptosDerived || effectiveSolanaConnected)) ||
+    (aptosConnected && aptosAccount && (!isCurrentAptosDerived || effectiveSolanaConnectedFinal)) ||
     (aptosWallet && storedAptosName === aptosWallet.name && aptosNativeSelected) ||
     fallbackIsNative  // Simplified: if fallback exists and is native, show it regardless of storedAptosName
   );
@@ -790,14 +840,26 @@ function BridgePageContent() {
   const DOMAIN_APTOS = 9;
 
   // Check if both wallets are connected (use effective state that includes adapter state)
-  const bothWalletsConnected = Boolean(effectiveSolanaConnected && aptosConnected && aptosAccount);
+  const bothWalletsConnected = Boolean(effectiveSolanaConnectedFinal && aptosConnected && aptosAccount);
+
+  // Diagnostic: log on every render when there's a potential desync
+  if (anyAdapterConnected && !effectiveSolanaConnected) {
+    const ca = wallets.find(w => w.adapter.connected);
+    console.warn('[bridge-render] DESYNC: adapter connected but effectiveSolanaConnected=false', {
+      adapterName: ca?.adapter.name,
+      hookConnected: solanaConnected,
+      hookWallet: solanaWallet?.adapter?.name ?? null,
+      hookWalletConnected: solanaWallet?.adapter?.connected ?? null,
+      anyAdapterConnected,
+    });
+  }
 
   // Determine missing wallet for alert
   const missingWallet = useMemo(() => {
-    if (!effectiveSolanaConnected) return 'Solana';
+    if (!effectiveSolanaConnectedFinal) return 'Solana';
     if (!aptosConnected || !aptosAccount) return 'Aptos';
     return null;
-  }, [effectiveSolanaConnected, aptosConnected, aptosAccount]);
+  }, [effectiveSolanaConnectedFinal, aptosConnected, aptosAccount]);
 
   // Check if bridge button should be disabled
   const bridgeButtonDisabled = useMemo(() => {
@@ -848,9 +910,10 @@ function BridgePageContent() {
 
   // Copy address handlers
   const copySolanaAddress = async () => {
-    if (!solanaAddress) return;
+    const addr = solanaAddressFinal;
+    if (!addr) return;
     try {
-      await navigator.clipboard.writeText(solanaAddress);
+      await navigator.clipboard.writeText(addr);
       toast({
         title: "Success",
         description: "Copied Solana address to clipboard",
@@ -1743,7 +1806,7 @@ function BridgePageContent() {
         if (!aptosAccount || !aptosWallet || !resolvedPublicKey || !resolvedSignTx || !solanaConnection) {
           throw new Error('Please connect both Solana and Aptos wallets');
         }
-        const destSolana = destinationAddress || solanaAddress;
+        const destSolana = destinationAddress || solanaAddressFinal;
         if (!destSolana) {
           throw new Error('Solana destination address is required');
         }
@@ -2057,7 +2120,7 @@ function BridgePageContent() {
             walletSection={
                 <div className="p-3 border rounded-lg bg-card w-auto space-y-2">
                 {/* Solana Wallet: Connected or Connect Button */}
-                {effectiveSolanaConnected && solanaAddress ? (
+                {effectiveSolanaConnectedFinal && solanaAddressFinal ? (
                   <div>
                     <div className="flex items-center justify-between cursor-pointer hover:bg-accent/50 rounded p-1 -m-1 transition-colors" onClick={() => setIsSolanaBalanceExpanded(!isSolanaBalanceExpanded)}>
                       <div className="flex items-center gap-2 min-w-0">
@@ -2065,7 +2128,7 @@ function BridgePageContent() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" className="h-auto p-0 font-mono text-sm truncate">
-                              {truncateAddress(solanaAddress || "")}
+                              {truncateAddress(solanaAddressFinal || "")}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
