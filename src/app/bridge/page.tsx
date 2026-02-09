@@ -385,8 +385,16 @@ function BridgePageContent() {
     const aptosRaw = window.localStorage.getItem('AptosWalletName');
     const skipFlag = window.sessionStorage.getItem('skip_auto_connect_solana');
     
+    // Check adapter state directly — hook state (solanaConnected) can be stale after disconnect/reconnect
+    const adapterConnected = solanaWallet?.adapter?.connected ?? false;
+    const adapterPublicKey = solanaWallet?.adapter?.publicKey;
+    const effectivelyConnected = solanaConnected || adapterConnected;
+    
     console.log('[bridge-restore] Effect running:', {
       solanaConnected,
+      adapterConnected,
+      effectivelyConnected,
+      adapterPublicKey: adapterPublicKey?.toBase58() ?? null,
       walletCount: wallets?.length,
       walletNames: Array.from(walletNames),
       rawWalletName: raw,
@@ -395,8 +403,8 @@ function BridgePageContent() {
       hasTriggeredRestore: hasTriggeredRestore.current,
     });
     
-    if (solanaConnected) {
-      console.log('[bridge-restore] Already connected, skipping');
+    if (effectivelyConnected) {
+      console.log('[bridge-restore] Already connected (hook:', solanaConnected, 'adapter:', adapterConnected, '), skipping');
       return;
     }
     
@@ -441,8 +449,10 @@ function BridgePageContent() {
     console.log('[bridge-restore] Will restore:', savedName);
 
     const tryRestore = () => {
-      if (solanaConnected || !wallets?.length) {
-        console.log('[bridge-restore] tryRestore: skip (connected or no wallets)');
+      // Check adapter state directly in addition to hook state
+      const adapterStillConnected = solanaWallet?.adapter?.connected ?? false;
+      if (solanaConnected || adapterStillConnected || !wallets?.length) {
+        console.log('[bridge-restore] tryRestore: skip (hook:', solanaConnected, 'adapter:', adapterStillConnected, 'wallets:', wallets?.length, ')');
         return;
       }
       const exists = wallets.some((w) => w.adapter.name === savedName);
@@ -501,7 +511,8 @@ function BridgePageContent() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [wallets, solanaConnected, select, connectSolana]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallets, solanaConnected, solanaWallet, select, connectSolana]);
 
   // Skip auto-connect derived when user explicitly disconnected Aptos (set synchronously on click)
   const skipAutoConnectDerivedRef = useRef(false);

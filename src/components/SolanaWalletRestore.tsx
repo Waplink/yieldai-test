@@ -143,9 +143,11 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
       return;
     }
     
-    if (connected) {
+    // Check both hook state and adapter state (hook state can be stale after disconnect/reconnect)
+    const adapterConnected = wallet?.adapter?.connected ?? false;
+    if (connected || adapterConnected) {
       if (typeof console !== "undefined" && console.log) {
-        console.log(LOG, "Skip restore: already connected");
+        console.log(LOG, "Skip restore: already connected (hook:", connected, "adapter:", adapterConnected, ")");
       }
       return;
     }
@@ -202,7 +204,8 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
     let selectCleanup: (() => void) | null = null;
 
     const runRestore = (attempt?: number): boolean => {
-      if (connected) return false;
+      // Check both hook state and adapter state
+      if (connected || (wallet?.adapter?.connected)) return false;
       const savedName = readSavedName();
       if (!savedName) {
         if (typeof console !== "undefined" && console.log && attempt !== undefined) {
@@ -223,7 +226,7 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
       }
 
       const tryRestoreSelect = () => {
-        if (connected) return;
+        if (connected || (wallet?.adapter?.connected)) return;
         if (!wallets?.length) return;
         const exists = wallets.some((w) => w.adapter.name === savedName);
         if (!exists) {
@@ -259,7 +262,7 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
     const retryDelays = [100, 300, 800, 2000];
     const retryTimers = retryDelays.map((ms, i) =>
       setTimeout(() => {
-        if (connected || hasTriggeredSelect.current) return;
+        if (connected || (wallet?.adapter?.connected) || hasTriggeredSelect.current) return;
         runRestore(i + 1);
       }, ms)
     );
@@ -267,15 +270,16 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
       retryTimers.forEach((t) => clearTimeout(t));
       selectCleanup?.();
     };
-  }, [wallets, connected, select]);
+  }, [wallets, wallet, connected, select]);
 
   // 2) When wallet is selected but not connected, call connect() once when adapter is ready
   useEffect(() => {
-    if (connected || !wallet) return;
+    // Check both hook state and adapter state — adapter may already be connected
+    if (connected || !wallet || wallet.adapter?.connected) return;
     if (hasTriggeredConnect.current) return;
 
     const tryConnect = () => {
-      if (connected) return;
+      if (connected || wallet.adapter?.connected) return;
       const ready = isWalletReady(wallet.readyState);
       if (typeof console !== "undefined" && console.log) {
         console.log(LOG, "Wallet state:", {
@@ -311,7 +315,7 @@ export function SolanaWalletRestore({ children }: { children: React.ReactNode })
     const delays = [150, 400, 900, 1800, 3500];
     const timers = delays.map((ms) =>
       setTimeout(() => {
-        if (hasTriggeredConnect.current || connected) return;
+        if (hasTriggeredConnect.current || connected || wallet.adapter?.connected) return;
         tryConnect();
       }, ms)
     );

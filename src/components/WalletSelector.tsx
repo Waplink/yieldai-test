@@ -155,10 +155,13 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, ...walletSo
     try {
       setIsSolanaConnecting(true);
       // Clear skip flags so derived Aptos auto-connects for the new Solana wallet
+      // Also set walletName synchronously BEFORE selectSolana (React state update is async,
+      // so localStorage might not be written immediately by the adapter)
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.removeItem("skip_auto_connect_solana");
           window.sessionStorage.removeItem("skip_auto_connect_derived_aptos");
+          window.localStorage.setItem("walletName", JSON.stringify(walletName));
         } catch {}
       }
       selectSolana(walletName as WalletName);
