@@ -288,6 +288,7 @@ export function BridgeView({
           {/* Info */}
           <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
             <p>• Works on empty Aptos wallets: transaction on Aptos is sponsored by Yield AI</p>
+            <p>• Bridge fee: 0$, you pay gas only on Solana</p>
           </div>
         </CardContent>
       </Card>
