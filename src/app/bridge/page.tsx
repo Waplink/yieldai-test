@@ -1399,7 +1399,10 @@ function BridgePageContent() {
 
       if (isSolanaToAptos) {
         // Solana -> Aptos: Use SolanaToAptosBridge
-        if (!solanaPublicKey || !signSolanaTransaction || !solanaConnection || !aptosAccount) {
+        // Use refs with adapter fallback for Phantom desync
+        const effectivePublicKey = solanaPublicKeyRef.current || solanaPublicKey;
+        const effectiveSignTx = signSolanaTransactionRef.current || signSolanaTransaction;
+        if (!effectivePublicKey || !effectiveSignTx || !solanaConnection || !aptosAccount) {
           throw new Error('Please connect both Solana and Aptos wallets');
         }
 
@@ -1410,8 +1413,8 @@ function BridgePageContent() {
         // Execute burn on Solana
         const burnTxSignature = await executeSolanaToAptosBridge(
           transferAmount,
-          solanaPublicKey,
-          signSolanaTransaction,
+          effectivePublicKey,
+          effectiveSignTx,
           solanaConnection,
           aptosAccount.address.toString(),
           (status) => {
@@ -1712,7 +1715,11 @@ function BridgePageContent() {
 
       } else if (isAptosToSolana) {
         // Aptos -> Solana: derived (Gas Station + Solana sign) или native (bytecode + Aptos sign, газ — кошелёк пользователя)
-        if (!aptosAccount || !aptosWallet || !solanaPublicKey || !signSolanaTransaction || !solanaConnection) {
+        // Use refs with adapter fallback for Phantom desync
+        const effectivePublicKey = solanaPublicKeyRef.current || solanaPublicKey;
+        const effectiveSignTx = signSolanaTransactionRef.current || signSolanaTransaction;
+        const effectiveWallet = solanaWalletRef.current || solanaWallet;
+        if (!aptosAccount || !aptosWallet || !effectivePublicKey || !effectiveSignTx || !solanaConnection) {
           throw new Error('Please connect both Solana and Aptos wallets');
         }
         const destSolana = destinationAddress || solanaAddress;
@@ -1725,7 +1732,7 @@ function BridgePageContent() {
 
         let burnTxHash: string;
         if (isDerivedWallet) {
-          if (!solanaWallet || !signSolanaMessage) {
+          if (!effectiveWallet || !signSolanaMessage) {
             throw new Error('Please connect Solana wallet (required for derived Aptos).');
           }
           console.log('[Bridge] Aptos -> Solana (derived wallet)');
@@ -1734,8 +1741,8 @@ function BridgePageContent() {
             aptosAccount,
             aptosWallet: aptosWallet as any,
             aptosClient,
-            solanaPublicKey,
-            solanaWallet,
+            solanaPublicKey: effectivePublicKey,
+            solanaWallet: effectiveWallet,
             signMessage: signSolanaMessage ?? undefined,
             transactionSubmitter: aptosTransactionSubmitter as any,
             destinationSolanaAddress: destSolana,
