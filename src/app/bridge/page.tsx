@@ -1398,18 +1398,19 @@ function BridgePageContent() {
       const isAptosToSolana = sourceChain.id === 'Aptos' && destChain.id === 'Solana';
 
       // Resolve effective Solana wallet state (handles Phantom adapter desync)
-      const resolvedSolanaWallet = solanaWallet || wallets.find(w => w.adapter.connected)?.adapter;
-      const resolvedPublicKey = solanaPublicKey || solanaWallet?.adapter?.publicKey || (resolvedSolanaWallet as any)?.publicKey || null;
-      const resolvedSignTx = signSolanaTransaction || (resolvedSolanaWallet as any)?.signTransaction || null;
-      const resolvedSignMsg = signSolanaMessage || (resolvedSolanaWallet as any)?.signMessage || null;
+      // Always resolve through .adapter — the Wallet wrapper doesn't expose signTransaction/signMessage directly
+      const resolvedAdapter = solanaWallet?.adapter || wallets.find(w => w.adapter.connected)?.adapter || null;
+      const resolvedPublicKey = solanaPublicKey || resolvedAdapter?.publicKey || null;
+      const resolvedSignTx = signSolanaTransaction || (resolvedAdapter as any)?.signTransaction || null;
+      const resolvedSignMsg = signSolanaMessage || (resolvedAdapter as any)?.signMessage || null;
 
       console.log('[Bridge] Resolved Solana state:', {
         hasPublicKey: !!resolvedPublicKey,
         hasSignTx: !!resolvedSignTx,
         hasSignMsg: !!resolvedSignMsg,
-        walletName: solanaWallet?.adapter?.name || (resolvedSolanaWallet as any)?.name || 'unknown',
+        adapterName: resolvedAdapter?.name || 'none',
         hookConnected: solanaConnected,
-        adapterConnected: solanaWallet?.adapter?.connected,
+        adapterConnected: resolvedAdapter?.connected,
       });
 
       if (isSolanaToAptos) {
