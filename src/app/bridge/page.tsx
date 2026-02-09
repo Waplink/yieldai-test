@@ -1399,7 +1399,7 @@ function BridgePageContent() {
 
       // Resolve effective Solana wallet state (handles Phantom adapter desync)
       const resolvedSolanaWallet = solanaWallet || wallets.find(w => w.adapter.connected)?.adapter;
-      const resolvedPublicKey = solanaPublicKey || solanaWallet?.adapter?.publicKey || resolvedSolanaWallet?.publicKey || null;
+      const resolvedPublicKey = solanaPublicKey || solanaWallet?.adapter?.publicKey || (resolvedSolanaWallet as any)?.publicKey || null;
       const resolvedSignTx = signSolanaTransaction || (resolvedSolanaWallet as any)?.signTransaction || null;
       const resolvedSignMsg = signSolanaMessage || (resolvedSolanaWallet as any)?.signMessage || null;
 
