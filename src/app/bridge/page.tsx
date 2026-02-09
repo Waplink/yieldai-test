@@ -1868,19 +1868,32 @@ function BridgePageContent() {
             'Aptos wallet no longer detected. Please reconnect your Aptos wallet and retry the mint (use the attestation link above on the manual minting page), or try again with both wallets connected from the start.'
           );
         }
-        if (!solanaConnectedRef.current || !solanaPublicKeyRef.current || !signSolanaTransactionRef.current) {
+        // Re-resolve Solana adapter state (handles Phantom desync where hook state is stale)
+        const mintAdapter = solanaWallet?.adapter || wallets.find(w => w.adapter.connected)?.adapter || null;
+        const mintPublicKey = solanaPublicKeyRef.current || mintAdapter?.publicKey || null;
+        const mintSignTx = signSolanaTransactionRef.current || (mintAdapter && (mintAdapter as any).signTransaction ? (mintAdapter as any).signTransaction.bind(mintAdapter) : null);
+        const mintConnected = solanaConnectedRef.current || mintAdapter?.connected || false;
+
+        console.log('[Bridge] Mint phase - resolved Solana state:', {
+          connected: mintConnected,
+          hasPublicKey: !!mintPublicKey,
+          hasSignTx: !!mintSignTx,
+          adapterName: mintAdapter?.name || 'none',
+        });
+
+        if (!mintConnected || !mintPublicKey || !mintSignTx) {
           throw new Error(
             'Solana wallet no longer detected. Please reconnect your Solana wallet (the one that will receive USDC and sign the mint tx) and retry, or use the manual minting page with the attestation link above.'
           );
         }
 
         // Re-establish Solana connection before mint (adapter can report "not connected" after long attestation wait)
-        if (solanaWalletRef.current) {
+        if (solanaWalletRef.current || mintAdapter) {
           try {
             await connectSolana();
             await new Promise((r) => setTimeout(r, 400));
           } catch (_) {
-            // ignore reconnect errors, proceed with current refs
+            // ignore reconnect errors, proceed with resolved state
           }
         }
 
@@ -1890,8 +1903,8 @@ function BridgePageContent() {
             attestationData as any,
             destSolana,
             solanaConnection,
-            solanaPublicKeyRef.current!,
-            signSolanaTransactionRef.current!,
+            mintPublicKey,
+            mintSignTx,
             (s) => { setTransferStatus(s); updateLastAction(s, 'pending'); }
           );
         } catch (mintErr: any) {
@@ -1900,20 +1913,24 @@ function BridgePageContent() {
           const mintingSolanaUrl = `/minting-solana?signature=${encodeURIComponent(burnTxHash)}`;
 
           // On "not connected", try once: reconnect and retry mint (adapter state can be stale after long wait)
-          if (isNotConnected && solanaWalletRef.current) {
+          if (isNotConnected && (solanaWalletRef.current || mintAdapter)) {
             updateLastAction('Solana wallet reported not connected. Reconnecting and retrying mint...', 'pending');
             setTransferStatus('Reconnecting Solana wallet...');
             try {
               await connectSolana();
               await new Promise((r) => setTimeout(r, 600));
-              if (signSolanaTransactionRef.current && solanaPublicKeyRef.current) {
+              // Re-resolve adapter state after reconnect
+              const retryAdapter = solanaWallet?.adapter || wallets.find(w => w.adapter.connected)?.adapter || null;
+              const retryPublicKey = solanaPublicKeyRef.current || retryAdapter?.publicKey || null;
+              const retrySignTx = signSolanaTransactionRef.current || (retryAdapter && (retryAdapter as any).signTransaction ? (retryAdapter as any).signTransaction.bind(retryAdapter) : null);
+              if (retrySignTx && retryPublicKey) {
                 updateLastAction('Retrying mint on Solana...', 'pending');
                 mintTxSignature = await performMintOnSolana(
                   attestationData as any,
                   destSolana,
                   solanaConnection,
-                  solanaPublicKeyRef.current,
-                  signSolanaTransactionRef.current,
+                  retryPublicKey,
+                  retrySignTx,
                   (s) => { setTransferStatus(s); updateLastAction(s, 'pending'); }
                 );
                 updateLastAction('USDC minted successfully on Solana', 'success', `https://solscan.io/tx/${mintTxSignature}`, 'View transaction on Solscan');
