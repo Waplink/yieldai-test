@@ -1401,8 +1401,9 @@ function BridgePageContent() {
       // Always resolve through .adapter — the Wallet wrapper doesn't expose signTransaction/signMessage directly
       const resolvedAdapter = solanaWallet?.adapter || wallets.find(w => w.adapter.connected)?.adapter || null;
       const resolvedPublicKey = solanaPublicKey || resolvedAdapter?.publicKey || null;
-      const resolvedSignTx = signSolanaTransaction || (resolvedAdapter as any)?.signTransaction || null;
-      const resolvedSignMsg = signSolanaMessage || (resolvedAdapter as any)?.signMessage || null;
+      // IMPORTANT: bind() preserves `this` context — adapter methods use `this` internally for event emitting
+      const resolvedSignTx = signSolanaTransaction || (resolvedAdapter && (resolvedAdapter as any).signTransaction ? (resolvedAdapter as any).signTransaction.bind(resolvedAdapter) : null);
+      const resolvedSignMsg = signSolanaMessage || (resolvedAdapter && (resolvedAdapter as any).signMessage ? (resolvedAdapter as any).signMessage.bind(resolvedAdapter) : null);
 
       console.log('[Bridge] Resolved Solana state:', {
         hasPublicKey: !!resolvedPublicKey,
