@@ -287,9 +287,7 @@ export function BridgeView({
 
           {/* Info */}
           <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
-            <p>• Automatic relaying: The relayer will complete the transfer</p>
-            <p>• Gas on destination: 0.01 APT will be provided for gas fees</p>
-            <p>• Works on empty Aptos wallets: No need to pre-fund with APT</p>
+            <p>• Works on empty Aptos wallets: transaction on Aptos is sponsored by Yield AI</p>
           </div>
         </CardContent>
       </Card>
