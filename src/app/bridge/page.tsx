@@ -1908,6 +1908,7 @@ function BridgePageContent() {
             (s) => { setTransferStatus(s); updateLastAction(s, 'pending'); }
           );
         } catch (mintErr: any) {
+          console.error('[Bridge] Mint error:', mintErr);
           const msg = mintErr?.message || 'Unknown error';
           const isNotConnected = typeof msg === 'string' && msg.toLowerCase().includes('not connected');
           const mintingSolanaUrl = `/minting-solana?signature=${encodeURIComponent(burnTxHash)}`;
@@ -1940,7 +1941,8 @@ function BridgePageContent() {
                 setIsTransferring(false);
                 return;
               }
-            } catch (_) {
+            } catch (retryErr) {
+              console.error('[Bridge] Mint retry error:', retryErr);
               // fall through to error handling below
             }
           }
