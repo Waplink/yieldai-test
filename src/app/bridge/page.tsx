@@ -286,7 +286,7 @@ function BridgePageContent() {
   const [destToken, setDestToken] = useState<typeof TOKENS[0] | null>(
     TOKENS.find((t) => t.chain === 'Aptos') || null
   );
-  const [transferAmount, setTransferAmount] = useState<string>('0.1');
+  const [transferAmount, setTransferAmount] = useState<string>('');
   const [destinationAddress, setDestinationAddress] = useState<string>('');
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferStatus, setTransferStatus] = useState<string>('');
