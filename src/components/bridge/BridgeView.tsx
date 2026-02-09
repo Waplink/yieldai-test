@@ -213,7 +213,7 @@ export function BridgeView({
                   {isBalanceLoading ? (
                     <Loader2 className="h-3 w-3 animate-spin inline" />
                   ) : (
-                    <span>{truncateDecimals(sourceBalance, 4)} {sourceToken.symbol}</span>
+                    <span>{sourceBalance.toString()} {sourceToken.symbol} on {sourceChain?.name || 'Unknown'}</span>
                   )}
                 </p>
                 {/* Percentage buttons */}
