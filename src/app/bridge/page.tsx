@@ -1397,12 +1397,24 @@ function BridgePageContent() {
       const isSolanaToAptos = sourceChain.id === 'Solana' && destChain.id === 'Aptos';
       const isAptosToSolana = sourceChain.id === 'Aptos' && destChain.id === 'Solana';
 
+      // Resolve effective Solana wallet state (handles Phantom adapter desync)
+      const resolvedSolanaWallet = solanaWallet || wallets.find(w => w.adapter.connected)?.adapter;
+      const resolvedPublicKey = solanaPublicKey || solanaWallet?.adapter?.publicKey || resolvedSolanaWallet?.publicKey || null;
+      const resolvedSignTx = signSolanaTransaction || (resolvedSolanaWallet as any)?.signTransaction || null;
+      const resolvedSignMsg = signSolanaMessage || (resolvedSolanaWallet as any)?.signMessage || null;
+
+      console.log('[Bridge] Resolved Solana state:', {
+        hasPublicKey: !!resolvedPublicKey,
+        hasSignTx: !!resolvedSignTx,
+        hasSignMsg: !!resolvedSignMsg,
+        walletName: solanaWallet?.adapter?.name || (resolvedSolanaWallet as any)?.name || 'unknown',
+        hookConnected: solanaConnected,
+        adapterConnected: solanaWallet?.adapter?.connected,
+      });
+
       if (isSolanaToAptos) {
         // Solana -> Aptos: Use SolanaToAptosBridge
-        // Use refs with adapter fallback for Phantom desync
-        const effectivePublicKey = solanaPublicKeyRef.current || solanaPublicKey;
-        const effectiveSignTx = signSolanaTransactionRef.current || signSolanaTransaction;
-        if (!effectivePublicKey || !effectiveSignTx || !solanaConnection || !aptosAccount) {
+        if (!resolvedPublicKey || !resolvedSignTx || !solanaConnection || !aptosAccount) {
           throw new Error('Please connect both Solana and Aptos wallets');
         }
 
@@ -1413,8 +1425,8 @@ function BridgePageContent() {
         // Execute burn on Solana
         const burnTxSignature = await executeSolanaToAptosBridge(
           transferAmount,
-          effectivePublicKey,
-          effectiveSignTx,
+          resolvedPublicKey,
+          resolvedSignTx,
           solanaConnection,
           aptosAccount.address.toString(),
           (status) => {
@@ -1715,11 +1727,7 @@ function BridgePageContent() {
 
       } else if (isAptosToSolana) {
         // Aptos -> Solana: derived (Gas Station + Solana sign) или native (bytecode + Aptos sign, газ — кошелёк пользователя)
-        // Use refs with adapter fallback for Phantom desync
-        const effectivePublicKey = solanaPublicKeyRef.current || solanaPublicKey;
-        const effectiveSignTx = signSolanaTransactionRef.current || signSolanaTransaction;
-        const effectiveWallet = solanaWalletRef.current || solanaWallet;
-        if (!aptosAccount || !aptosWallet || !effectivePublicKey || !effectiveSignTx || !solanaConnection) {
+        if (!aptosAccount || !aptosWallet || !resolvedPublicKey || !resolvedSignTx || !solanaConnection) {
           throw new Error('Please connect both Solana and Aptos wallets');
         }
         const destSolana = destinationAddress || solanaAddress;
@@ -1732,7 +1740,8 @@ function BridgePageContent() {
 
         let burnTxHash: string;
         if (isDerivedWallet) {
-          if (!effectiveWallet || !signSolanaMessage) {
+          const effectiveWallet = solanaWallet || wallets.find(w => w.adapter.connected) || null;
+          if (!effectiveWallet || !resolvedSignMsg) {
             throw new Error('Please connect Solana wallet (required for derived Aptos).');
           }
           console.log('[Bridge] Aptos -> Solana (derived wallet)');
@@ -1741,9 +1750,9 @@ function BridgePageContent() {
             aptosAccount,
             aptosWallet: aptosWallet as any,
             aptosClient,
-            solanaPublicKey: effectivePublicKey,
+            solanaPublicKey: resolvedPublicKey,
             solanaWallet: effectiveWallet,
-            signMessage: signSolanaMessage ?? undefined,
+            signMessage: resolvedSignMsg ?? undefined,
             transactionSubmitter: aptosTransactionSubmitter as any,
             destinationSolanaAddress: destSolana,
             onStatusUpdate: (s) => {
