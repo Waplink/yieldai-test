@@ -1571,8 +1571,9 @@ function BridgePageContent() {
           `https://solscan.io/tx/${burnTxSignature}`,
           'View transaction on Solscan'
         );
-        // Refresh Solana balance after burn (tokens were spent)
-        refreshSolana();
+        // Refresh Solana balance after burn (tokens were spent) — with delay for indexer
+        setTimeout(() => refreshSolana(), 3000);
+        setTimeout(() => refreshSolana(), 10000);
         setLastSolanaToAptosParams({ signature: burnTxSignature, finalRecipient: aptosAccount.address.toString() });
         setLastAptosToSolanaParams(null);
 
@@ -1729,8 +1730,9 @@ function BridgePageContent() {
                   description: `USDC has been automatically minted on Aptos. Account: ${data.data?.accountAddress || 'N/A'}`,
                 });
                 setTransferStatus(`Transfer complete! USDC minted on Aptos. Transaction: ${burnTxSignature.slice(0, 8)}...${burnTxSignature.slice(-8)}`);
-                // Refresh Aptos balance after mint (tokens were received)
-                refreshAptos();
+                // Refresh Aptos balance after mint (tokens were received) — with delay for indexer
+                setTimeout(() => refreshAptos(), 3000);
+                setTimeout(() => refreshAptos(), 10000);
                 return; // Success
               } else {
                 const errorMessage = data.error?.message || '';
@@ -1916,8 +1918,9 @@ function BridgePageContent() {
           `https://explorer.aptoslabs.com/txn/${burnTxHash}?network=mainnet`,
           'View transaction on Aptos Explorer'
         );
-        // Refresh Aptos balance after burn (tokens were spent)
-        refreshAptos();
+        // Refresh Aptos balance after burn (tokens were spent) — with delay for indexer
+        setTimeout(() => refreshAptos(), 3000);
+        setTimeout(() => refreshAptos(), 10000);
         setLastAptosToSolanaParams({ signature: burnTxHash, finalRecipient: destSolana });
         setLastSolanaToAptosParams(null);
 
@@ -2064,8 +2067,9 @@ function BridgePageContent() {
                 addAction('Bridge complete!', 'success');
                 setTransferStatus(`Transfer complete! USDC minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}`);
                 toast({ title: 'USDC Minted on Solana', description: `USDC has been minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}` });
-                // Refresh Solana balance after mint (tokens were received)
-                refreshSolana();
+                // Refresh Solana balance after mint (tokens were received) — with delay for indexer
+                setTimeout(() => refreshSolana(), 3000);
+                setTimeout(() => refreshSolana(), 10000);
                 setIsTransferring(false);
                 return;
               }
@@ -2096,8 +2100,9 @@ function BridgePageContent() {
           title: 'USDC Minted on Solana',
           description: `USDC has been minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}`,
         });
-        // Refresh Solana balance after mint (tokens were received)
-        refreshSolana();
+        // Refresh Solana balance after mint (tokens were received) — with delay for indexer
+        setTimeout(() => refreshSolana(), 3000);
+        setTimeout(() => refreshSolana(), 10000);
         setIsTransferring(false);
         return;
       } else {
