@@ -27,9 +27,10 @@ export default function ChatPanel() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  // Check if Solana wallet is connected
+  // Check if any wallet is connected (Solana derived, Aptos native, or both)
   const solanaAddress = useMemo(() => getSolanaWalletAddress(wallet), [wallet]);
   const hasSolanaWallet = !!solanaAddress;
+  const hasAnyWallet = hasSolanaWallet || !!account?.address;
 
   const walletTotal = useMemo(() => {
     return (tokens || []).reduce((sum, t: any) => {
@@ -158,7 +159,7 @@ export default function ChatPanel() {
           </svg>
           Portfolio Tracker
         </Button>
-        {hasSolanaWallet && (
+        {hasAnyWallet && (
           <Button 
             variant="outline" 
             onClick={handleBridgeUSDC}
