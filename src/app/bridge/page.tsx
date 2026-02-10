@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -1421,37 +1421,38 @@ function BridgePageContent() {
     }
   }, [searchParams]);
 
+  // Reusable function to load/refresh Aptos portfolio
+  const refreshAptos = useCallback(async () => {
+    if (!aptosAccount?.address) {
+      setAptosTokens([]);
+      setAptosTotalValue(0);
+      return;
+    }
+
+    try {
+      setIsAptosLoading(true);
+      const portfolioService = new AptosPortfolioService();
+      const portfolio = await portfolioService.getPortfolio(aptosAccount.address.toString());
+      setAptosTokens(portfolio.tokens);
+      
+      // Calculate total value from tokens
+      const total = portfolio.tokens.reduce((sum, token) => {
+        return sum + (token.value ? parseFloat(token.value) : 0);
+      }, 0);
+      setAptosTotalValue(total);
+    } catch (error) {
+      console.error('Error loading Aptos portfolio:', error);
+      setAptosTokens([]);
+      setAptosTotalValue(0);
+    } finally {
+      setIsAptosLoading(false);
+    }
+  }, [aptosAccount?.address]);
+
   // Load Aptos portfolio when wallet is connected
   useEffect(() => {
-    const loadAptosPortfolio = async () => {
-      if (!aptosAccount?.address) {
-        setAptosTokens([]);
-        setAptosTotalValue(0);
-        return;
-      }
-
-      try {
-        setIsAptosLoading(true);
-        const portfolioService = new AptosPortfolioService();
-        const portfolio = await portfolioService.getPortfolio(aptosAccount.address.toString());
-        setAptosTokens(portfolio.tokens);
-        
-        // Calculate total value from tokens
-        const total = portfolio.tokens.reduce((sum, token) => {
-          return sum + (token.value ? parseFloat(token.value) : 0);
-        }, 0);
-        setAptosTotalValue(total);
-      } catch (error) {
-        console.error('Error loading Aptos portfolio:', error);
-        setAptosTokens([]);
-        setAptosTotalValue(0);
-      } finally {
-        setIsAptosLoading(false);
-      }
-    };
-
-    loadAptosPortfolio();
-  }, [aptosAccount?.address]);
+    refreshAptos();
+  }, [refreshAptos]);
 
   // Helper function to add action to log
   const addAction = (message: string, status: 'pending' | 'success' | 'error', link?: string, linkText?: string, startTime?: number) => {
@@ -1570,6 +1571,8 @@ function BridgePageContent() {
           `https://solscan.io/tx/${burnTxSignature}`,
           'View transaction on Solscan'
         );
+        // Refresh Solana balance after burn (tokens were spent)
+        refreshSolana();
         setLastSolanaToAptosParams({ signature: burnTxSignature, finalRecipient: aptosAccount.address.toString() });
         setLastAptosToSolanaParams(null);
 
@@ -1726,6 +1729,8 @@ function BridgePageContent() {
                   description: `USDC has been automatically minted on Aptos. Account: ${data.data?.accountAddress || 'N/A'}`,
                 });
                 setTransferStatus(`Transfer complete! USDC minted on Aptos. Transaction: ${burnTxSignature.slice(0, 8)}...${burnTxSignature.slice(-8)}`);
+                // Refresh Aptos balance after mint (tokens were received)
+                refreshAptos();
                 return; // Success
               } else {
                 const errorMessage = data.error?.message || '';
@@ -1911,6 +1916,8 @@ function BridgePageContent() {
           `https://explorer.aptoslabs.com/txn/${burnTxHash}?network=mainnet`,
           'View transaction on Aptos Explorer'
         );
+        // Refresh Aptos balance after burn (tokens were spent)
+        refreshAptos();
         setLastAptosToSolanaParams({ signature: burnTxHash, finalRecipient: destSolana });
         setLastSolanaToAptosParams(null);
 
@@ -2057,6 +2064,8 @@ function BridgePageContent() {
                 addAction('Bridge complete!', 'success');
                 setTransferStatus(`Transfer complete! USDC minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}`);
                 toast({ title: 'USDC Minted on Solana', description: `USDC has been minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}` });
+                // Refresh Solana balance after mint (tokens were received)
+                refreshSolana();
                 setIsTransferring(false);
                 return;
               }
@@ -2087,6 +2096,8 @@ function BridgePageContent() {
           title: 'USDC Minted on Solana',
           description: `USDC has been minted on Solana. Transaction: ${mintTxSignature.slice(0, 8)}...${mintTxSignature.slice(-8)}`,
         });
+        // Refresh Solana balance after mint (tokens were received)
+        refreshSolana();
         setIsTransferring(false);
         return;
       } else {
