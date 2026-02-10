@@ -111,12 +111,15 @@ function PrivacyBridgeContent() {
   // Some wallets (notably Phantom via standard wallet path) can desync hook helpers.
   // Use adapter methods as fallback.
   const effectiveSolanaSignMessage = useMemo(() => {
-    const adapterSign = (solanaWallet?.adapter as unknown as { signMessage?: (msg: Uint8Array) => Promise<any> })?.signMessage;
-    return solanaSignMessage ?? adapterSign ?? null;
+    if (solanaSignMessage) return solanaSignMessage;
+    const adapter = solanaWallet?.adapter as unknown as { signMessage?: (msg: Uint8Array) => Promise<any> };
+    // IMPORTANT: bind to adapter to preserve `this` context (Phantom emits events internally)
+    return adapter?.signMessage ? adapter.signMessage.bind(adapter) : null;
   }, [solanaSignMessage, solanaWallet]);
   const effectiveSolanaSignTransaction = useMemo(() => {
-    const adapterSign = (solanaWallet?.adapter as unknown as { signTransaction?: (tx: any) => Promise<any> })?.signTransaction;
-    return solanaSignTransaction ?? adapterSign ?? null;
+    if (solanaSignTransaction) return solanaSignTransaction;
+    const adapter = solanaWallet?.adapter as unknown as { signTransaction?: (tx: any) => Promise<any> };
+    return adapter?.signTransaction ? adapter.signTransaction.bind(adapter) : null;
   }, [solanaSignTransaction, solanaWallet]);
   const [privacyBalanceUsdc, setPrivacyBalanceUsdc] = useState<number | null>(null);
   const [privacyBalanceUsdcLoading, setPrivacyBalanceUsdcLoading] = useState(false);
