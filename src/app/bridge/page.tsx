@@ -115,44 +115,89 @@ function BridgePageContent() {
     aptosAccountRef.current = aptosAccount;
   }, [solanaConnected, solanaPublicKey, signSolanaTransaction, solanaWallet, aptosConnected, aptosAccount]);
 
-  // Defensive: detect adapter connected but hook state stale after navigation
-  // This handles the case where user disconnects+reconnects on main page, then navigates to bridge
-  // The hook's solanaWallet/solanaConnected can be stale while the actual adapter is connected
+  // Aggressive polling: after mount, keep checking adapters for up to 10s
+  // Handles the case where wallet adapter reconnects AFTER the bridge page has rendered
+  // (e.g., autoConnect or SolanaWalletRestore reconnects after a small delay)
+  const walletsRef = useRef(wallets);
+  walletsRef.current = wallets;
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const connectSolanaRef = useRef(connectSolana);
+  connectSolanaRef.current = connectSolana;
+  
   useEffect(() => {
-    // Skip if already detected as connected
-    if (effectiveSolanaConnected && solanaAddress) return;
+    // If already showing connected, nothing to do
+    if (effectiveSolanaConnectedFinal && solanaAddressFinal) return;
     
-    // Check all wallet adapters directly — the hook's `wallet` may be null/stale
-    const connectedAdapter = wallets.find(w => w.adapter.connected && w.adapter.publicKey);
-    if (!connectedAdapter) return; // No adapter is connected, nothing to fix
+    let cancelled = false;
+    let foundAndFixed = false;
     
-    console.log('[bridge-desync] Adapter connected but bridge shows disconnected:', {
-      adapterName: connectedAdapter.adapter.name,
-      adapterPublicKey: connectedAdapter.adapter.publicKey?.toBase58(),
-      hookSolanaConnected: solanaConnected,
-      hookSolanaWallet: solanaWallet?.adapter?.name ?? null,
-      effectiveSolanaConnected,
-      solanaAddress,
-    });
-    
-    // Re-select the connected wallet to force the hook state to sync
-    const name = connectedAdapter.adapter.name;
-    select(name as any);
-    
-    // After selection, the hook state should update. Give it a moment then try connect
-    const t1 = setTimeout(() => {
-      if (!solanaConnected) {
-        connectSolana().catch(() => {});
+    const check = () => {
+      if (cancelled || foundAndFixed) return;
+      
+      // Scan all adapters directly for a connected one
+      const w = walletsRef.current;
+      const connected = w.find(wallet => wallet.adapter.connected && wallet.adapter.publicKey);
+      
+      if (connected) {
+        foundAndFixed = true;
+        const name = connected.adapter.name;
+        console.log('[bridge-poll] Found connected adapter:', name, connected.adapter.publicKey?.toBase58());
+        
+        // Re-select to sync the hook state
+        selectRef.current(name as any);
+        
+        // Also try connect in case the hook needs it
+        setTimeout(() => {
+          connectSolanaRef.current().catch(() => {});
+        }, 150);
+        setTimeout(() => {
+          connectSolanaRef.current().catch(() => {});
+        }, 500);
+        return;
       }
-    }, 200);
-    const t2 = setTimeout(() => {
-      if (!solanaConnected) {
-        connectSolana().catch(() => {});
+      
+      // Also check if walletName is in localStorage — the adapter might connect soon
+      const raw = window.localStorage.getItem('walletName');
+      if (raw) {
+        let savedName: string | null = null;
+        try { savedName = JSON.parse(raw); } catch { savedName = raw; }
+        if (savedName && !foundAndFixed) {
+          const target = w.find(wallet => wallet.adapter.name === savedName);
+          if (target && !target.adapter.connected) {
+            console.log('[bridge-poll] Saved wallet not yet connected, trying select+connect:', savedName);
+            selectRef.current(savedName as any);
+            setTimeout(() => {
+              connectSolanaRef.current().catch(() => {});
+            }, 150);
+            foundAndFixed = true;
+          }
+        }
       }
-    }, 800);
+    };
     
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [wallets, effectiveSolanaConnected, solanaAddress, solanaConnected, solanaWallet, select, connectSolana]);
+    // Check immediately, then every 500ms for 10 seconds
+    check();
+    const interval = setInterval(check, 500);
+    const timeout = setTimeout(() => clearInterval(interval), 10000);
+    
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only on mount — refs handle fresh data
+
+  // Force periodic re-render while wallets are not detected (max 10s after mount)
+  // This ensures computed values like effectiveSolanaConnectedFinal pick up adapter state changes
+  const [pollTick, setPollTick] = useState(0);
+  useEffect(() => {
+    if (effectiveSolanaConnectedFinal && solanaAddressFinal) return;
+    if (pollTick > 20) return; // Stop after ~10s (20 * 500ms)
+    const timer = setTimeout(() => setPollTick(n => n + 1), 500);
+    return () => clearTimeout(timer);
+  }, [effectiveSolanaConnectedFinal, solanaAddressFinal, pollTick]);
 
   // Solana wallet selector state
   const [isSolanaDialogOpen, setIsSolanaDialogOpen] = useState(false);
