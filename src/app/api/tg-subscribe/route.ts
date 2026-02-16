@@ -73,9 +73,9 @@ export async function POST(req: NextRequest) {
 
     // Send encrypted data + token to TG API server (non-blocking)
     if (tgApiEndpoint) {
-      const apiUrl = tgApiEndpoint.endsWith('/')
-        ? `${tgApiEndpoint}subscribe`
-        : `${tgApiEndpoint}/subscribe`;
+      const apiUrl = tgApiEndpoint.replace(/\/+$/, '') + '/subscribe';
+      console.log('[TG Subscribe] Sending to:', apiUrl);
+      console.log('[TG Subscribe] Payload:', JSON.stringify({ token, encryptedData: encryptedBase64.substring(0, 50) + '...' }));
 
       try {
         const apiResponse = await fetch(apiUrl, {
@@ -84,12 +84,14 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({ token, encryptedData: encryptedBase64 }),
         });
 
-        if (!apiResponse.ok) {
-          console.error('TG API response error:', apiResponse.status, await apiResponse.text());
-        }
+        console.log('[TG Subscribe] Response status:', apiResponse.status);
+        const responseText = await apiResponse.text();
+        console.log('[TG Subscribe] Response body:', responseText);
       } catch (fetchError) {
-        console.error('TG API fetch error (non-blocking):', fetchError);
+        console.error('[TG Subscribe] Fetch error:', fetchError);
       }
+    } else {
+      console.error('[TG Subscribe] TG_API_ENDPOINT is not set');
     }
 
     const tgLink = `https://t.me/${tgBotName}?start=${token}`;
