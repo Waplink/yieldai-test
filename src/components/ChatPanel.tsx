@@ -87,6 +87,43 @@ export default function ChatPanel() {
     }
   };
 
+  const [tgLoading, setTgLoading] = useState(false);
+
+  const handleTgNotifications = async () => {
+    setTgLoading(true);
+    try {
+      const solana = solanaPublicKey?.toBase58() || solanaAddress || '';
+      const aptos = account?.address?.toString() || '';
+
+      const response = await fetch('/api/tg-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ solana, aptos }),
+      });
+
+      const data = await response.json();
+
+      if (data.link) {
+        window.open(data.link, '_blank');
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.error || "Failed to generate subscription link",
+        });
+      }
+    } catch (error) {
+      console.error('TG notifications error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to connect to server",
+      });
+    } finally {
+      setTgLoading(false);
+    }
+  };
+
   const handleTransfer = () => {
     if (account?.address) {
       setIsTransferModalOpen(true);
@@ -183,12 +220,14 @@ export default function ChatPanel() {
         {hasAnyWallet && (
           <Button 
             variant="outline" 
+            onClick={handleTgNotifications}
+            disabled={tgLoading}
             className="flex items-center gap-2 w-full justify-start"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M20.665 3.717l-17.73 6.837c-1.21.486-1.203 1.161-.222 1.462l4.552 1.42 10.532-6.645c.498-.303.953-.14.579.192l-8.533 7.701h-.002l.002.001-.314 4.692c.46 0 .663-.211.921-.46l2.211-2.15 4.599 3.397c.848.467 1.457.227 1.668-.785l3.019-14.228c.309-1.239-.473-1.8-1.282-1.434z"/>
             </svg>
-            TG notifications
+            {tgLoading ? 'Loading...' : 'TG notifications'}
           </Button>
         )}
       </div>
