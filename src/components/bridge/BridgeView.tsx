@@ -105,7 +105,7 @@ export function BridgeView({
   
   // Check if destination address matches the URL parameter
   const isGeneratedWallet = useMemo(() => {
-    const urlDestination = searchParams.get('destination');
+    const urlDestination = searchParams?.get('destination');
     if (!urlDestination || !destinationAddress) return false;
     // Compare addresses (case-insensitive, trim whitespace)
     return urlDestination.trim().toLowerCase() === destinationAddress.trim().toLowerCase();

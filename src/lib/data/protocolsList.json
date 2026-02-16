@@ -93,28 +93,7 @@
     "socialMedia": {
       "twitter": "https://x.com/EchelonMarket"
     },
-    "airdrop": "points",
-    "airdropInfo": {
-      "title": "🎁 Points Program - Season 2",
-      "description": "Second season points program active. Participates in Aptos LFM program for future token launch. Points influence future protocol rewards.",
-      "links": [
-        {
-          "text": "LFM Program Info",
-          "url": "https://x.com/EchelonMarket/status/1947328107741925458",
-          "type": "twitter"
-        },
-        {
-          "text": "Check Points",
-          "url": "https://app.echelon.market/points",
-          "type": "app"
-        }
-      ],
-      "requirements": [
-        "Participate in protocol activities",
-        "Earn points through interactions"
-      ],
-      "additionalInfo": "Aptos LFM program participant"
-    },
+    "airdrop": "",
     "contractAddresses": [
       "0xc6bc659f1649553c1a3fa05d9727433dc03843baac29473c817d06d39e7621ba"
     ]
@@ -381,5 +360,41 @@
     "contractAddresses": [
       "0x075b4890de3e312d9425408c43d9a9752b64ab3562a30e89a55bdc568c645920"
     ]
+  },
+  {
+    "name": "Echo Protocol",
+    "key": "echo",
+    "category": "Lending",
+    "url": "https://vault.echo-protocol.xyz/lending",
+    "logoUrl": "/protocol_ico/echo.png",
+    "description": "Echo is a multifaceted protocol specializing in liquid staking & restaking and yield solutions, seamlessly interoperating within the Move ecosystem. Echo is expanding the use of aBTC & eAPT across multiple DeFi protocols on Move.",
+    "depositType": "external",
+    "depositUrl": "https://vault.echo-protocol.xyz/lending",
+    "isDepositEnabled": true,
+    "managedType": "native",
+    "socialMedia": {
+      "twitter": "https://x.com/EchoProtocol_"
+    },
+    "airdrop": "",
+    "contractAddresses": [
+      "0xeab7ea4d635b6b6add79d5045c4a45d8148d88287b1cfa1c3b6a4b56f46839ed"
+    ]
+  },
+  {
+    "name": "Decibel",
+    "key": "decibel",
+    "category": "Perpetuals",
+    "url": "https://app.decibel.trade/",
+    "logoUrl": "/protocol_ico/decibel.png",
+    "description": "Decentralized perps and trading on Aptos. View positions and account overview from testnet or mainnet.",
+    "depositType": "external",
+    "depositUrl": "https://app.decibel.trade/",
+    "isDepositEnabled": false,
+    "managedType": "native",
+    "socialMedia": {
+      "twitter": "https://x.com/DecibelTrade"
+    },
+    "airdrop": "",
+    "contractAddresses": []
   }
 ] 

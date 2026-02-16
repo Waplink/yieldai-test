@@ -25,6 +25,8 @@ import { PositionsList as EarniumPositionsList } from "./protocols/earnium/Posit
 import { PositionsList as MoarPositionsList } from "./protocols/moar/PositionsList";
 import { PositionsList as AavePositionsList } from "./protocols/aave/PositionsList";
 import { PositionsList as ThalaPositionsList } from "./protocols/thala/PositionsList";
+import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
+import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,6 +36,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { RefreshCw } from "lucide-react";
 import { CollapsibleControls } from "@/components/ui/collapsible-controls";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils/numberFormat";
 
 export default function Sidebar() {
   // Use native restore hook to ensure native Aptos wallets are reconnected
@@ -61,6 +64,8 @@ export default function Sidebar() {
   const [aaveValue, setAaveValue] = useState(0);
   const [moarValue, setMoarValue] = useState(0);
   const [thalaValue, setThalaValue] = useState(0);
+  const [echoValue, setEchoValue] = useState(0);
+  const [decibelValue, setDecibelValue] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -80,6 +85,8 @@ export default function Sidebar() {
     "Aave",
     "Moar Market",
     "Thala",
+	"Echo Protocol",
+    "Decibel",
   ];
 
   const resetChecking = useCallback(() => {
@@ -126,6 +133,8 @@ export default function Sidebar() {
     setEarniumValue(0);
     setAaveValue(0);
     setThalaValue(0);
+	setEchoValue(0);
+    setDecibelValue(0);
     resetChecking();
     setRefreshKey((k) => k + 1);
   }, [loadPortfolio, resetChecking]);
@@ -185,6 +194,12 @@ export default function Sidebar() {
   const handleThalaValueChange = useCallback((value: number) => {
     setThalaValue(value);
   }, []);
+  const handleEchoValueChange = useCallback((value: number) => {
+    setEchoValue(value);
+  }, []);
+  const handleDecibelValueChange = useCallback((value: number) => {
+    setDecibelValue(value);
+  }, []);
 
   // Считаем сумму по кошельку
   const walletTotal = tokens.reduce((sum, token) => {
@@ -193,7 +208,7 @@ export default function Sidebar() {
   }, 0);
 
   // Считаем сумму по всем протоколам
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue;
+  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue;
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
@@ -232,6 +247,17 @@ export default function Sidebar() {
         </div>
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           <div className="mt-4 space-y-4">
+            {hasAnyWalletCard && (
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-lg font-medium">Total Assets</span>
+                <span className="text-lg font-medium">
+                  {formatCurrency(
+                    (account?.address ? totalAssets : 0) + (solanaAddress ? (solanaTotalValue ?? 0) : 0),
+                    2
+                  )}
+                </span>
+              </div>
+            )}
             {hasAnyWalletCard && (
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
@@ -286,7 +312,7 @@ export default function Sidebar() {
                 />
                 {checkingProtocols.length > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                    <span>Checking positions on</span>
+                    <span className="whitespace-nowrap">Checking positions on</span>
                     <div className="flex items-center gap-1">
                       {checkingProtocols.map((name) => {
                         const proto = getProtocolByName(name);
@@ -317,6 +343,8 @@ export default function Sidebar() {
                   { component: AavePositionsList, value: aaveValue, name: 'Aave' },
                   { component: MoarPositionsList, value: moarValue, name: 'Moar Market' },
                   { component: ThalaPositionsList, value: thalaValue, name: 'Thala' },
+				  { component: EchoPositionsList, value: echoValue, name: 'Echo Protocol' },
+                  { component: DecibelPositionsList, value: decibelValue, name: 'Decibel' },
                 ]
                   .sort((a, b) => b.value - a.value)
                   .map(({ component: Component, name }) => (
@@ -338,6 +366,8 @@ export default function Sidebar() {
                         name === 'Aave' ? handleAaveValueChange :
                         name === 'Moar Market' ? handleMoarValueChange :
                         name === 'Thala' ? handleThalaValueChange :
+						name === 'Echo Protocol' ? handleEchoValueChange :
+                        name === 'Decibel' ? handleDecibelValueChange :
                         undefined
                       }
                       onPositionsCheckComplete={() =>

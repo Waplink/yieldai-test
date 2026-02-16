@@ -14,6 +14,8 @@ import { EarniumPositionsManaging } from "./protocols/EarniumPositions";
 import { AavePositions } from "./protocols/AavePositions";
 import { MoarPositions } from "./protocols/MoarPositions";
 import { ThalaPositions } from "./protocols/ThalaPositions";
+import { EchoPositions } from "./protocols/EchoPositions";
+import { DecibelPositions } from "./protocols/DecibelPositions";
 import { RefreshCw, Info, ExternalLink, Gift } from "lucide-react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useState } from "react";
@@ -57,6 +59,12 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         endpoint = 'userPositions';
       } else if (protocol.name.toLowerCase().includes('earnium')) {
         apiPath = 'earnium';
+        endpoint = 'userPositions';
+      } else if (protocol.name.toLowerCase().includes('echo')) {
+        apiPath = 'echo';
+        endpoint = 'userPositions';
+      } else if (protocol.key === 'decibel' || protocol.name.toLowerCase().includes('decibel')) {
+        apiPath = 'decibel';
         endpoint = 'userPositions';
       }
       
@@ -128,6 +136,10 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         return <MoarPositions />;
       case 'thala':
         return <ThalaPositions />;
+      case 'echo protocol':
+        return <EchoPositions />;
+      case 'decibel':
+        return <DecibelPositions />;
       default:
         return (
           <div className="text-sm text-muted-foreground">

@@ -23,6 +23,8 @@ import { PositionsList as EarniumPositionsList } from "./protocols/earnium/Posit
 import { PositionsList as AavePositionsList } from "./protocols/aave/PositionsList";
 import { PositionsList as MoarPositionsList } from "./protocols/moar/PositionsList";
 import { PositionsList as ThalaPositionsList } from "./protocols/thala/PositionsList";
+import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
+import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { CardTitle } from '@/components/ui/card';
 import { useAptosAddressResolver } from '@/lib/hooks/useAptosAddressResolver';
 import { YieldCalculatorModal } from '@/components/ui/yield-calculator-modal';
@@ -58,6 +60,8 @@ export default function PortfolioPage() {
   const [aaveValue, setAaveValue] = useState(0);
   const [moarValue, setMoarValue] = useState(0);
   const [thalaValue, setThalaValue] = useState(0);
+  const [echoValue, setEchoValue] = useState(0);
+  const [decibelValue, setDecibelValue] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -88,6 +92,8 @@ export default function PortfolioPage() {
     "Aave",
     "Moar Market",
     "Thala",
+    "Echo Protocol",
+    "Decibel",
   ];
 
   const resetChecking = useCallback(() => {
@@ -144,6 +150,8 @@ export default function PortfolioPage() {
     setEarniumValue(0);
     setAaveValue(0);
     setThalaValue(0);
+    setEchoValue(0);
+    setDecibelValue(0);
     resetChecking();
     setRefreshKey((k) => k + 1);
   }, [loadPortfolio, resetChecking]);
@@ -160,6 +168,7 @@ export default function PortfolioPage() {
 
   // Handle query parameter to open calculator
   useEffect(() => {
+    if (!searchParams) return;
     const calculatorParam = searchParams.get('calculator');
     if (calculatorParam === 'true') {
       setIsYieldCalcOpen(true);
@@ -170,7 +179,7 @@ export default function PortfolioPage() {
   const handleCloseCalculator = useCallback(() => {
     setIsYieldCalcOpen(false);
     // Remove calculator parameter from URL
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.delete('calculator');
     params.delete('apr');
     params.delete('deposit');
@@ -224,6 +233,13 @@ export default function PortfolioPage() {
   const handleThalaValueChange = useCallback((value: number) => {
     setThalaValue(value);
   }, []);
+  const handleEchoValueChange = useCallback((value: number) => {
+    setEchoValue(value);
+  }, []);
+
+  const handleDecibelValueChange = useCallback((value: number) => {
+    setDecibelValue(value);
+  }, []);
 
   // Считаем сумму по кошельку
   const walletTotal = tokens.reduce((sum, token) => {
@@ -231,8 +247,8 @@ export default function PortfolioPage() {
     return sum + (isNaN(value) ? 0 : value);
   }, 0);
 
-  // Считаем сумму по всем протоколам
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue;
+  // Считаем сумму по всем протоколам (Decibel testnet excluded from total like in Sidebar)
+  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue;
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
@@ -256,6 +272,7 @@ export default function PortfolioPage() {
     { name: 'Aave', value: aaveValue },
     { name: 'Moar Market', value: moarValue },
     { name: 'Thala', value: thalaValue },
+    { name: 'Echo Protocol', value: echoValue },
   ];
 
   // Показываем скелетон во время начальной загрузки
@@ -400,7 +417,7 @@ export default function PortfolioPage() {
                           />
                           {checkingProtocols.length > 0 && (
                             <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                              <span>Checking positions on</span>
+                              <span className="whitespace-nowrap">Checking positions on</span>
                               <div className="flex items-center gap-1">
                                 {checkingProtocols.map((name) => {
                                   const proto = getProtocolByName(name);
@@ -491,6 +508,18 @@ export default function PortfolioPage() {
 					          name: 'Thala',
 					          showManageButton: false
 					        },
+                            {
+					          component: EchoPositionsList,
+					          value: echoValue,
+					          name: 'Echo Protocol',
+					          showManageButton: false
+					        },
+                            {
+					          component: DecibelPositionsList,
+					          value: decibelValue,
+					          name: 'Decibel',
+					          showManageButton: false
+					        },
                           ]
                           .sort((a, b) => b.value - a.value)
                           .map(({ component: Component, name }) => (
@@ -513,6 +542,8 @@ export default function PortfolioPage() {
                                 name === 'Aave' ? handleAaveValueChange :
                                 name === 'Moar Market' ? handleMoarValueChange :
                                 name === 'Thala' ? handleThalaValueChange :
+                                name === 'Echo Protocol' ? handleEchoValueChange :
+                                name === 'Decibel' ? handleDecibelValueChange :
                                 undefined
                               }
                               onPositionsCheckComplete={() =>
@@ -562,13 +593,13 @@ export default function PortfolioPage() {
         totalAssets={totalAssets}
         walletTotal={walletTotal}
         initialApr={(() => {
-          const aprParam = searchParams.get('apr');
+          const aprParam = searchParams?.get('apr');
           if (!aprParam) return undefined;
           const aprValue = parseFloat(aprParam);
           return Number.isFinite(aprValue) && aprValue > 0 ? aprValue : undefined;
         })()}
         initialDeposit={(() => {
-          const depositParam = searchParams.get('deposit');
+          const depositParam = searchParams?.get('deposit');
           if (!depositParam) return undefined;
           const depositValue = parseFloat(depositParam);
           return Number.isFinite(depositValue) && depositValue >= 0 ? depositValue : undefined;

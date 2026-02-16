@@ -1413,6 +1413,7 @@ function BridgePageContent() {
 
   // Read destination address from query parameter
   useEffect(() => {
+    if (!searchParams) return;
     const destination = searchParams.get('destination');
     if (destination) {
       // Decode and set destination address

@@ -11,6 +11,8 @@ import { EarniumProtocol } from "./earnium";
 import { AaveProtocol } from "./aave";
 import { MoarMarketProtocol } from "./moar";
 import { ThalaProtocol } from "./thala";
+import { EchoProtocol } from "./echo";
+import { DecibelProtocol } from "./decibel";
 import { BaseProtocol } from "./BaseProtocol";
 import { ProtocolKey } from "../transactions/types";
 
@@ -28,4 +30,6 @@ export const protocols: Record<ProtocolKey, BaseProtocol> = {
   aave: new AaveProtocol(),
   moar: new MoarMarketProtocol(),
   thala: new ThalaProtocol(),
+  echo: new EchoProtocol(),
+  decibel: new DecibelProtocol(),
 }; 
