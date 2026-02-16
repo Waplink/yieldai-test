@@ -107,8 +107,8 @@ export default function ChatPanel() {
       } catch {
         toast({
           variant: "destructive",
-          title: "Ошибка подписки",
-          description: "Сервер подписки недоступен, попробуйте позже",
+          title: "Subscription error",
+          description: "Subscription server is unavailable, please try again later",
         });
         return;
       }
@@ -118,16 +118,16 @@ export default function ChatPanel() {
       } else {
         toast({
           variant: "destructive",
-          title: "Ошибка подписки",
-          description: data.error || "Сервер подписки недоступен, попробуйте позже",
+          title: "Subscription error",
+          description: data.error || "Subscription server is unavailable, please try again later",
         });
       }
     } catch (error) {
       console.error('TG notifications error:', error);
       toast({
         variant: "destructive",
-        title: "Ошибка подписки",
-        description: "Сервер подписки недоступен, попробуйте позже",
+        title: "Subscription error",
+        description: "Subscription server is unavailable, please try again later",
       });
     } finally {
       setTgLoading(false);
