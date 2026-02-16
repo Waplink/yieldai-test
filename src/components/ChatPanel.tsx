@@ -101,23 +101,33 @@ export default function ChatPanel() {
         body: JSON.stringify({ solana, aptos }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        toast({
+          variant: "destructive",
+          title: "Ошибка подписки",
+          description: "Сервер подписки недоступен, попробуйте позже",
+        });
+        return;
+      }
 
       if (data.link) {
         window.open(data.link, '_blank');
       } else {
         toast({
           variant: "destructive",
-          title: "Error",
-          description: data.error || "Failed to generate subscription link",
+          title: "Ошибка подписки",
+          description: data.error || "Сервер подписки недоступен, попробуйте позже",
         });
       }
     } catch (error) {
       console.error('TG notifications error:', error);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Failed to connect to server",
+        title: "Ошибка подписки",
+        description: "Сервер подписки недоступен, попробуйте позже",
       });
     } finally {
       setTgLoading(false);
