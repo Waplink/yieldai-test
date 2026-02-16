@@ -71,27 +71,42 @@ export async function POST(req: NextRequest) {
     // Generate short unique token for Telegram deep link (max 64 chars)
     const token = crypto.randomUUID().replace(/-/g, '');
 
-    // Send encrypted data + token to TG API server (non-blocking)
-    if (tgApiEndpoint) {
-      const apiUrl = tgApiEndpoint.replace(/\/+$/, '');
-      console.log('[TG Subscribe] Sending to:', apiUrl);
-      console.log('[TG Subscribe] Payload:', JSON.stringify({ token, encryptedData: encryptedBase64.substring(0, 50) + '...' }));
+    // Send encrypted data + token to TG API server
+    if (!tgApiEndpoint) {
+      return NextResponse.json(
+        { error: 'TG_API_ENDPOINT is not configured' },
+        { status: 500 }
+      );
+    }
 
-      try {
-        const apiResponse = await fetch(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, encryptedData: encryptedBase64 }),
-        });
+    const apiUrl = tgApiEndpoint.replace(/\/+$/, '');
+    console.log('[TG Subscribe] Sending to:', apiUrl);
 
-        console.log('[TG Subscribe] Response status:', apiResponse.status);
-        const responseText = await apiResponse.text();
-        console.log('[TG Subscribe] Response body:', responseText);
-      } catch (fetchError) {
-        console.error('[TG Subscribe] Fetch error:', fetchError);
-      }
-    } else {
-      console.error('[TG Subscribe] TG_API_ENDPOINT is not set');
+    let apiData: { error: number; message: string };
+    try {
+      const apiResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, encryptedData: encryptedBase64 }),
+      });
+
+      console.log('[TG Subscribe] Response status:', apiResponse.status);
+      apiData = await apiResponse.json();
+      console.log('[TG Subscribe] Response body:', JSON.stringify(apiData));
+    } catch (fetchError) {
+      console.error('[TG Subscribe] Fetch error:', fetchError);
+      return NextResponse.json(
+        { error: 'Failed to connect to TG API server' },
+        { status: 502 }
+      );
+    }
+
+    // Check TG API response: error 0 = success, error 1 = show message to user
+    if (apiData.error !== 0) {
+      return NextResponse.json(
+        { error: apiData.message || 'Subscription failed' },
+        { status: 400 }
+      );
     }
 
     const tgLink = `https://t.me/${tgBotName}?start=${token}`;
