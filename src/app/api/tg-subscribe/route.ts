@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     // Send encrypted data + token to TG API server (non-blocking)
     if (tgApiEndpoint) {
-      const apiUrl = tgApiEndpoint.replace(/\/+$/, '') + '/subscribe';
+      const apiUrl = tgApiEndpoint.replace(/\/+$/, '');
       console.log('[TG Subscribe] Sending to:', apiUrl);
       console.log('[TG Subscribe] Payload:', JSON.stringify({ token, encryptedData: encryptedBase64.substring(0, 50) + '...' }));
 
