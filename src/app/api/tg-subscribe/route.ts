@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       const apiResponse = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, encryptedData: encryptedBase64 }),
+        body: JSON.stringify({ token, encryptedData: encryptedBase64, tgBotName }),
       });
 
       console.log('[TG Subscribe] Response status:', apiResponse.status);
