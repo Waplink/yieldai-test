@@ -132,13 +132,16 @@ async function fetchProtocolPositions(
     }
 
     const positions = extractPositions(payload);
+    const positionsCount = getPositionsCount(config.key, positions);
+    const normalizedPositions =
+      config.key === 'joule' && positionsCount === 0 ? [] : positions;
 
     return {
       protocol: config.key,
       endpoint: config.endpoint,
       success: true,
-      positionsCount: getPositionsCount(config.key, positions),
-      positions,
+      positionsCount,
+      positions: normalizedPositions,
       status,
     };
   } catch (error) {
