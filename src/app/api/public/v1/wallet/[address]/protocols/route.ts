@@ -75,6 +75,26 @@ function extractPositions(payload: unknown): unknown[] {
   return [];
 }
 
+function getPositionsCount(protocolKey: string, positions: unknown[]): number {
+  if (protocolKey !== 'joule') {
+    return positions.length;
+  }
+
+  // Joule may return a scaffold object even when user has no real positions.
+  const first = positions[0];
+  if (!first || typeof first !== 'object') return 0;
+
+  const obj = first as Record<string, unknown>;
+  const positionsMap = obj.positions_map as Record<string, unknown> | undefined;
+  const nested = positionsMap?.data;
+
+  if (Array.isArray(nested)) {
+    return nested.length;
+  }
+
+  return 0;
+}
+
 async function fetchProtocolPositions(
   request: NextRequest,
   address: string,
@@ -117,7 +137,7 @@ async function fetchProtocolPositions(
       protocol: config.key,
       endpoint: config.endpoint,
       success: true,
-      positionsCount: positions.length,
+      positionsCount: getPositionsCount(config.key, positions),
       positions,
       status,
     };
