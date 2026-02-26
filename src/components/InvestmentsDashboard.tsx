@@ -35,6 +35,7 @@ import { useMobileManagement } from "@/contexts/MobileManagementContext";
 import { useWalletStore } from "@/lib/stores/walletStore";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { ClaimRewardsBlock } from "@/components/ui/claim-rewards-block";
+import { DecibelCTABlock } from "@/components/ui/decibel-cta-block";
 import { ClaimAllRewardsModal } from "@/components/ui/claim-all-rewards-modal";
 import { AirdropInfoTooltip } from "@/components/ui/airdrop-info-tooltip";
 import { Settings } from "lucide-react";
@@ -94,7 +95,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Kofi Finance': true,
     'Echelon': true,
     'Aave': true,
-    'Moar Market': true
+    'Moar Market': true,
+    'Decibel': true
   });
   const [protocolsError, setProtocolsError] = useState<Record<string, string | null>>({});
   const [protocolsData, setProtocolsData] = useState<Record<string, InvestmentData[]>>({});
@@ -108,7 +110,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Kofi Finance': '/protocol_ico/kofi.png',
     'Echelon': '/protocol_ico/echelon.png',
     'Aave': '/protocol_ico/aave.ico',
-    'Moar Market': '/protocol_ico/moar-market-logo-primary.png'
+    'Moar Market': '/protocol_ico/moar-market-logo-primary.png',
+    'Decibel': '/protocol_ico/decibel.png'
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -624,6 +627,34 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 };
               });
             }
+          },
+          {
+            name: 'Decibel',
+            url: '/api/protocols/decibel/vaults',
+            logoUrl: '/protocol_ico/decibel.png',
+            transform: (data: any) => {
+              const items = data?.data?.items ?? [];
+              const vault = items.find(
+                (v: { name?: string; address?: string }) =>
+                  v.name === 'Decibel Protocol Vault' ||
+                  v.address === '0x06ad70a9a4f30349b489791e2f2bcf58363dad30e54a9d2d4095d6213d7a9bf9'
+              );
+              if (!vault) return [];
+              const aprPct = typeof vault.apr === 'number' ? vault.apr * 100 : 0;
+              return [
+                {
+                  asset: 'USDC',
+                  provider: 'Decibel',
+                  totalAPY: aprPct,
+                  depositApy: aprPct,
+                  borrowAPY: 0,
+                  token: '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b',
+                  protocol: 'Decibel',
+                  tvlUSD: typeof vault.tvl === 'number' ? vault.tvl : 0,
+                  marketAddress: vault.address
+                }
+              ];
+            }
           }
         ];
 
@@ -842,12 +873,32 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
         </CollapsibleProvider>
       )}
 
-              {/* Claim Rewards Block */}
-        <ClaimRewardsBlock
-          summary={summary}
-          onClaim={() => setClaimModalOpen(true)}
-          loading={rewardsLoading}
-        />
+              {/* Top strip: Decibel CTA (left or full width) + Claim Rewards (right when available) */}
+        {(() => {
+          const hasClaimRewards =
+            !rewardsLoading &&
+            summary?.protocols &&
+            typeof summary.totalValue === 'number' &&
+            summary.totalValue > 0;
+          if (hasClaimRewards) {
+            return (
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <DecibelCTABlock />
+                <ClaimRewardsBlock
+                  summary={summary}
+                  onClaim={() => setClaimModalOpen(true)}
+                  loading={rewardsLoading}
+                  className="mb-0"
+                />
+              </div>
+            );
+          }
+          return (
+            <div className="mb-6">
+              <DecibelCTABlock />
+            </div>
+          );
+        })()}
 
       <div className="mb-4 pl-4">
         <div className="flex items-center justify-between">
@@ -1364,8 +1415,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                     const hasDexTokens = !!(item.token1Info && item.token2Info) || !!(item as any).tokensInfo?.length;
 
 
-                    // Включаем все пулы: с tokenInfo, с :: в asset, DEX-пулы с token1Info/token2Info, Echelon пулы, или Moar Market пулы
-                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market';
+                    // Включаем все пулы: с tokenInfo, с :: в asset, DEX-пулы с token1Info/token2Info, Echelon пулы, Moar Market пулы, или Decibel vault
+                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel';
                   })
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
