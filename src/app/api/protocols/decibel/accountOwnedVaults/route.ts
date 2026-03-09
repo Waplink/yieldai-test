@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { normalizeAddress } from '@/lib/utils/addressNormalization';
+import { toCanonicalAddress } from '@/lib/utils/addressNormalization';
 
 const DECIBEL_API_KEY = process.env.DECIBEL_API_KEY;
 const DECIBEL_API_BASE_URL =
   process.env.DECIBEL_API_BASE_URL || 'https://api.testnet.aptoslabs.com/decibel';
-const DECIBEL_MAINNET_URL = 'https://api.netna.aptoslabs.com/decibel';
+const DECIBEL_MAINNET_URL = 'https://api.mainnet.aptoslabs.com/decibel';
 
 /**
  * GET /api/protocols/decibel/accountOwnedVaults
@@ -32,9 +32,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const normalizedAddr = normalizeAddress(address.trim());
+    const decibelAddr = toCanonicalAddress(address.trim());
     const baseUrl = DECIBEL_API_BASE_URL.replace(/\/$/, '');
-    const params = new URLSearchParams({ account: normalizedAddr });
+    const params = new URLSearchParams({ account: decibelAddr });
     if (offset !== null && offset !== undefined) params.set('offset', offset);
     if (limit !== null && limit !== undefined) params.set('limit', limit);
     const url = `${baseUrl}/api/v1/account_owned_vaults?${params.toString()}`;
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     const usedTestnet = baseUrl.includes('testnet');
     if (list.length === 0 && usedTestnet && !process.env.DECIBEL_API_BASE_URL) {
       const mainnetBase = DECIBEL_MAINNET_URL.replace(/\/$/, '');
-      const paramsM = new URLSearchParams({ account: normalizedAddr });
+      const paramsM = new URLSearchParams({ account: decibelAddr });
       if (offset != null) paramsM.set('offset', offset);
       if (limit != null) paramsM.set('limit', limit);
       const urlM = `${mainnetBase}/api/v1/account_owned_vaults?${paramsM.toString()}`;

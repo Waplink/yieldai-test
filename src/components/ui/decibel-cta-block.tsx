@@ -7,19 +7,27 @@ import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 import { useToast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
+import { buildApproveBuilderFeePayload } from '@/lib/protocols/decibel/approveBuilderFee';
+import { DecibelDepositModal } from '@/components/ui/decibel-deposit-modal';
 
 const DECIBEL_LOGO = '/protocol_ico/decibel.png';
 
 type ReferralStatus = { success: boolean; canRegister?: boolean };
-type SubaccountsResponse = { success: boolean; data?: { subaccount_address?: string }[] };
+type SubaccountItem = { subaccount_address?: string; is_primary?: boolean };
+type SubaccountsResponse = { success: boolean; data?: SubaccountItem[] };
+type BuilderConfigResponse = { success: boolean; builderAddress?: string; builderFeeBps?: number };
+type ApprovedMaxFeeResponse = { success: boolean; approvedMaxFeeBps?: number | null };
 
 export function DecibelCTABlock() {
-  const { account } = useWallet();
+  const { account, signAndSubmitTransaction } = useWallet();
   const { toast } = useToast();
   const [referralStatus, setReferralStatus] = useState<ReferralStatus | null>(null);
-  const [subaccounts, setSubaccounts] = useState<{ subaccount_address?: string }[]>([]);
+  const [subaccounts, setSubaccounts] = useState<SubaccountItem[]>([]);
+  const [approvedMaxFeeBps, setApprovedMaxFeeBps] = useState<number | null | undefined>(undefined);
   const [checking, setChecking] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
   const address = account?.address?.toString();
 
@@ -27,6 +35,7 @@ export function DecibelCTABlock() {
     if (!address) {
       setReferralStatus(null);
       setSubaccounts([]);
+      setApprovedMaxFeeBps(undefined);
       return;
     }
     let cancelled = false;
@@ -40,12 +49,32 @@ export function DecibelCTABlock() {
       .then(([status, subs]) => {
         if (cancelled) return;
         setReferralStatus(status);
-        setSubaccounts(subs?.success && Array.isArray(subs.data) ? subs.data : []);
+        const list = subs?.success && Array.isArray(subs.data) ? subs.data : [];
+        setSubaccounts(list);
+        const primary = list.find((s) => s.is_primary) ?? list[0];
+        const subAddr = primary?.subaccount_address?.trim();
+        if (subAddr) {
+          fetch(`/api/protocols/decibel/approved-max-fee?subaccount=${encodeURIComponent(subAddr)}`)
+            .then((r) => r.json() as Promise<ApprovedMaxFeeResponse>)
+            .then((data) => {
+              if (!cancelled && data?.success) {
+                setApprovedMaxFeeBps(data.approvedMaxFeeBps ?? null);
+              } else if (!cancelled) {
+                setApprovedMaxFeeBps(undefined);
+              }
+            })
+            .catch(() => {
+              if (!cancelled) setApprovedMaxFeeBps(undefined);
+            });
+        } else {
+          setApprovedMaxFeeBps(undefined);
+        }
       })
       .catch(() => {
         if (!cancelled) {
           setReferralStatus(null);
           setSubaccounts([]);
+          setApprovedMaxFeeBps(undefined);
         }
       })
       .finally(() => {
@@ -59,6 +88,8 @@ export function DecibelCTABlock() {
   const canRegister = Boolean(referralStatus?.success && referralStatus?.canRegister);
   const hasSubaccount = subaccounts.length > 0;
   const needsRegister = canRegister && !hasSubaccount && !!address;
+  const primarySubaccount = subaccounts.find((s) => s.is_primary) ?? subaccounts[0];
+  const primarySubaccountAddr = primarySubaccount?.subaccount_address?.trim() ?? '';
 
   const handleRegister = async () => {
     if (!address || registering) return;
@@ -92,7 +123,10 @@ export function DecibelCTABlock() {
       });
       const subsRes = await fetch(`/api/protocols/decibel/subaccounts?address=${encodeURIComponent(address)}`);
       const subsData = (await subsRes.json()) as SubaccountsResponse;
-      if (subsData?.success && Array.isArray(subsData.data)) setSubaccounts(subsData.data);
+      if (subsData?.success && Array.isArray(subsData.data)) {
+        setSubaccounts(subsData.data);
+        setApprovedMaxFeeBps(null);
+      }
     } catch (e) {
       toast({
         variant: 'destructive',
@@ -101,6 +135,64 @@ export function DecibelCTABlock() {
       });
     } finally {
       setRegistering(false);
+    }
+  };
+
+  const handleApproveBuilderFee = async () => {
+    if (!address || approving || !signAndSubmitTransaction || subaccounts.length === 0) return;
+    const subaccountAddr = primarySubaccountAddr;
+    if (!subaccountAddr) {
+      toast({ variant: 'destructive', title: 'Error', description: 'No subaccount address' });
+      return;
+    }
+    setApproving(true);
+    try {
+      const configRes = await fetch('/api/protocols/decibel/builder-config');
+      const config = (await configRes.json()) as BuilderConfigResponse;
+      if (!configRes.ok || !config.success || !config.builderAddress || config.builderFeeBps == null) {
+        toast({
+          variant: 'destructive',
+          title: 'Approve failed',
+          description: config?.success === false ? 'Builder not configured' : 'Could not load builder config',
+        });
+        return;
+      }
+      const payload = buildApproveBuilderFeePayload({
+        subaccountAddr,
+        builderAddr: config.builderAddress,
+        maxFeeBps: config.builderFeeBps,
+        isTestnet: false,
+      });
+      const result = await signAndSubmitTransaction({
+        data: {
+          function: payload.function as `${string}::${string}::${string}`,
+          typeArguments: payload.typeArguments,
+          functionArguments: payload.functionArguments as (string | number)[],
+        },
+        options: { maxGasAmount: 20000 },
+      });
+      const txHash = typeof result?.hash === 'string' ? result.hash : (result as { hash?: string })?.hash ?? '';
+      setApprovedMaxFeeBps(config.builderFeeBps);
+      toast({
+        title: 'Trading via Yield AI enabled',
+        description: txHash ? `Transaction ${txHash.slice(0, 6)}...${txHash.slice(-4)}` : 'Transaction submitted',
+        action: txHash ? (
+          <ToastAction
+            altText="View in Explorer"
+            onClick={() => window.open('https://explorer.aptoslabs.com/txn/' + txHash + '?network=mainnet', '_blank')}
+          >
+            View in Explorer
+          </ToastAction>
+        ) : undefined,
+      });
+    } catch (e) {
+      toast({
+        variant: 'destructive',
+        title: 'Approve failed',
+        description: e instanceof Error ? e.message : 'Unknown error',
+      });
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -123,7 +215,9 @@ export function DecibelCTABlock() {
             <div className="min-w-0">
               <h3 className="text-lg font-semibold text-primary">Decibel</h3>
               <p className="text-sm text-muted-foreground">
-                Register on Decibel Mainnet — trade perps on Aptos
+                {hasSubaccount && approvedMaxFeeBps != null
+                  ? 'Trade perps on Decibel: Season 1'
+                  : 'Register on Decibel Mainnet — trade perps on Aptos'}
               </p>
             </div>
           </div>
@@ -143,8 +237,27 @@ export function DecibelCTABlock() {
                 {registering ? 'Registering…' : 'Register on Decibel Mainnet'}
               </Button>
             )}
-            {address && !checking && hasSubaccount && (
-              <p className="text-sm text-muted-foreground">You&apos;re registered on Decibel</p>
+            {address && !checking && hasSubaccount && approvedMaxFeeBps === null && (
+              <div className="flex flex-col gap-2 items-end">
+                <p className="text-sm text-muted-foreground">You&apos;re registered on Decibel</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleApproveBuilderFee}
+                  disabled={approving || !signAndSubmitTransaction}
+                >
+                  {approving ? 'Enabling…' : 'Enable trading via Yield AI'}
+                </Button>
+              </div>
+            )}
+            {address && !checking && hasSubaccount && approvedMaxFeeBps != null && primarySubaccountAddr && (
+              <Button
+                onClick={() => setIsDepositModalOpen(true)}
+                disabled={!signAndSubmitTransaction}
+                className="bg-success text-success-foreground hover:bg-success/90"
+              >
+                Deposit
+              </Button>
             )}
             {address && !checking && canRegister === false && !hasSubaccount && (
               <p className="text-sm text-muted-foreground">Registration temporarily unavailable</p>
@@ -152,6 +265,13 @@ export function DecibelCTABlock() {
           </div>
         </div>
       </CardContent>
+      {primarySubaccountAddr && (
+        <DecibelDepositModal
+          isOpen={isDepositModalOpen}
+          onClose={() => setIsDepositModalOpen(false)}
+          subaccountAddr={primarySubaccountAddr}
+        />
+      )}
     </Card>
   );
 }

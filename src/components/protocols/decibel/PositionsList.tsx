@@ -8,7 +8,7 @@ import Image from "next/image";
 import { useCollapsible } from "@/contexts/CollapsibleContext";
 import { ManagePositionsButton } from "../ManagePositionsButton";
 import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
-import { formatCurrency } from "@/lib/utils/numberFormat";
+import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -38,6 +38,8 @@ export function PositionsList({
   const [availableToTrade, setAvailableToTrade] = useState<number | null>(null);
   const [vaults, setVaults] = useState<{ name: string; current_value_of_shares?: number }[]>([]);
   const [preDepositSumUsdc, setPreDepositSumUsdc] = useState<number | null>(null);
+  const [totalAmps, setTotalAmps] = useState<number | null>(null);
+  const [predepositPoints, setPredepositPoints] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { isExpanded, toggleSection } = useCollapsible();
   const protocol = getProtocolByName("Decibel");
@@ -96,8 +98,10 @@ export function PositionsList({
         r.json()
       ),
       fetch("/api/protocols/decibel/prices").then((r) => r.json()),
+      fetch(`/api/protocols/decibel/amps?owner=${encodeURIComponent(address)}`).then((r) => r.json()),
+      fetch(`/api/protocols/decibel/predepositPoints?address=${encodeURIComponent(address)}`).then((r) => r.json()),
     ])
-      .then(([overviewRes, positionsRes, vaultsRes, marketsRes, predepositRes, pricesRes]) => {
+      .then(([overviewRes, positionsRes, vaultsRes, marketsRes, predepositRes, pricesRes, ampsRes, predepositPointsRes]) => {
         if (cancelled) return;
         const eq =
           overviewRes?.success && overviewRes?.data?.perp_equity_balance != null
@@ -168,6 +172,14 @@ export function PositionsList({
         setAvailableToTrade(avail);
         setVaults(vaultList);
         setPreDepositSumUsdc(preDeposit);
+        const amps = ampsRes?.success && typeof ampsRes?.data?.total_amps === "number"
+          ? ampsRes.data.total_amps
+          : null;
+        setTotalAmps(amps);
+        const points = predepositPointsRes?.success && typeof predepositPointsRes?.data?.points === "number"
+          ? predepositPointsRes.data.points
+          : null;
+        setPredepositPoints(points);
         onValueRef.current?.(totalValue);
         onMainnetRef.current?.(preDeposit);
       })
@@ -178,6 +190,8 @@ export function PositionsList({
           setMarketNames({});
           setAvailableToTrade(null);
           setVaults([]);
+          setTotalAmps(null);
+          setPredepositPoints(null);
           onValueRef.current?.(0);
         }
       })
@@ -249,7 +263,7 @@ export function PositionsList({
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-[220px]">
-                    <p>Decibel mainnet funds (positions, available to trade, vaults) are not included in total assets.</p>
+                    <p>Decibel assets (positions, available to trade, vaults) are included in Total Assets.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -300,6 +314,32 @@ export function PositionsList({
                   </span>
                 </div>
               )}
+              {/* AMPs: trading + predeposit points, breakdown in tooltip */}
+              <div className="flex items-center justify-between py-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-muted-foreground">AMPs</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex text-muted-foreground cursor-help" onClick={(e) => e.stopPropagation()}>
+                          <Info className="h-3.5 w-3.5" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[260px]">
+                        <p className="font-medium mb-1.5">Points breakdown</p>
+                        <ul className="text-sm text-muted-foreground space-y-0.5">
+                          <li>• Trading (AMPs): {formatNumber(totalAmps ?? 0, 2)}</li>
+                          <li>• Predeposit points: {formatNumber(predepositPoints ?? 0, 2)}</li>
+                        </ul>
+                        <p className="text-xs text-muted-foreground mt-1.5">Trading data is updated once per day.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <span className={cn("text-sm font-medium shrink-0 ml-2", totalAmps == null && predepositPoints == null && "text-muted-foreground")}>
+                  {totalAmps != null || predepositPoints != null ? formatNumber((totalAmps ?? 0) + (predepositPoints ?? 0), 2) : "—"}
+                </span>
+              </div>
               {positions.length > 0 && (
                 <div className="space-y-2 mt-1">
                   <div className="flex items-center gap-2 py-0.5">

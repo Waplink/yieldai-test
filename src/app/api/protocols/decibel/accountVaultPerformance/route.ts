@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { normalizeAddress } from '@/lib/utils/addressNormalization';
+import { toCanonicalAddress } from '@/lib/utils/addressNormalization';
 import { deriveVaultApr } from '@/lib/protocols/decibel/vaultApr';
 
 type AccountVaultPerfItem = { vault?: unknown } & Record<string, unknown>;
@@ -7,7 +7,7 @@ type AccountVaultPerfItem = { vault?: unknown } & Record<string, unknown>;
 const DECIBEL_API_KEY = process.env.DECIBEL_API_KEY;
 const DECIBEL_API_BASE_URL =
   process.env.DECIBEL_API_BASE_URL || 'https://api.testnet.aptoslabs.com/decibel';
-const DECIBEL_MAINNET_URL = 'https://api.netna.aptoslabs.com/decibel';
+const DECIBEL_MAINNET_URL = 'https://api.mainnet.aptoslabs.com/decibel';
 
 /**
  * GET /api/protocols/decibel/accountVaultPerformance
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const normalizedAddr = normalizeAddress(address.trim());
+    const decibelAddr = toCanonicalAddress(address.trim());
     const baseUrl = DECIBEL_API_BASE_URL.replace(/\/$/, '');
     const headers = {
       Authorization: `Bearer ${DECIBEL_API_KEY}`,
@@ -58,11 +58,11 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    let list: AccountVaultPerfItem[] = await fetchVaultPerf(normalizedAddr);
+    let list: AccountVaultPerfItem[] = await fetchVaultPerf(decibelAddr);
 
     if (list.length === 0) {
       const subRes = await fetch(
-        `${baseUrl}/api/v1/subaccounts?owner=${encodeURIComponent(normalizedAddr)}`,
+        `${baseUrl}/api/v1/subaccounts?owner=${encodeURIComponent(decibelAddr)}`,
         { method: 'GET', headers }
       );
       if (subRes.ok) {
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     const usedTestnet = baseUrl.includes('testnet');
     if (list.length === 0 && usedTestnet && !process.env.DECIBEL_API_BASE_URL) {
       const mainnetBase = DECIBEL_MAINNET_URL.replace(/\/$/, '');
-      const paramsM = new URLSearchParams({ account: normalizedAddr });
+      const paramsM = new URLSearchParams({ account: decibelAddr });
       if (offset != null) paramsM.set('offset', offset);
       if (limit != null) paramsM.set('limit', limit);
       const urlM = `${mainnetBase}/api/v1/account_vault_performance?${paramsM.toString()}`;

@@ -37,7 +37,6 @@ import { RefreshCw } from "lucide-react";
 import { CollapsibleControls } from "@/components/ui/collapsible-controls";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils/numberFormat";
-
 export default function Sidebar() {
   // Use native restore hook to ensure native Aptos wallets are reconnected
   const { account } = useAptosNativeRestore();
@@ -90,6 +89,14 @@ export default function Sidebar() {
     "Decibel",
   ];
 
+  // When set (e.g. "decibel" or "decibel,thala"), only these protocols are shown in the positions list
+  const debugProtocolKeys =
+    typeof process.env.NEXT_PUBLIC_DEBUG_PROTOCOLS === "string"
+      ? process.env.NEXT_PUBLIC_DEBUG_PROTOCOLS.split(",")
+          .map((p) => p.trim().toLowerCase())
+          .filter(Boolean)
+      : null;
+
   const resetChecking = useCallback(() => {
     setCheckingProtocols(allProtocolNames);
   }, []);
@@ -106,7 +113,7 @@ export default function Sidebar() {
       const portfolioService = new AptosPortfolioService();
       const portfolio = await portfolioService.getPortfolio(account.address.toString());
       setTokens(portfolio.tokens);
-      
+
       // Вычисляем общую стоимость из токенов
       const total = portfolio.tokens.reduce((sum, token) => {
         return sum + (token.value ? parseFloat(token.value) : 0);
@@ -212,8 +219,9 @@ export default function Sidebar() {
     return sum + (isNaN(value) ? 0 : value);
   }, 0);
 
-  // Считаем сумму по всем протоколам (Decibel testnet excluded; only Decibel mainnet pre-deposit included)
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue + decibelMainnetValue;
+  // Считаем сумму по всем протоколам (Decibel: full assets when available, else pre-deposit fallback)
+  const decibelTotal = decibelValue > 0 ? decibelValue : decibelMainnetValue;
+  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue + decibelTotal;
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
@@ -305,9 +313,9 @@ export default function Sidebar() {
             {/* Aptos-портфель и протоколы — только если есть Aptos-аккаунт */}
             {account?.address ? (
               <div className="space-y-4">
-                <PortfolioCard 
-                  totalValue={totalAssets.toString()} 
-                  tokens={tokens} 
+                <PortfolioCard
+                  totalValue={totalAssets.toString()}
+                  tokens={tokens}
                   onRefresh={handleRefresh}
                   isRefreshing={isRefreshing}
                   hasSolanaWallet={!!solanaAddress}
@@ -335,24 +343,34 @@ export default function Sidebar() {
                     </div>
                   </div>
                 )}
-                {[
-                  { component: HyperionPositionsList, value: hyperionValue, name: 'Hyperion' },
-                  { component: EchelonPositionsList, value: echelonValue, name: 'Echelon' },
-                  { component: AriesPositionsList, value: ariesValue, name: 'Aries' },
-                  { component: JoulePositionsList, value: jouleValue, name: 'Joule' },
-                  { component: TappPositionsList, value: tappValue, name: 'Tapp Exchange' },
-                  { component: MesoPositionsList, value: mesoValue, name: 'Meso Finance' },
-                  { component: AuroPositionsList, value: auroValue, name: 'Auro Finance' },
-                  { component: AmnisPositionsList, value: amnisValue, name: 'Amnis Finance' },
-                  { component: EarniumPositionsList, value: earniumValue, name: 'Earnium' },
-                  { component: AavePositionsList, value: aaveValue, name: 'Aave' },
-                  { component: MoarPositionsList, value: moarValue, name: 'Moar Market' },
-                  { component: ThalaPositionsList, value: thalaValue, name: 'Thala' },
-				  { component: EchoPositionsList, value: echoValue, name: 'Echo Protocol' },
-                  { component: DecibelPositionsList, value: decibelValue, name: 'Decibel' },
-                ]
-                  .sort((a, b) => b.value - a.value)
-                  .map(({ component: Component, name }) => (
+                {(() => {
+                  const positionsListItems = [
+                    { component: HyperionPositionsList, value: hyperionValue, name: "Hyperion" },
+                    { component: EchelonPositionsList, value: echelonValue, name: "Echelon" },
+                    { component: AriesPositionsList, value: ariesValue, name: "Aries" },
+                    { component: JoulePositionsList, value: jouleValue, name: "Joule" },
+                    { component: TappPositionsList, value: tappValue, name: "Tapp Exchange" },
+                    { component: MesoPositionsList, value: mesoValue, name: "Meso Finance" },
+                    { component: AuroPositionsList, value: auroValue, name: "Auro Finance" },
+                    { component: AmnisPositionsList, value: amnisValue, name: "Amnis Finance" },
+                    { component: EarniumPositionsList, value: earniumValue, name: "Earnium" },
+                    { component: AavePositionsList, value: aaveValue, name: "Aave" },
+                    { component: MoarPositionsList, value: moarValue, name: "Moar Market" },
+                    { component: ThalaPositionsList, value: thalaValue, name: "Thala" },
+                    { component: EchoPositionsList, value: echoValue, name: "Echo Protocol" },
+                    { component: DecibelPositionsList, value: decibelValue, name: "Decibel" },
+                  ];
+                  const listToRender =
+                    debugProtocolKeys?.length &&
+                    debugProtocolKeys.length > 0
+                      ? positionsListItems.filter((item) => {
+                          const key = getProtocolByName(item.name)?.key;
+                          return key && debugProtocolKeys.includes(key.toLowerCase());
+                        })
+                      : positionsListItems;
+                  return listToRender
+                    .sort((a, b) => b.value - a.value)
+                    .map(({ component: Component, name }) => (
                     <Component
                       key={name}
                       address={account!.address.toString()}
@@ -380,7 +398,8 @@ export default function Sidebar() {
                         setCheckingProtocols((prev) => prev.filter((p) => p !== name))
                       }
                     />
-                  ))}
+                  ));
+                })()}
               </div>
             ) : (
               <div className="mt-4 p-4 bg-muted rounded-lg space-y-2">
@@ -408,4 +427,4 @@ export default function Sidebar() {
       </div>
     </CollapsibleProvider>
   );
-} 
+}

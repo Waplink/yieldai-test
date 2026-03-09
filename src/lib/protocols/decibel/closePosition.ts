@@ -7,9 +7,10 @@
  * @see https://docs.decibel.trade/developer-hub/on-chain/overview/contract-reference
  */
 
-export const PACKAGE_MAINNET = '0xb8a5788314451ce4d2fbbad32e1bad88d4184b73943b7fe5166eab93cf1a5a95';
-// Aptos Testnet (api.testnet.aptoslabs.com) - from docs.decibel.trade/quickstart/placing-your-first-order
-export const PACKAGE_TESTNET = '0x952535c3049e52f195f26798c2f1340d7dd5100edbe0f464e520a974d16fbe9f';
+// Must match DECIBEL_PACKAGE_ADDRESS_MAINNET / deployed mainnet contract (e.g. explorer.aptoslabs.com)
+export const PACKAGE_MAINNET = '0x50ead22afd6ffd9769e3b3d6e0e64a2a350d68e8b102c4e72e33d0b8cfdfdb06';
+// Aptos Testnet - match DECIBEL_PACKAGE_ADDRESS_TESTNET when using testnet
+export const PACKAGE_TESTNET = '0xd0b2dd565e0f2020d66d581a938e7766b2163db4b8c63410c17578d32b4e9e88';
 
 export interface DecibelMarketConfig {
   market_addr?: string;
@@ -38,6 +39,23 @@ export interface CloseAtMarketParams {
   slippageBps?: number;
   /** Use testnet package address (default: false = mainnet) */
   isTestnet?: boolean;
+  /** Builder address for fee (Step 3). If set, builderFeeBps must be set. */
+  builderAddr?: string | null;
+  /** Builder fee in basis points (e.g. 10 = 0.1%). Must be <= user-approved max. */
+  builderFeeBps?: number | null;
+}
+
+export interface CloseAtLimitParams {
+  subaccountAddr: string;
+  marketAddr: string;
+  size: number;
+  isLong: boolean;
+  /** Limit price in human decimal (e.g. 5.67). Will be rounded to tick. */
+  limitPrice: number;
+  marketConfig: DecibelMarketConfig;
+  isTestnet?: boolean;
+  builderAddr?: string | null;
+  builderFeeBps?: number | null;
 }
 
 /**
@@ -88,6 +106,8 @@ export function buildCloseAtMarketPayload(params: CloseAtMarketParams): {
     marketConfig,
     slippageBps = 50,
     isTestnet = false,
+    builderAddr = null,
+    builderFeeBps = null,
   } = params;
 
   const pkg = isTestnet ? PACKAGE_TESTNET : PACKAGE_MAINNET;
@@ -128,8 +148,93 @@ export function buildCloseAtMarketPayload(params: CloseAtMarketParams): {
       null, // tp_limit_price
       null, // sl_trigger_price
       null, // sl_limit_price
-      null, // builder_addr
-      null, // builder_fee
+      builderAddr ?? null, // builder_addr
+      builderFeeBps ?? null, // builder_fee
     ],
+  };
+}
+
+/**
+ * Builds the transaction payload for closing a position at limit (GTC).
+ * Same entry point as market close but time_in_force=GoodTillCanceled and user's limit price.
+ */
+export function buildCloseAtLimitPayload(params: CloseAtLimitParams): {
+  function: string;
+  typeArguments: string[];
+  functionArguments: unknown[];
+} {
+  const {
+    subaccountAddr,
+    marketAddr,
+    size,
+    isLong,
+    limitPrice,
+    marketConfig,
+    isTestnet = false,
+    builderAddr = null,
+    builderFeeBps = null,
+  } = params;
+
+  const pkg = isTestnet ? PACKAGE_TESTNET : PACKAGE_MAINNET;
+  const pxDecimals = marketConfig.px_decimals ?? 9;
+  const szDecimals = marketConfig.sz_decimals ?? 9;
+  const tickSize = marketConfig.tick_size ?? 1_000_000;
+  const lotSize = marketConfig.lot_size ?? 100_000_000;
+  const minSize = marketConfig.min_size ?? 1_000_000_000;
+
+  const chainPrice = roundPriceToTickChainUnits(limitPrice, tickSize, pxDecimals);
+  const absSize = Math.abs(size);
+  const chainSize = roundSizeToLotChainUnits(absSize, lotSize, minSize, szDecimals);
+  const isBuy = !isLong;
+
+  // time_in_force: 0=GoodTillCanceled (limit order stays in book until filled or cancelled)
+  const timeInForce = 0;
+
+  return {
+    function: `${pkg}::dex_accounts_entry::place_order_to_subaccount`,
+    typeArguments: [],
+    functionArguments: [
+      subaccountAddr,
+      marketAddr,
+      chainPrice,
+      chainSize,
+      isBuy,
+      timeInForce,
+      true, // is_reduce_only
+      null, // client_order_id
+      null, // stop_price
+      null, // tp_trigger_price
+      null, // tp_limit_price
+      null, // sl_trigger_price
+      null, // sl_limit_price
+      builderAddr ?? null,
+      builderFeeBps ?? null,
+    ],
+  };
+}
+
+/**
+ * Build transaction payload to cancel an open order by order_id.
+ * @see https://docs.decibel.trade/developer-hub/on-chain/order-management/cancel-order
+ */
+export function buildCancelOrderPayload(params: {
+  subaccountAddr: string;
+  marketAddr: string;
+  /** Order ID from open_orders API (string, u128 on-chain) */
+  orderId: string;
+  isTestnet?: boolean;
+}): {
+  function: string;
+  typeArguments: string[];
+  functionArguments: unknown[];
+} {
+  const { subaccountAddr, marketAddr, orderId, isTestnet = false } = params;
+  const pkg = isTestnet ? PACKAGE_TESTNET : PACKAGE_MAINNET;
+  // order_id is u128 on-chain; pass as BigInt for SDK (large IDs exceed Number.MAX_SAFE_INTEGER)
+  const orderIdBigInt = BigInt(orderId);
+  return {
+    function: `${pkg}::dex_accounts_entry::cancel_order_to_subaccount`,
+    typeArguments: [],
+    functionArguments: [subaccountAddr, orderIdBigInt, marketAddr],
   };
 }

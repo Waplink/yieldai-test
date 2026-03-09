@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Info } from 'lucide-react';
+import { Info, Target } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
 import { formatNumber, formatCurrency } from '@/lib/utils/numberFormat';
@@ -23,8 +23,13 @@ import { normalizeAddress } from '@/lib/utils/addressNormalization';
 import { cn } from '@/lib/utils';
 import {
   buildCloseAtMarketPayload,
+  buildCloseAtLimitPayload,
+  buildCancelOrderPayload,
   type DecibelMarketConfig,
 } from '@/lib/protocols/decibel/closePosition';
+import { buildApproveBuilderFeePayload } from '@/lib/protocols/decibel/approveBuilderFee';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 /** Decibel API position shape (snake_case from API) */
 export interface DecibelPosition {
@@ -47,9 +52,51 @@ export interface DecibelPosition {
 export interface DecibelVaultItem {
   vault?: { name?: string };
   current_value_of_shares?: number;
+  /** Total amount deposited (gross). */
   total_deposited?: number;
-  /** APR as decimal (e.g. 0.15 = 15%), from API or derived from vault returns */
+  /** Total amount withdrawn. Used for PnL when all_time_earned is not present. */
+  total_withdrawn?: number;
+  /** All-time PnL in USDC (realized + unrealized). Prefer for "Your PnL" when API provides it. */
+  all_time_earned?: number;
+  /** APR in % (e.g. 2.98 = 2.98%), from API; display as-is, do not multiply by 100 */
   apr?: number;
+}
+
+/** Open order from Decibel open_orders API (supports snake_case and common variants) */
+export interface DecibelOpenOrder {
+  market?: string;
+  market_address?: string;
+  price: number;
+  size?: number;
+  /** API returns human size (e.g. 0.00015) */
+  orig_size?: number;
+  remaining_size?: number;
+  size_delta?: number;
+  reduce_only?: boolean;
+  is_reduce_only?: boolean;
+  order_id?: string;
+}
+
+/** Normalize API response to array of orders (data may be array or { items, total_count }) */
+function normalizeOpenOrdersResponse(data: unknown): DecibelOpenOrder[] {
+  if (Array.isArray(data)) return data as DecibelOpenOrder[];
+  if (data && typeof data === 'object' && 'items' in data && Array.isArray((data as { items: unknown }).items)) {
+    return (data as { items: DecibelOpenOrder[] }).items;
+  }
+  return [];
+}
+
+/** Find reduce-only order for this position (same market) */
+function getOrderForPosition(
+  orders: DecibelOpenOrder[],
+  position: DecibelPosition
+): DecibelOpenOrder | undefined {
+  const posMarket = normalizeAddress(position.market);
+  return orders.find((o) => {
+    const orderMarket = normalizeAddress((o.market ?? o.market_address ?? ''));
+    const reduceOnly = o.reduce_only ?? o.is_reduce_only === true;
+    return orderMarket === posMarket && reduceOnly;
+  });
 }
 
 const DECIBEL_APP_URL = 'https://app.decibel.trade/';
@@ -62,6 +109,13 @@ function formatSize(size: number): string {
   if (abs < 0.01) return size.toFixed(6);
   if (abs < 1) return size.toFixed(4);
   return formatNumber(size, 2);
+}
+
+/** Decibel returns funding in bps; convert to percent for UI. */
+function formatFundingRatePercent(fundingRateBps: number): string {
+  const percent = fundingRateBps / 100;
+  const sign = percent > 0 ? '+' : percent < 0 ? '-' : '';
+  return `${sign}${formatNumber(Math.abs(percent), 6)}%`;
 }
 
 /** Shorten hex address for display */
@@ -100,6 +154,9 @@ export function DecibelPositions() {
   const [decibelNetwork, setDecibelNetwork] = useState<'testnet' | 'mainnet'>('testnet');
   const [closingPositionKey, setClosingPositionKey] = useState<string | null>(null);
   const [closeConfirmPosition, setCloseConfirmPosition] = useState<DecibelPosition | null>(null);
+  const [closeMode, setCloseMode] = useState<'market' | 'limit'>('market');
+  const [closeLimitPrice, setCloseLimitPrice] = useState('');
+  const [dialogMarkPx, setDialogMarkPx] = useState<number | null>(null);
   const [availableToTrade, setAvailableToTrade] = useState<number | null>(null);
   const [totalEquity, setTotalEquity] = useState<number | null>(null);
   const [preDepositSumUsdc, setPreDepositSumUsdc] = useState<number | null>(null);
@@ -108,7 +165,42 @@ export function DecibelPositions() {
   const [vaultsLoading, setVaultsLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [pricesMap, setPricesMap] = useState<Record<string, number>>({});
+  const [fundingRatesMap, setFundingRatesMap] = useState<
+    Record<string, { fundingRateBps: number; isFundingPositive: boolean }>
+  >({});
   const [error, setError] = useState<string | null>(null);
+  const [builderConfig, setBuilderConfig] = useState<{ builderAddress: string; builderFeeBps: number } | null>(null);
+  const [totalAmps, setTotalAmps] = useState<number | null>(null);
+  const [ampsLoading, setAmpsLoading] = useState(false);
+  const [predepositPoints, setPredepositPoints] = useState<number | null>(null);
+  const [predepositPointsLoading, setPredepositPointsLoading] = useState(false);
+  const [openOrders, setOpenOrders] = useState<DecibelOpenOrder[]>([]);
+  const [openOrdersLoading, setOpenOrdersLoading] = useState(false);
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!account?.address) {
+      setBuilderConfig(null);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/protocols/decibel/builder-config')
+      .then((r) => r.json())
+      .then((data: { success?: boolean; builderAddress?: string; builderFeeBps?: number }) => {
+        if (cancelled) return;
+        if (data?.success && data.builderAddress && typeof data.builderFeeBps === 'number') {
+          setBuilderConfig({ builderAddress: data.builderAddress, builderFeeBps: data.builderFeeBps });
+        } else {
+          setBuilderConfig(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBuilderConfig(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account?.address]);
 
   const fetchPositions = useCallback(async () => {
     if (!account?.address) {
@@ -252,19 +344,36 @@ export function DecibelPositions() {
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         const map: Record<string, number> = {};
-        for (const item of data.data as { market?: string; mark_px?: number; mid_px?: number }[]) {
+        const fundingMap: Record<string, { fundingRateBps: number; isFundingPositive: boolean }> = {};
+        for (const item of data.data as {
+          market?: string;
+          mark_px?: number;
+          mid_px?: number;
+          funding_rate_bps?: number;
+          is_funding_positive?: boolean;
+        }[]) {
           const addr = item.market;
           if (addr != null) {
+            const key = normalizeAddress(String(addr));
             const mark = item.mark_px ?? item.mid_px;
-            if (typeof mark === 'number') map[normalizeAddress(String(addr))] = mark;
+            if (typeof mark === 'number') map[key] = mark;
+            if (typeof item.funding_rate_bps === 'number') {
+              fundingMap[key] = {
+                fundingRateBps: item.funding_rate_bps,
+                isFundingPositive: item.is_funding_positive === true,
+              };
+            }
           }
         }
         setPricesMap(map);
+        setFundingRatesMap(fundingMap);
       } else {
         setPricesMap({});
+        setFundingRatesMap({});
       }
     } catch {
       setPricesMap({});
+      setFundingRatesMap({});
     }
   }, []);
 
@@ -303,6 +412,93 @@ export function DecibelPositions() {
     fetchPreDeposit();
   }, [fetchPreDeposit]);
 
+  const fetchAmps = useCallback(async () => {
+    if (!account?.address) {
+      setTotalAmps(null);
+      return;
+    }
+    setAmpsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/protocols/decibel/amps?owner=${encodeURIComponent(account.address.toString())}`
+      );
+      const data = await res.json();
+      if (data.success && typeof data.data?.total_amps === 'number') {
+        setTotalAmps(data.data.total_amps);
+      } else {
+        setTotalAmps(null);
+      }
+    } catch {
+      setTotalAmps(null);
+    } finally {
+      setAmpsLoading(false);
+    }
+  }, [account?.address]);
+
+  const fetchPredepositPoints = useCallback(async () => {
+    if (!account?.address) {
+      setPredepositPoints(null);
+      return;
+    }
+    setPredepositPointsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/protocols/decibel/predepositPoints?address=${encodeURIComponent(account.address.toString())}`
+      );
+      const data = await res.json();
+      if (data.success && typeof data.data?.points === 'number') {
+        setPredepositPoints(data.data.points);
+      } else {
+        setPredepositPoints(null);
+      }
+    } catch {
+      setPredepositPoints(null);
+    } finally {
+      setPredepositPointsLoading(false);
+    }
+  }, [account?.address]);
+
+  const fetchOpenOrders = useCallback(async () => {
+    if (!account?.address) {
+      setOpenOrders([]);
+      return;
+    }
+    // Decibel open_orders returns orders per subaccount, not per owner. Use subaccounts from positions.
+    const subaccounts = positions.length > 0
+      ? Array.from(new Set(positions.map((p) => p.user).filter(Boolean)))
+      : [account.address.toString()];
+    setOpenOrdersLoading(true);
+    try {
+      const allOrders: DecibelOpenOrder[] = [];
+      for (const addr of subaccounts) {
+        const res = await fetch(
+          `/api/protocols/decibel/openOrders?address=${encodeURIComponent(addr)}`
+        );
+        const data = await res.json();
+        if (data.success && data.data != null) {
+          allOrders.push(...normalizeOpenOrdersResponse(data.data));
+        }
+      }
+      setOpenOrders(allOrders);
+    } catch {
+      setOpenOrders([]);
+    } finally {
+      setOpenOrdersLoading(false);
+    }
+  }, [account?.address, positions]);
+
+  useEffect(() => {
+    fetchAmps();
+  }, [fetchAmps]);
+
+  useEffect(() => {
+    fetchPredepositPoints();
+  }, [fetchPredepositPoints]);
+
+  useEffect(() => {
+    fetchOpenOrders();
+  }, [fetchOpenOrders]);
+
   useEffect(() => {
     const handler = (e: CustomEvent<{ protocol: string; data?: DecibelPosition[] }>) => {
       if (e.detail?.protocol === 'decibel') {
@@ -314,27 +510,122 @@ export function DecibelPositions() {
         fetchOverview();
         fetchPreDeposit();
         fetchPrices();
+        fetchAmps();
+        fetchPredepositPoints();
+        fetchOpenOrders();
       }
     };
     window.addEventListener('refreshPositions', handler as EventListener);
     return () => window.removeEventListener('refreshPositions', handler as EventListener);
-  }, [fetchVaults, fetchOverview, fetchPreDeposit, fetchPrices]);
+  }, [fetchVaults, fetchOverview, fetchPreDeposit, fetchPrices, fetchAmps, fetchPredepositPoints, fetchOpenOrders]);
 
   const positionKey = (pos: DecibelPosition) => `${pos.market}-${pos.user}-${pos.size}-${pos.entry_price}`;
 
   const handleCloseClick = (pos: DecibelPosition) => {
     setCloseConfirmPosition(pos);
+    setCloseMode('market');
+    setCloseLimitPrice('');
   };
+
+  // Fetch mark price when close dialog opens (for limit price hint)
+  useEffect(() => {
+    if (!closeConfirmPosition) {
+      setDialogMarkPx(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/protocols/decibel/prices?market=${encodeURIComponent(closeConfirmPosition.market)}`
+        );
+        const data = await res.json();
+        if (cancelled) return;
+        const list = data.success && Array.isArray(data.data) ? data.data : [];
+        const item =
+          list.find(
+            (p: { market?: string }) => normalizeAddress(p.market || '') === normalizeAddress(closeConfirmPosition.market)
+          ) ?? list[0];
+        const mark = item?.mark_px ?? item?.mid_px ?? closeConfirmPosition.entry_price;
+        const markNum = typeof mark === 'number' ? mark : null;
+        setDialogMarkPx(markNum);
+        // Prefill limit price when mark loads and user already switched to Limit
+        if (markNum != null) {
+          setCloseLimitPrice((prev) => (prev === '' ? formatNumber(markNum, 4) : prev));
+        }
+      } catch {
+        if (!cancelled) setDialogMarkPx(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [closeConfirmPosition]);
 
   const handleConfirmClose = useCallback(async () => {
     const pos = closeConfirmPosition;
-    if (!pos || (!signTransaction && !signAndSubmitTransaction) || !account?.address) {
+    const walletAddress = account?.address;
+    if (!pos || (!signTransaction && !signAndSubmitTransaction) || !walletAddress) {
       setCloseConfirmPosition(null);
       return;
     }
     const key = positionKey(pos);
     setClosingPositionKey(key);
     try {
+      if (builderConfig) {
+        const approvalRes = await fetch(
+          `/api/protocols/decibel/approved-max-fee?subaccount=${encodeURIComponent(pos.user)}`
+        );
+        const approvalData = (await approvalRes.json()) as { success?: boolean; approvedMaxFeeBps?: number | null };
+        if (approvalRes.ok && approvalData?.success && approvalData.approvedMaxFeeBps == null) {
+          if (!account?.address) {
+            toast({
+              title: 'Wallet not connected',
+              description: 'Please reconnect your Aptos wallet and try again.',
+              variant: 'destructive',
+            });
+            return;
+          }
+          const approvePayload = buildApproveBuilderFeePayload({
+            subaccountAddr: pos.user,
+            builderAddr: builderConfig.builderAddress,
+            maxFeeBps: builderConfig.builderFeeBps,
+            isTestnet: decibelNetwork === 'testnet',
+          });
+          if (signAndSubmitTransaction) {
+            await signAndSubmitTransaction({
+              data: {
+                function: approvePayload.function as `${string}::${string}::${string}`,
+                typeArguments: approvePayload.typeArguments,
+                functionArguments: approvePayload.functionArguments as (string | number)[],
+              },
+              options: { maxGasAmount: 20000 },
+            });
+          } else if (signTransaction) {
+            const aptos = getDecibelAptosClient(decibelNetwork);
+            const senderAddr = AccountAddress.fromString(walletAddress.toString());
+            const transaction = await aptos.transaction.build.simple({
+              sender: senderAddr,
+              data: {
+                function: approvePayload.function as `${string}::${string}::${string}`,
+                typeArguments: approvePayload.typeArguments,
+                functionArguments: approvePayload.functionArguments as (string | number)[],
+              },
+              options: { maxGasAmount: 20000 },
+            });
+            const signResult = await signTransaction({ transactionOrPayload: transaction });
+            const { authenticator } = signResult;
+            await aptos.transaction.submit.simple({
+              transaction,
+              senderAuthenticator: normalizeAuthenticator(authenticator),
+            });
+          } else {
+            throw new Error('Wallet does not support signing transactions');
+          }
+          toast({ title: 'Trading via Yield AI enabled', description: 'Closing position…' });
+        }
+      }
+
       const pricesRes = await fetch(`/api/protocols/decibel/prices?market=${encodeURIComponent(pos.market)}`);
       const pricesData = await pricesRes.json();
       const pricesList = pricesData.success && Array.isArray(pricesData.data) ? pricesData.data : [];
@@ -351,16 +642,48 @@ export function DecibelPositions() {
         setClosingPositionKey(null);
         return;
       }
-      const payload = buildCloseAtMarketPayload({
-        subaccountAddr: pos.user,
-        marketAddr: pos.market,
-        size: Math.abs(pos.size),
-        isLong: pos.size > 0,
-        markPx,
-        marketConfig,
-        slippageBps: 50,
-        isTestnet: decibelNetwork === 'testnet',
-      });
+
+      const isLimit = closeMode === 'limit';
+      const limitPriceNum = isLimit ? parseFloat(closeLimitPrice) : NaN;
+      if (isLimit && (Number.isNaN(limitPriceNum) || limitPriceNum <= 0)) {
+        toast({ title: 'Error', description: 'Enter a valid limit price.', variant: 'destructive' });
+        setClosingPositionKey(null);
+        return;
+      }
+
+      const payload = isLimit
+        ? buildCloseAtLimitPayload({
+            subaccountAddr: pos.user,
+            marketAddr: pos.market,
+            size: Math.abs(pos.size),
+            isLong: pos.size > 0,
+            limitPrice: limitPriceNum,
+            marketConfig,
+            isTestnet: decibelNetwork === 'testnet',
+            builderAddr: builderConfig?.builderAddress ?? undefined,
+            builderFeeBps: builderConfig?.builderFeeBps ?? undefined,
+          })
+        : buildCloseAtMarketPayload({
+            subaccountAddr: pos.user,
+            marketAddr: pos.market,
+            size: Math.abs(pos.size),
+            isLong: pos.size > 0,
+            markPx,
+            marketConfig,
+            slippageBps: 50,
+            isTestnet: decibelNetwork === 'testnet',
+            builderAddr: builderConfig?.builderAddress ?? undefined,
+            builderFeeBps: builderConfig?.builderFeeBps ?? undefined,
+          });
+
+      if (!account?.address) {
+        toast({
+          title: 'Wallet not connected',
+          description: 'Please reconnect your Aptos wallet and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
       let txHash: string;
 
@@ -378,7 +701,7 @@ export function DecibelPositions() {
       } else if (signTransaction) {
         // Fallback: manual sign + submit (Decibel not in Gas Station rules)
         const aptos = getDecibelAptosClient(decibelNetwork);
-        const senderAddr = AccountAddress.fromString(account.address.toString());
+        const senderAddr = AccountAddress.fromString(walletAddress.toString());
         const transaction = await aptos.transaction.build.simple({
           sender: senderAddr,
           data: {
@@ -388,7 +711,7 @@ export function DecibelPositions() {
           },
           options: { maxGasAmount: 20000 },
         });
-        console.log('[Decibel] sender:', senderAddr.toString(), 'wallet:', account?.address);
+        console.log('[Decibel] sender:', senderAddr.toString(), 'wallet:', walletAddress.toString());
         const signResult = await signTransaction({ transactionOrPayload: transaction });
         console.log('[Decibel] signResult keys:', Object.keys(signResult ?? {}));
         const { authenticator } = signResult;
@@ -401,7 +724,7 @@ export function DecibelPositions() {
         throw new Error('Wallet does not support signing transactions');
       }
       toast({
-        title: 'Position closed',
+        title: isLimit ? 'Limit close order placed' : 'Position closed',
         description: txHash ? `Transaction ${txHash.slice(0, 6)}...${txHash.slice(-4)}` : 'Transaction submitted',
         action: txHash ? (
           <ToastAction
@@ -419,6 +742,7 @@ export function DecibelPositions() {
       });
       setCloseConfirmPosition(null);
       fetchPositions();
+      fetchOpenOrders();
     } catch (err: unknown) {
       const rawMsg =
         err instanceof Error
@@ -426,26 +750,112 @@ export function DecibelPositions() {
           : typeof err === 'object' && err !== null && 'message' in err
             ? String((err as { message: unknown }).message)
             : String(err);
+      const isWalletNotConnected =
+        (err instanceof Error && err.name === 'WalletNotConnectedError') ||
+        (typeof rawMsg === 'string' && rawMsg.includes('WalletNotConnectedError'));
       const testnetHint =
         decibelNetwork === 'testnet'
           ? ' Switch your wallet to Aptos Mainnet and try again.'
           : '';
-      const msg = rawMsg || 'Failed to close position';
+      const msg = isWalletNotConnected
+        ? 'Wallet disconnected or locked. Please unlock or reconnect your Aptos wallet and try again.'
+        : (rawMsg || 'Failed to close position') + testnetHint;
       console.error('[Decibel] Close position error:', err);
       toast({
-        title: 'Error',
-        description: msg + testnetHint,
+        title: isWalletNotConnected ? 'Wallet not connected' : 'Error',
+        description: msg,
         variant: 'destructive',
       });
       setCloseConfirmPosition(null);
     } finally {
       setClosingPositionKey(null);
     }
-  }, [closeConfirmPosition, signTransaction, signAndSubmitTransaction, account?.address, marketsMap, decibelNetwork, fetchPositions, toast]);
+  }, [closeConfirmPosition, closeMode, closeLimitPrice, signTransaction, signAndSubmitTransaction, account?.address, marketsMap, decibelNetwork, fetchPositions, fetchOpenOrders, toast, builderConfig]);
 
   const handleCancelClose = useCallback(() => {
     setCloseConfirmPosition(null);
+    setCloseMode('market');
+    setCloseLimitPrice('');
+    setDialogMarkPx(null);
   }, []);
+
+  const handleCancelOrder = useCallback(
+    async (orderId: string, subaccountAddr: string, marketAddr: string) => {
+      if (!orderId || (!signTransaction && !signAndSubmitTransaction) || !account?.address) return;
+      setCancelingOrderId(orderId);
+      try {
+        const payload = buildCancelOrderPayload({
+          subaccountAddr,
+          marketAddr,
+          orderId,
+          isTestnet: decibelNetwork === 'testnet',
+        });
+        if (!account?.address) {
+          toast({ title: 'Wallet not connected', description: 'Please reconnect and try again.', variant: 'destructive' });
+          return;
+        }
+        let txHash: string;
+        if (signAndSubmitTransaction) {
+          const result = await signAndSubmitTransaction({
+            data: {
+              function: payload.function as `${string}::${string}::${string}`,
+              typeArguments: payload.typeArguments,
+              functionArguments: payload.functionArguments as (string | number | bigint)[],
+            },
+            options: { maxGasAmount: 20000 },
+          });
+          txHash = typeof result?.hash === 'string' ? result.hash : (result as { hash?: string })?.hash ?? '';
+        } else if (signTransaction) {
+          const aptos = getDecibelAptosClient(decibelNetwork);
+          const senderAddr = AccountAddress.fromString(account.address.toString());
+          const transaction = await aptos.transaction.build.simple({
+            sender: senderAddr,
+            data: {
+              function: payload.function as `${string}::${string}::${string}`,
+              typeArguments: payload.typeArguments,
+              functionArguments: payload.functionArguments as (string | number | bigint)[],
+            },
+            options: { maxGasAmount: 20000 },
+          });
+          const signResult = await signTransaction({ transactionOrPayload: transaction });
+          const { authenticator } = signResult;
+          const response = await aptos.transaction.submit.simple({
+            transaction,
+            senderAuthenticator: normalizeAuthenticator(authenticator),
+          });
+          txHash = typeof response?.hash === 'string' ? response.hash : (response as { hash?: string })?.hash ?? '';
+        } else {
+          throw new Error('Wallet does not support signing transactions');
+        }
+        toast({
+          title: 'Order cancelled',
+          description: txHash ? `Tx ${txHash.slice(0, 6)}...${txHash.slice(-4)}` : 'Transaction submitted',
+          action: txHash ? (
+            <ToastAction
+              altText="View in Explorer"
+              onClick={() =>
+                window.open(
+                  `https://explorer.aptoslabs.com/txn/${txHash}?network=${decibelNetwork === 'mainnet' ? 'mainnet' : 'testnet'}`,
+                  '_blank'
+                )
+              }
+            >
+              View in Explorer
+            </ToastAction>
+          ) : undefined,
+        });
+        fetchOpenOrders();
+        fetchPositions();
+        window.dispatchEvent(new CustomEvent('refreshPositions', { detail: { protocol: 'decibel' } }));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: 'Error', description: msg, variant: 'destructive' });
+      } finally {
+        setCancelingOrderId(null);
+      }
+    },
+    [decibelNetwork, signTransaction, signAndSubmitTransaction, account?.address, toast, fetchOpenOrders, fetchPositions]
+  );
 
   if (!account?.address) {
     return (
@@ -508,7 +918,7 @@ export function DecibelPositions() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-[220px]">
-                    <p>Decibel mainnet funds (positions, available to trade, vaults) are not included in total assets.</p>
+                    <p>Decibel assets (positions, available to trade, vaults) are included in Total Assets.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -519,6 +929,32 @@ export function DecibelPositions() {
           </span>
         </div>
       )}
+      {/* AMPs: trading + predeposit points, breakdown in tooltip */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">AMPs</span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex text-muted-foreground cursor-help">
+                  <Info className="h-4 w-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[260px]">
+                <p className="font-medium mb-1.5">Points breakdown</p>
+                <ul className="text-sm text-muted-foreground space-y-0.5">
+                  <li>• Trading (AMPs): {ampsLoading ? '…' : formatNumber(totalAmps ?? 0, 2)}</li>
+                  <li>• Predeposit points: {predepositPointsLoading ? '…' : formatNumber(predepositPoints ?? 0, 2)}</li>
+                </ul>
+                <p className="text-xs text-muted-foreground mt-1.5">Trading data is updated once per day.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <span className={cn("font-medium", totalAmps == null && predepositPoints == null && !ampsLoading && !predepositPointsLoading && "text-muted-foreground")}>
+          {ampsLoading || predepositPointsLoading ? '…' : formatNumber((totalAmps ?? 0) + (predepositPoints ?? 0), 2)}
+        </span>
+      </div>
       {positions.length === 0 && !vaultsLoading && vaults.length === 0 && (
         <p className="text-base text-muted-foreground py-2">
           No open positions on Decibel. Open positions at{' '}
@@ -548,7 +984,7 @@ export function DecibelPositions() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-[220px]">
-                    <p>Decibel mainnet funds (positions, available to trade, vaults) are not included in total assets.</p>
+                    <p>Decibel assets (positions, available to trade, vaults) are included in Total Assets.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -570,6 +1006,7 @@ export function DecibelPositions() {
               const totalPnl = pricePnl + fundingDisplay;
               const pnlPercent = marginUsd > 0 ? (totalPnl / marginUsd) * 100 : 0;
               const isLong = pos.size > 0;
+              const fundingRateInfo = fundingRatesMap[marketKey];
               const pnlColor = totalPnl > 0 ? 'text-green-600 dark:text-green-400' : totalPnl < 0 ? 'text-destructive' : 'text-muted-foreground';
               const pricePnlColor = pricePnl > 0 ? 'text-green-600 dark:text-green-400' : pricePnl < 0 ? 'text-destructive' : 'text-muted-foreground';
               const fundingColor = fundingDisplay > 0 ? 'text-green-600 dark:text-green-400' : fundingDisplay < 0 ? 'text-destructive' : 'text-muted-foreground';
@@ -580,23 +1017,78 @@ export function DecibelPositions() {
                 >
                   {/* Top: pair info | Total PnL, Margin, Close */}
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <span className="font-medium">{displayPair}</span>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'text-xs font-medium shrink-0',
-                          isLong ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{displayPair}</span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-xs font-medium shrink-0',
+                            isLong ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+                          )}
+                        >
+                          {isLong ? 'Long' : 'Short'}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground shrink-0">{pos.user_leverage}x</span>
+                        {pos.is_isolated && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                            Isolated
+                          </span>
                         )}
-                      >
-                        {isLong ? 'Long' : 'Short'}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground shrink-0">{pos.user_leverage}x</span>
-                      {pos.is_isolated && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-                          Isolated
-                        </span>
-                      )}
+                      </div>
+                      {(() => {
+                        const order = getOrderForPosition(openOrders, pos);
+                        if (!order) return null;
+                        const marketConfig = marketsMap[marketKey] ?? Object.values(marketsMap).find((m) => normalizeAddress(m.market_addr || '') === marketKey);
+                        const pxDecimals = marketConfig?.px_decimals ?? 9;
+                        const szDecimals = marketConfig?.sz_decimals ?? 9;
+                        // API may return human price (e.g. 70000) or chain units; use as-is if in human range
+                        const orderPriceHuman =
+                          order.price > 0 && order.price < 1e12
+                            ? order.price
+                            : order.price / 10 ** pxDecimals;
+                        const rawSize = order.remaining_size ?? order.orig_size ?? order.size;
+                        const orderSizeHuman =
+                          rawSize != null
+                            ? rawSize > 0 && rawSize < 1e10
+                              ? Math.abs(rawSize)
+                              : Math.abs(rawSize) / 10 ** szDecimals
+                            : 0;
+                        const sizeStr = orderSizeHuman > 0 ? `${formatSize(orderSizeHuman)} @ ` : '';
+                        const orderLabel = `Limit close order ${sizeStr || '@ '}${formatNumber(orderPriceHuman, 4)}`;
+                        const isCanceling = order.order_id && cancelingOrderId === order.order_id;
+                        return (
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center gap-1.5 rounded-md border-l-2 border-primary/40 bg-muted/50 pl-2 py-1 pr-2 w-fit">
+                                    <Target className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    <span className="text-sm text-muted-foreground">{orderLabel}</span>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-[240px]">
+                                  <p>
+                                    Limit close order is active. It will fill when price reaches{' '}
+                                    {formatNumber(orderPriceHuman, 4)} or you cancel it.
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            {order.order_id && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                                disabled={!!cancelingOrderId}
+                                onClick={() => handleCancelOrder(order.order_id!, pos.user, pos.market)}
+                              >
+                                {isCanceling ? 'Canceling…' : 'Cancel order'}
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="flex flex-col items-end shrink-0 ml-auto">
                       <span className={cn('text-2xl font-semibold text-right', pnlColor)}>
@@ -675,6 +1167,36 @@ export function DecibelPositions() {
                       <span className="text-muted-foreground">Value (USD)</span>
                       <span className="ml-2 font-medium">{formatCurrency(notionalUsd, 2)}</span>
                     </div>
+                    <div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">Funding rate</span>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex text-muted-foreground cursor-help">
+                                <Info className="h-3.5 w-3.5" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[260px]">
+                              <p>
+                                Current market funding rate for this perp. Decibel uses continuous
+                                funding, so this is not an hourly rate.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      <span className="ml-0">
+                        {fundingRateInfo
+                          ? formatFundingRatePercent(fundingRateInfo.fundingRateBps)
+                          : '—'}
+                      </span>
+                      {fundingRateInfo && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {fundingRateInfo.isFundingPositive ? 'Longs pay shorts' : 'Shorts pay longs'}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </li>
               );
@@ -684,12 +1206,75 @@ export function DecibelPositions() {
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Close position</DialogTitle>
+                {closeConfirmPosition && (
+                  <>
+                    <p className="text-sm font-medium text-foreground mt-1">Close at:</p>
+                    <div className="flex gap-1 p-0.5 rounded-lg border bg-muted/40">
+                      <button
+                        type="button"
+                        onClick={() => setCloseMode('market')}
+                        className={cn(
+                          'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          closeMode === 'market'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        Market
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCloseMode('limit');
+                          if (dialogMarkPx != null) setCloseLimitPrice(formatNumber(dialogMarkPx, 4));
+                        }}
+                        className={cn(
+                          'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          closeMode === 'limit'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        Limit
+                      </button>
+                    </div>
+                    {closeMode === 'limit' && (
+                      <div className="space-y-2 pt-2">
+                        <Label htmlFor="close-limit-price">Limit price</Label>
+                        <Input
+                          id="close-limit-price"
+                          type="number"
+                          step="any"
+                          min="0"
+                          placeholder={dialogMarkPx != null ? String(dialogMarkPx) : '0'}
+                          value={closeLimitPrice}
+                          onChange={(e) => setCloseLimitPrice(e.target.value)}
+                          className="font-mono"
+                        />
+                        {dialogMarkPx != null && (
+                          <p className="text-xs text-muted-foreground">Mark: {formatNumber(dialogMarkPx, 4)}</p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
                 <DialogDescription>
                   {closeConfirmPosition && (
                     <>
                       Close {formatSize(Math.abs(closeConfirmPosition.size))}{' '}
-                      {formatDecibelMarket(marketNames[normalizeAddress(closeConfirmPosition.market)] ?? closeConfirmPosition.market).displayPair}{' '}
-                      at market price? This will execute immediately (IOC).
+                      {formatDecibelMarket(marketNames[normalizeAddress(closeConfirmPosition.market)] ?? closeConfirmPosition.market).displayPair}
+                      {closeMode === 'market' ? (
+                        <>
+                          {' '}
+                          at market price
+                          {dialogMarkPx != null && (
+                            <> (~{formatNumber(dialogMarkPx, 4)})</>
+                          )}
+                          ? This will execute immediately (IOC).
+                        </>
+                      ) : (
+                        <> at your limit price? Order will stay in the book until filled or you cancel it.</>
+                      )}
                       {decibelNetwork === 'testnet' && (
                         <span className="mt-2 block text-amber-600 dark:text-amber-400 font-medium">
                           Switch your wallet to Aptos Mainnet before closing.
@@ -706,9 +1291,22 @@ export function DecibelPositions() {
                 <Button
                   variant="destructive"
                   onClick={handleConfirmClose}
-                  disabled={!!closingPositionKey || !closeConfirmPosition}
+                  disabled={
+                    !!closingPositionKey ||
+                    !closeConfirmPosition ||
+                    (closeMode === 'limit' &&
+                      (!closeLimitPrice.trim() ||
+                        Number.isNaN(parseFloat(closeLimitPrice)) ||
+                        parseFloat(closeLimitPrice) <= 0))
+                  }
                 >
-                  {closingPositionKey ? 'Closing…' : 'Close at market'}
+                  {closingPositionKey
+                    ? closeMode === 'limit'
+                      ? 'Placing…'
+                      : 'Closing…'
+                    : closeMode === 'limit'
+                      ? 'Place limit close'
+                      : 'Close at market'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -733,7 +1331,7 @@ export function DecibelPositions() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-[220px]">
-                    <p>Decibel mainnet funds (positions, available to trade, vaults) are not included in total assets.</p>
+                    <p>Decibel assets (positions, available to trade, vaults) are included in Total Assets.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -752,24 +1350,36 @@ export function DecibelPositions() {
                 >
                   <div className="flex items-start justify-between gap-2 py-1">
                     <div className="min-w-0 text-base font-medium">{v.vault?.name ?? 'Vault'}</div>
-                    <div className="shrink-0 text-right text-base font-medium">
-                      {v.current_value_of_shares != null
-                        ? formatCurrency(v.current_value_of_shares, 2)
-                        : '—'}
+                    <div className="shrink-0 flex items-center gap-2 text-right">
+                      {v.apr != null && Number.isFinite(v.apr) && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                        >
+                          APR: {v.apr.toFixed(2)}%
+                        </Badge>
+                      )}
+                      <div>
+                        <div className="text-base font-medium">
+                          {v.current_value_of_shares != null
+                            ? formatCurrency(v.current_value_of_shares, 2)
+                            : '—'}
+                        </div>
+                        {(typeof v.all_time_earned === 'number' && Number.isFinite(v.all_time_earned)) ||
+                        (v.current_value_of_shares != null && v.total_deposited != null && Number.isFinite(v.current_value_of_shares) && Number.isFinite(v.total_deposited)) ? (
+                          (() => {
+                            const userPnl = typeof v.all_time_earned === 'number' && Number.isFinite(v.all_time_earned)
+                              ? v.all_time_earned
+                              : v.current_value_of_shares! - (v.total_deposited! - (v.total_withdrawn ?? 0));
+                            return (
+                              <div className={cn('text-sm', userPnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                                PnL: {userPnl >= 0 ? '+' : ''}{formatCurrency(userPnl, 2)}
+                              </div>
+                            );
+                          })()
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-base text-muted-foreground">
-                    {v.total_deposited != null && (
-                      <span>Deposited: {formatCurrency(v.total_deposited, 2)}</span>
-                    )}
-                    {v.apr != null && Number.isFinite(v.apr) && (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
-                      >
-                        APR: {(v.apr * 100).toFixed(2)}%
-                      </Badge>
-                    )}
                   </div>
                 </li>
               ))}
