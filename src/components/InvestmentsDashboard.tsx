@@ -22,7 +22,7 @@ import { Search, Funnel, X } from "lucide-react";
 import { ExternalLink, Gift } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DepositButton } from "@/components/ui/deposit-button";
-import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
+import { getProtocolByName, getProtocolsList } from "@/lib/protocols/getProtocolsList";
 import Image from "next/image";
 import { ManagePositions } from "./protocols/manage-positions/ManagePositions";
 import { Protocol } from "@/lib/protocols/getProtocolsList";
@@ -889,7 +889,13 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
   // Show loading indicators for protocols that are still loading
   const showLoadingIndicators = loading && Object.values(protocolsLoading).some(Boolean);
   // Use protocolsLoading keys to show all protocols immediately, fallback to protocolsData if available
-  const protocolNames = [...new Set([...Object.keys(protocolsLoading), ...Object.keys(protocolsData)])].sort((a, b) => a.localeCompare(b));
+  const protocolNames = [
+    ...new Set([
+      ...Object.keys(protocolsLoading),
+      ...Object.keys(protocolsData),
+      ...getProtocolsList().map((p) => p.name),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
 
   if (showLoadingIndicators) {
     return (
@@ -1473,8 +1479,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                     const hasDexTokens = !!(item.token1Info && item.token2Info) || !!(item as any).tokensInfo?.length;
 
 
-                    // Включаем все пулы: с tokenInfo, с :: в asset, DEX-пулы с token1Info/token2Info, Echelon пулы, Moar Market пулы, или Decibel vault
-                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel';
+                    // Include whitelisted protocols that may not resolve tokenInfo yet.
+                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Aptree';
                   })
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
