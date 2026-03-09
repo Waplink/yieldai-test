@@ -96,7 +96,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Echelon': true,
     'Aave': true,
     'Moar Market': true,
-    'Decibel': true
+    'Decibel': true,
+    'Aptree': true
   });
   const [protocolsError, setProtocolsError] = useState<Record<string, string | null>>({});
   const [protocolsData, setProtocolsData] = useState<Record<string, InvestmentData[]>>({});
@@ -111,7 +112,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Echelon': '/protocol_ico/echelon.png',
     'Aave': '/protocol_ico/aave.ico',
     'Moar Market': '/protocol_ico/moar-market-logo-primary.png',
-    'Decibel': '/protocol_ico/decibel.png'
+    'Decibel': '/protocol_ico/decibel.png',
+    'Aptree': '/favicon.ico'
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -663,6 +665,28 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   decibelVaultPnl: vaultPnl
                 }
               ];
+            }
+          },
+          {
+            name: 'Aptree',
+            url: '/api/protocols/aptree/pools',
+            logoUrl: '/favicon.ico',
+            transform: (data: any) => {
+              const pools = Array.isArray(data?.data) ? data.data : [];
+              return pools.map((pool: any) => {
+                const aprPct = (typeof pool.apr === 'number' ? pool.apr : 0) * 100;
+                return {
+                  asset: pool.token || 'USDC',
+                  provider: 'Aptree',
+                  totalAPY: aprPct,
+                  depositApy: aprPct,
+                  borrowAPY: 0,
+                  token: '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b',
+                  protocol: 'Aptree',
+                  tvlUSD: typeof pool.tvl === 'number' ? pool.tvl : 0,
+                  poolType: 'Yield'
+                };
+              });
             }
           }
         ];
