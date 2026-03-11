@@ -681,7 +681,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   totalAPY: aprPct,
                   depositApy: aprPct,
                   borrowAPY: 0,
-                  token: '0xf22bede237a07e121b56d91a491eb7bcdfd1f5907926a9e58338f964a01b17fa::asset::USDT',
+                  token: '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b',
                   protocol: 'APTree',
                   tvlUSD: typeof pool.tvl === 'number' ? pool.tvl : 0,
                   poolType: 'Yield'
