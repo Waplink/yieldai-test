@@ -28,7 +28,9 @@ export async function GET() {
       data: [
         {
           pool_id: 'aptree-earn',
-          token: 'USDC',
+          token: 'USDT',
+          symbol: 'USDT',
+          name: 'USDT',
           tvl: 0,
           apr: apyAvg, // decimal, e.g. 0.12 = 12%
         },

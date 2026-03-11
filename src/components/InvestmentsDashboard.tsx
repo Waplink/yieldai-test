@@ -676,7 +676,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
               return pools.map((pool: any) => {
                 const aprPct = (typeof pool.apr === 'number' ? pool.apr : 0) * 100;
                 return {
-                  asset: pool.token || 'USDC',
+                  asset: 'USDT',
                   provider: 'APTree',
                   totalAPY: aprPct,
                   depositApy: aprPct,
