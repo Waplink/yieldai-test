@@ -422,11 +422,11 @@
     "contractAddresses": []
   },
   {
-    "name": "Aptree",
+    "name": "APTree",
     "key": "aptree",
     "category": "Yield",
     "url": "https://www.aptree.io/earn",
-    "logoUrl": "/favicon.ico",
+    "logoUrl": "/protocol_ico/aptree.png",
     "description": "Simplified yield access layer on Aptos. Deposit stablecoins into optimized earn strategies.",
     "depositType": "external",
     "depositUrl": "https://www.aptree.io/earn",

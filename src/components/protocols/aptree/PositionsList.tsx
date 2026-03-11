@@ -29,7 +29,7 @@ export function PositionsList({
       try {
         await fetch(`/api/protocols/aptree/userPositions?address=${encodeURIComponent(address)}`);
       } catch {
-        // Keep tracker resilient: Aptree user positions are optional for now.
+        // Keep tracker resilient: APTree user positions are optional for now.
       } finally {
         if (!cancelled) {
           onPositionsValueChange?.(0);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * GET /api/protocols/aptree/userPositions
- * Placeholder for portfolio integration until Aptree exposes wallet positions API.
+ * Placeholder for portfolio integration until APTree exposes wallet positions API.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

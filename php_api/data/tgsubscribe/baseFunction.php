@@ -274,7 +274,7 @@ class baseFunction
 				break;
 
 			case 'aptree':
-				// Placeholder parser for future Aptree payload.
+				// Placeholder parser for future APTree payload.
 				// Keep protocol visible in formatter flow without strict schema assumptions.
 				if (isset($position['valueUSD']) && is_numeric($position['valueUSD'])) {
 					$result['valueUSD'] += (float)$position['valueUSD'];
@@ -284,7 +284,7 @@ class baseFunction
 				if ($result['valueUSD'] > 0) {
 					$result['message'] .= "  ┣ 💵 Position: $" . number_format($result['valueUSD'], 2) . "\n";
 				} else {
-					$result['message'] .= "  ┣ 📌 Aptree data placeholder\n";
+					$result['message'] .= "  ┣ 📌 APTree data placeholder\n";
 				}
 				break;
 				
