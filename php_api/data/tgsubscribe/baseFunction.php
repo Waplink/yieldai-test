@@ -272,6 +272,21 @@ class baseFunction
 					$result['valueUSD'] += $positionValue;
 				}
 				break;
+
+			case 'aptree':
+				// Placeholder parser for future Aptree payload.
+				// Keep protocol visible in formatter flow without strict schema assumptions.
+				if (isset($position['valueUSD']) && is_numeric($position['valueUSD'])) {
+					$result['valueUSD'] += (float)$position['valueUSD'];
+				} elseif (isset($position['value']) && is_numeric($position['value'])) {
+					$result['valueUSD'] += (float)$position['value'];
+				}
+				if ($result['valueUSD'] > 0) {
+					$result['message'] .= "  ┣ 💵 Position: $" . number_format($result['valueUSD'], 2) . "\n";
+				} else {
+					$result['message'] .= "  ┣ 📌 Aptree data placeholder\n";
+				}
+				break;
 				
 			default:
 				if (isset($position['amount'])) {
@@ -437,6 +452,7 @@ class baseFunction
 			'echo' => '🔊',
 			'hyperion' => '🌌',
 			'decibel' => '📢',
+			'aptree' => '🌳',
 		];
 		
 		return $emojiMap[strtolower($protocol)] ?? '📦';
