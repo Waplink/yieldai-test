@@ -1,41 +1,38 @@
 import { NextResponse } from 'next/server';
 
-const EXPLORER_LP_URL =
-  'https://explorer.aptoslabs.com/account/0x951a31b39db54a4e32af927dce9fae7aa1ad14a1bb73318405ccf6cd5d66b3be/modules/view/moneyfi_adapter/get_lp_price?network=mainnet';
+const FULLNODE_VIEW_URL = 'https://fullnode.mainnet.aptoslabs.com/v1/view';
+const VIEW_PAYLOAD = {
+  function:
+    '0x951a31b39db54a4e32af927dce9fae7aa1ad14a1bb73318405ccf6cd5d66b3be::moneyfi_adapter::get_lp_price',
+  type_arguments: [] as string[],
+  arguments: [] as string[],
+};
 
 /**
  * GET /api/protocols/moneyfi/lp-price
- * Server-side proxy to Aptos Explorer LP price view URL.
+ * Server-side proxy to Aptos fullnode /v1/view.
  */
 export async function GET() {
   try {
-    const response = await fetch(EXPLORER_LP_URL, {
-      method: 'GET',
+    const response = await fetch(FULLNODE_VIEW_URL, {
+      method: 'POST',
       headers: {
-        Accept: 'application/json, text/plain, text/html;q=0.9, */*;q=0.8',
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
+      body: JSON.stringify(VIEW_PAYLOAD),
       cache: 'no-store',
     });
 
-    const contentType = response.headers.get('content-type') || '';
-    const rawText = await response.text();
-
-    let parsed: unknown = rawText;
-    if (contentType.includes('application/json')) {
-      try {
-        parsed = JSON.parse(rawText);
-      } catch {
-        parsed = rawText;
-      }
-    }
+    const payload = await response.json().catch(() => null);
 
     return NextResponse.json(
       {
         success: response.ok,
         status: response.status,
-        sourceUrl: EXPLORER_LP_URL,
-        contentType,
-        data: parsed,
+        sourceUrl: FULLNODE_VIEW_URL,
+        requestPayload: VIEW_PAYLOAD,
+        data: payload,
       },
       { status: response.ok ? 200 : response.status }
     );
