@@ -30,6 +30,7 @@ export function AptreePositions() {
   const [positions, setPositions] = useState<AptreePosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aprPct, setAprPct] = useState<number | null>(null);
 
   const loadPositions = async () => {
     if (!account?.address) {
@@ -39,11 +40,17 @@ export function AptreePositions() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(
-        `/api/protocols/aptree/userPositions?address=${encodeURIComponent(account.address.toString())}`
-      );
-      if (!response.ok) throw new Error("Failed to fetch");
-      const data = await response.json();
+      const [positionsResponse, poolsResponse] = await Promise.all([
+        fetch(`/api/protocols/aptree/userPositions?address=${encodeURIComponent(account.address.toString())}`),
+        fetch(`/api/protocols/aptree/pools`),
+      ]);
+      if (!positionsResponse.ok) throw new Error("Failed to fetch");
+      const data = await positionsResponse.json();
+      const poolsData = await poolsResponse.json().catch(() => null);
+      const firstPool = Array.isArray(poolsData?.data) ? poolsData.data[0] : null;
+      const aprRaw = Number(firstPool?.apr);
+      // Route returns APR as decimal (e.g. 0.12 => 12%)
+      setAprPct(Number.isFinite(aprRaw) ? aprRaw * 100 : null);
       if (data?.success && Array.isArray(data.data)) {
         setPositions(sortByValueDesc(data.data));
       } else {
@@ -116,6 +123,14 @@ export function AptreePositions() {
                       >
                         Supply
                       </Badge>
+                      {aprPct != null && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                        >
+                          APR: {formatNumber(aprPct, 2)}%
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
                   </div>
