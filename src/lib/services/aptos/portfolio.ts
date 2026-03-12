@@ -2,6 +2,7 @@ import { AptosWalletService } from './wallet';
 import { PanoraPricesService } from '../panora/prices';
 import { FungibleAssetBalance } from '@/lib/types/aptos';
 import { TokenPrice } from '@/lib/types/panora';
+import { areAddressesEqual } from '@/lib/utils/addressNormalization';
 
 interface PortfolioToken {
   address: string;
@@ -89,7 +90,7 @@ export class AptosPortfolioService {
 
       // Объединяем данные
       const tokens: PortfolioToken[] = balances.map((balance: FungibleAssetBalance) => {
-        if (balance.asset_type === APTREE_EARN_TOKEN_ADDRESS) {
+        if (areAddressesEqual(balance.asset_type, APTREE_EARN_TOKEN_ADDRESS)) {
           const amount = parseFloat(balance.amount) / Math.pow(10, APTREE_EARN_TOKEN_DECIMALS);
           const hasPrice = typeof aptreeEarnPriceUsd === 'number' && Number.isFinite(aptreeEarnPriceUsd);
           const value = hasPrice ? (amount * aptreeEarnPriceUsd).toString() : null;

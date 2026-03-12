@@ -55,7 +55,7 @@ export function TokenItem({ token, stakingAprs = {}, disableDrag = false }: Toke
   // For Solana tokens, use logoUrl directly from Jupiter API (already set in SolanaPortfolioService)
   // For Aptos tokens, try to find in token list as fallback
   // IMPORTANT: token.logoUrl should be set by SolanaPortfolioService from Jupiter API
-  const logoUrl = token.logoUrl || tokenInfo?.logoUrl;
+  const logoUrl = token.logoUrl || (symbol === 'AET' ? '/token_ico/aet.png' : tokenInfo?.logoUrl);
   
   // Debug logging for Solana tokens
   if (isSolanaToken) {
