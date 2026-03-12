@@ -117,7 +117,7 @@ export function PositionsList({
               position.assetInfo?.logoUrl ||
               "https://assets.panora.exchange/tokens/aptos/USDT.svg",
             badge: PositionBadge.Supply,
-            subLabel: formatNumber(amount, 6),
+            subLabel: formatNumber(amount, 2),
             price,
           };
         })

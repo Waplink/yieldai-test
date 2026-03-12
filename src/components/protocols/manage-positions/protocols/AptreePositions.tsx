@@ -163,7 +163,7 @@ export function AptreePositions() {
                     )}
                     <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
                   </div>
-                  <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 6)}</div>
+                  <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 4)}</div>
                 </div>
               </div>
 
@@ -214,7 +214,7 @@ export function AptreePositions() {
                       )}
                       <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
                     </div>
-                    <div className="text-sm text-muted-foreground">{formatNumber(amount, 6)}</div>
+                    <div className="text-sm text-muted-foreground">{formatNumber(amount, 4)}</div>
                   </div>
                 </div>
 
