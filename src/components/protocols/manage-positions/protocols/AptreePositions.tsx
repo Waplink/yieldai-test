@@ -97,8 +97,9 @@ export function AptreePositions() {
           const amount = Number(position.balance || 0) / Math.pow(10, decimals);
           const value = Number(position.value || 0);
           const price = amount > 0 ? value / amount : 0;
-          const symbol = position.assetInfo?.symbol || position.assetName || "AET";
-          const logoUrl = position.assetInfo?.logoUrl || "/token_ico/aet.png?v=2";
+          const symbol = position.assetInfo?.symbol || position.assetName || "USDT";
+          const logoUrl =
+            position.assetInfo?.logoUrl || "https://assets.panora.exchange/tokens/aptos/USDT.svg";
           return (
             <div key={`${position.poolId}-${index}`} className="p-3 sm:p-4 border-b last:border-b-0">
               <div className="flex items-center justify-between">

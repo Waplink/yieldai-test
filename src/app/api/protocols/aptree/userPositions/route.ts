@@ -10,6 +10,9 @@ const APTREE_PRICE_DECIMALS = 9;
 const APTOS_VIEW_URL = 'https://fullnode.mainnet.aptoslabs.com/v1/view';
 const APTREE_EARN_VIEW_FUNCTION =
   '0x951a31b39db54a4e32af927dce9fae7aa1ad14a1bb73318405ccf6cd5d66b3be::moneyfi_adapter::get_lp_price';
+const DISPLAY_SYMBOL = 'USDT';
+const DISPLAY_NAME = 'Tether USD';
+const DISPLAY_LOGO_URL = 'https://assets.panora.exchange/tokens/aptos/USDT.svg';
 
 /**
  * GET /api/protocols/aptree/userPositions
@@ -72,15 +75,15 @@ export async function GET(request: NextRequest) {
         ? [
             {
               poolId: 1,
-              assetName: 'AET',
+              assetName: DISPLAY_SYMBOL,
               balance: rawBalance, // raw on-chain units
               value: valueUsd.toString(), // USD value
               type: 'deposit',
               assetInfo: {
-                symbol: 'AET',
-                logoUrl: '/token_ico/aet.png',
+                symbol: DISPLAY_SYMBOL,
+                logoUrl: DISPLAY_LOGO_URL,
                 decimals: APTREE_DECIMALS,
-                name: 'APTree Earn Token',
+                name: DISPLAY_NAME,
               },
             },
           ]

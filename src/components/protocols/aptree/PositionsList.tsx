@@ -101,12 +101,14 @@ export function PositionsList({
           const amount = Number(position.balance || 0) / Math.pow(10, decimals);
           const value = Number(position.value || 0);
           const price = amount > 0 ? value / amount : undefined;
-          const symbol = position.assetInfo?.symbol || position.assetName || "AET";
+          const symbol = position.assetInfo?.symbol || position.assetName || "USDT";
           return {
             id: `aptree-${position.poolId}-${idx}`,
             label: symbol,
             value: Number.isFinite(value) ? value : 0,
-            logoUrl: position.assetInfo?.logoUrl || "/token_ico/aet.png?v=2",
+            logoUrl:
+              position.assetInfo?.logoUrl ||
+              "https://assets.panora.exchange/tokens/aptos/USDT.svg",
             badge: PositionBadge.Supply,
             subLabel: formatNumber(amount, 6),
             price,
