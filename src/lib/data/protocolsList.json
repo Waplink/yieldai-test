@@ -431,7 +431,7 @@
     "depositType": "external",
     "depositUrl": "https://www.aptree.io/earn",
     "isDepositEnabled": true,
-    "managedType": "external",
+    "managedType": "native",
     "socialMedia": {
       "twitter": "https://x.com/APTreeFinance"
     },
