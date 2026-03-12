@@ -116,18 +116,20 @@ export function AptreePositions() {
                     <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
                   </div>
                   <div>
-                    <div className="text-lg font-semibold">{symbol}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-lg font-semibold">{symbol}</div>
+                      <Badge
+                        variant="outline"
+                        className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                      >
+                        Supply
+                      </Badge>
+                    </div>
                     <div className="text-base text-muted-foreground mt-0.5">{formatCurrency(price, 4)}</div>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="flex items-center justify-end gap-2 mb-1">
-                    <Badge
-                      variant="outline"
-                      className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-0.5 h-5"
-                    >
-                      Supply
-                    </Badge>
                     {aprPct != null && (
                       <Badge
                         variant="outline"
@@ -150,7 +152,15 @@ export function AptreePositions() {
                       <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
                     </div>
                     <div>
-                      <div className="text-base font-semibold">{symbol}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-base font-semibold">{symbol}</div>
+                        <Badge
+                          variant="outline"
+                          className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
+                        >
+                          Supply
+                        </Badge>
+                      </div>
                       <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
                     </div>
                   </div>
@@ -170,14 +180,6 @@ export function AptreePositions() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Badge
-                    variant="outline"
-                    className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-1 h-6"
-                  >
-                    Supply
-                  </Badge>
-                </div>
               </div>
             </div>
           );
