@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AptosWalletService } from '@/lib/services/aptos/wallet';
 import { normalizeAddress } from '@/lib/utils/addressNormalization';
+import { FungibleAssetBalance } from '@/lib/types/aptos';
 
 const APTREE_EARN_TOKEN_ADDRESS =
   '0x5ecc6aff1d75144990a3798c904cc7c49e5c0cc3d5a134babc5b60184012310d';
@@ -24,9 +25,11 @@ export async function GET(request: NextRequest) {
   try {
     const walletService = AptosWalletService.getInstance();
     const walletData = await walletService.getBalances(address);
-    const balances = walletData?.balances || [];
+    const balances: FungibleAssetBalance[] = Array.isArray(walletData?.balances)
+      ? walletData.balances
+      : [];
 
-    const aptreeBalance = balances.find((b) => {
+    const aptreeBalance = balances.find((b: FungibleAssetBalance) => {
       const assetType = typeof b?.asset_type === 'string' ? b.asset_type : '';
       return (
         normalizeAddress(assetType).toLowerCase() ===
