@@ -19,6 +19,8 @@ interface AptreePosition {
   assetName: string;
   balance: string;
   value: string;
+  displayPrice?: number;
+  displayAmount?: string;
   type: "deposit";
   assetInfo?: {
     symbol?: string;
@@ -98,9 +100,14 @@ export function PositionsList({
       positions
         .map((position, idx) => {
           const decimals = position.assetInfo?.decimals ?? 6;
-          const amount = Number(position.balance || 0) / Math.pow(10, decimals);
+          const amountFromBalance = Number(position.balance || 0) / Math.pow(10, decimals);
           const value = Number(position.value || 0);
-          const price = amount > 0 ? value / amount : undefined;
+          const amount = Number(position.displayAmount || amountFromBalance);
+          const price = Number.isFinite(Number(position.displayPrice))
+            ? Number(position.displayPrice)
+            : amount > 0
+              ? value / amount
+              : undefined;
           const symbol = position.assetInfo?.symbol || position.assetName || "USDT";
           return {
             id: `aptree-${position.poolId}-${idx}`,

@@ -13,6 +13,7 @@ const APTREE_EARN_VIEW_FUNCTION =
 const DISPLAY_SYMBOL = 'USDT';
 const DISPLAY_NAME = 'Tether USD';
 const DISPLAY_LOGO_URL = 'https://assets.panora.exchange/tokens/aptos/USDT.svg';
+const DISPLAY_USDT_PRICE = 1; // Display layer only. Core value still uses AET math.
 
 /**
  * GET /api/protocols/aptree/userPositions
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest) {
     const rawBalance = aptreeBalance?.amount || '0';
     const normalizedBalance = Number(rawBalance) / Math.pow(10, APTREE_DECIMALS);
     const valueUsd = normalizedBalance * aptreePriceUsd;
+    const displayAmountUsdt = DISPLAY_USDT_PRICE > 0 ? valueUsd / DISPLAY_USDT_PRICE : valueUsd;
 
     const positions =
       Number(rawBalance) > 0
@@ -78,6 +80,8 @@ export async function GET(request: NextRequest) {
               assetName: DISPLAY_SYMBOL,
               balance: rawBalance, // raw on-chain units
               value: valueUsd.toString(), // USD value
+              displayPrice: DISPLAY_USDT_PRICE,
+              displayAmount: displayAmountUsdt.toString(),
               type: 'deposit',
               assetInfo: {
                 symbol: DISPLAY_SYMBOL,
