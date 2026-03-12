@@ -27,12 +27,25 @@ export function PositionsList({
       }
 
       try {
-        await fetch(`/api/protocols/aptree/userPositions?address=${encodeURIComponent(address)}`);
+        const res = await fetch(
+          `/api/protocols/aptree/userPositions?address=${encodeURIComponent(address)}`
+        );
+        const data = await res.json().catch(() => null);
+        const positions = Array.isArray(data?.data) ? data.data : [];
+        const total = positions.reduce((sum: number, p: { value?: string | number }) => {
+          const v = typeof p?.value === 'number' ? p.value : Number(p?.value || 0);
+          return sum + (Number.isFinite(v) ? v : 0);
+        }, 0);
+        if (!cancelled) {
+          onPositionsValueChange?.(total);
+        }
       } catch {
         // Keep tracker resilient: APTree user positions are optional for now.
-      } finally {
         if (!cancelled) {
           onPositionsValueChange?.(0);
+        }
+      } finally {
+        if (!cancelled) {
           onPositionsCheckComplete?.();
         }
       }
