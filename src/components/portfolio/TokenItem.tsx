@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatNumber, formatCurrency } from "@/lib/utils/numberFormat";
+import { normalizeAddress } from "@/lib/utils/addressNormalization";
 
 interface TokenItemProps {
   token: Token;
@@ -22,6 +23,10 @@ export function TokenItem({ token, stakingAprs = {}, disableDrag = false }: Toke
   const formattedValue = token.value ? formatCurrency(parseFloat(token.value), 2) : 'N/A';
   const formattedPrice = token.price ? formatCurrency(parseFloat(token.price), 2) : 'N/A';
   const symbol = token.symbol || token.name || 'Unknown';
+  const normalizedAddress = normalizeAddress(token.address || '').toLowerCase();
+  const isAetByAddress =
+    normalizedAddress ===
+    normalizeAddress('0x5ecc6aff1d75144990a3798c904cc7c49e5c0cc3d5a134babc5b60184012310d').toLowerCase();
 
   // Resolve staking APR for this token (Echelon-sourced)
   const stakingAprPct = useMemo(() => {
@@ -55,7 +60,9 @@ export function TokenItem({ token, stakingAprs = {}, disableDrag = false }: Toke
   // For Solana tokens, use logoUrl directly from Jupiter API (already set in SolanaPortfolioService)
   // For Aptos tokens, try to find in token list as fallback
   // IMPORTANT: token.logoUrl should be set by SolanaPortfolioService from Jupiter API
-  const logoUrl = token.logoUrl || (symbol === 'AET' ? '/token_ico/aet.png' : tokenInfo?.logoUrl);
+  const logoUrl =
+    token.logoUrl ||
+    (symbol === 'AET' || isAetByAddress ? '/token_ico/aet.png' : tokenInfo?.logoUrl);
   
   // Debug logging for Solana tokens
   if (isSolanaToken) {
