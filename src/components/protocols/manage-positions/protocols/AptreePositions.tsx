@@ -109,14 +109,15 @@ export function AptreePositions() {
             position.assetInfo?.logoUrl || "https://assets.panora.exchange/tokens/aptos/USDT.svg";
           return (
             <div key={`${position.poolId}-${index}`} className="p-3 sm:p-4 border-b last:border-b-0">
-              <div className="flex items-center justify-between">
+              {/* Desktop Layout (match Moar structure) */}
+              <div className="hidden sm:flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 relative">
                     <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
                   </div>
                   <div>
-                    <div className="text-base font-semibold">{symbol}</div>
-                    <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
+                    <div className="text-lg font-semibold">{symbol}</div>
+                    <div className="text-base text-muted-foreground mt-0.5">{formatCurrency(price, 4)}</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -135,9 +136,47 @@ export function AptreePositions() {
                         APR: {formatNumber(aprPct, 2)}%
                       </Badge>
                     )}
+                    <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
                   </div>
-                  <div className="text-base font-bold">{formatCurrency(value, 2)}</div>
-                  <div className="text-sm text-muted-foreground">{formatNumber(amount, 6)}</div>
+                  <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 6)}</div>
+                </div>
+              </div>
+
+              {/* Mobile Layout (match Moar structure) */}
+              <div className="block sm:hidden space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 relative">
+                      <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
+                    </div>
+                    <div>
+                      <div className="text-base font-semibold">{symbol}</div>
+                      <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-center justify-end gap-2 mb-1">
+                      {aprPct != null && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
+                        >
+                          APR: {formatNumber(aprPct, 2)}%
+                        </Badge>
+                      )}
+                      <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">{formatNumber(amount, 6)}</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-1 h-6"
+                  >
+                    Supply
+                  </Badge>
                 </div>
               </div>
             </div>
