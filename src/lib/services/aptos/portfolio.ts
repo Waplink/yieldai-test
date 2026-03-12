@@ -13,6 +13,13 @@ interface PortfolioToken {
   value: string | null;
 }
 
+const APTREE_EARN_TOKEN_ADDRESS = '0x5ecc6aff1d75144990a3798c904cc7c49e5c0cc3d5a134babc5b60184012310d';
+const APTREE_EARN_PRICE_DECIMALS = 9;
+const APTREE_EARN_TOKEN_DECIMALS = 6;
+const APTOS_VIEW_URL = 'https://fullnode.mainnet.aptoslabs.com/v1/view';
+const APTREE_EARN_VIEW_FUNCTION =
+  '0x951a31b39db54a4e32af927dce9fae7aa1ad14a1bb73318405ccf6cd5d66b3be::moneyfi_adapter::get_lp_price';
+
 export class AptosPortfolioService {
   private walletService: AptosWalletService;
   private pricesService: PanoraPricesService;
@@ -20,6 +27,42 @@ export class AptosPortfolioService {
   constructor() {
     this.walletService = AptosWalletService.getInstance();
     this.pricesService = PanoraPricesService.getInstance();
+  }
+
+  private async getAptreeEarnPriceUsd(): Promise<number | null> {
+    try {
+      const response = await fetch(APTOS_VIEW_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          function: APTREE_EARN_VIEW_FUNCTION,
+          type_arguments: [],
+          arguments: [],
+        }),
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json()) as unknown;
+      if (!Array.isArray(payload) || payload.length === 0) {
+        return null;
+      }
+
+      const raw = Number(payload[0]);
+      if (!Number.isFinite(raw)) {
+        return null;
+      }
+
+      return raw / Math.pow(10, APTREE_EARN_PRICE_DECIMALS);
+    } catch {
+      return null;
+    }
   }
 
   async getPortfolio(address: string): Promise<{ tokens: PortfolioToken[] }> {
@@ -41,9 +84,26 @@ export class AptosPortfolioService {
       const pricesResponse = await this.pricesService.getPrices(1, tokenAddresses);
       // Handle both array and object with data property
       const prices = Array.isArray(pricesResponse) ? pricesResponse : (pricesResponse.data || []);
+      const aptreeEarnPriceUsd = await this.getAptreeEarnPriceUsd();
 
       // Объединяем данные
       const tokens: PortfolioToken[] = balances.map((balance: FungibleAssetBalance) => {
+        if (balance.asset_type === APTREE_EARN_TOKEN_ADDRESS) {
+          const amount = parseFloat(balance.amount) / Math.pow(10, APTREE_EARN_TOKEN_DECIMALS);
+          const hasPrice = typeof aptreeEarnPriceUsd === 'number' && Number.isFinite(aptreeEarnPriceUsd);
+          const value = hasPrice ? (amount * aptreeEarnPriceUsd).toString() : null;
+
+          return {
+            address: balance.asset_type,
+            name: 'APTree Earn Token',
+            symbol: 'AET',
+            decimals: APTREE_EARN_TOKEN_DECIMALS,
+            amount: balance.amount,
+            price: hasPrice ? aptreeEarnPriceUsd.toString() : null,
+            value,
+          };
+        }
+
         const price = prices.find((p: TokenPrice) => 
           p.tokenAddress === balance.asset_type || 
           p.faAddress === balance.asset_type
