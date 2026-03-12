@@ -5,6 +5,7 @@ import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 
 interface AptreePosition {
@@ -131,12 +132,27 @@ export function AptreePositions() {
                 <div className="text-right">
                   <div className="flex items-center justify-end gap-2 mb-1">
                     {aprPct != null && (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
-                      >
-                        APR: {formatNumber(aprPct, 2)}%
-                      </Badge>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5 cursor-help"
+                            >
+                              APR: {formatNumber(aprPct, 2)}%
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-black text-white border-gray-700">
+                            <div className="text-xs space-y-1">
+                              <div className="font-semibold">APR Breakdown</div>
+                              <div className="flex justify-between gap-3">
+                                <span>APTree Earn APR:</span>
+                                <span>{formatNumber(aprPct, 2)}%</span>
+                              </div>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
                   </div>
@@ -167,12 +183,27 @@ export function AptreePositions() {
                   <div className="text-right">
                     <div className="flex items-center justify-end gap-2 mb-1">
                       {aprPct != null && (
-                        <Badge
-                          variant="outline"
-                          className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
-                        >
-                          APR: {formatNumber(aprPct, 2)}%
-                        </Badge>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4 cursor-help"
+                              >
+                                APR: {formatNumber(aprPct, 2)}%
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black text-white border-gray-700">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold">APR Breakdown</div>
+                                <div className="flex justify-between gap-3">
+                                  <span>APTree Earn APR:</span>
+                                  <span>{formatNumber(aprPct, 2)}%</span>
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
                       <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
                     </div>
