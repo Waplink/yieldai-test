@@ -142,7 +142,7 @@ export function AptreePositions() {
                               APR: {formatNumber(aprPct, 2)}%
                             </Badge>
                           </TooltipTrigger>
-                          <TooltipContent className="bg-black text-white border-gray-700">
+                          <TooltipContent>
                             <div className="text-xs space-y-1">
                               <div className="font-semibold">APR Breakdown</div>
                               <div className="flex justify-between gap-3">
@@ -193,7 +193,7 @@ export function AptreePositions() {
                                 APR: {formatNumber(aprPct, 2)}%
                               </Badge>
                             </TooltipTrigger>
-                            <TooltipContent className="bg-black text-white border-gray-700">
+                            <TooltipContent>
                               <div className="text-xs space-y-1">
                                 <div className="font-semibold">APR Breakdown</div>
                                 <div className="flex justify-between gap-3">
