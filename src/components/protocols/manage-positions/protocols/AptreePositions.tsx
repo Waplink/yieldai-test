@@ -115,27 +115,27 @@ export function AptreePositions() {
                     <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-base font-semibold">{symbol}</div>
-                      <Badge
-                        variant="outline"
-                        className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-0.5 h-5"
-                      >
-                        Supply
-                      </Badge>
-                      {aprPct != null && (
-                        <Badge
-                          variant="outline"
-                          className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
-                        >
-                          APR: {formatNumber(aprPct, 2)}%
-                        </Badge>
-                      )}
-                    </div>
+                    <div className="text-base font-semibold">{symbol}</div>
                     <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
                   </div>
                 </div>
                 <div className="text-right">
+                  <div className="flex items-center justify-end gap-2 mb-1">
+                    <Badge
+                      variant="outline"
+                      className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                    >
+                      Supply
+                    </Badge>
+                    {aprPct != null && (
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                      >
+                        APR: {formatNumber(aprPct, 2)}%
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-base font-bold">{formatCurrency(value, 2)}</div>
                   <div className="text-sm text-muted-foreground">{formatNumber(amount, 6)}</div>
                 </div>
