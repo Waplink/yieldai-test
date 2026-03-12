@@ -11,6 +11,7 @@ interface PortfolioToken {
   amount: string;
   price: string | null;
   value: string | null;
+  logoUrl?: string;
 }
 
 const APTREE_EARN_TOKEN_ADDRESS = '0x5ecc6aff1d75144990a3798c904cc7c49e5c0cc3d5a134babc5b60184012310d';
@@ -101,6 +102,7 @@ export class AptosPortfolioService {
             amount: balance.amount,
             price: hasPrice ? aptreeEarnPriceUsd.toString() : null,
             value,
+            logoUrl: '/token_ico/aet.png',
           };
         }
 
