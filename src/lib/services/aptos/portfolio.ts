@@ -106,7 +106,7 @@ export class AptosPortfolioService {
             amount: balance.amount,
             price: hasPrice ? aptreeEarnPriceUsd.toString() : null,
             value,
-            logoUrl: '/token_ico/aet.png',
+            logoUrl: '/token_ico/aet.png?v=2',
           };
         }
 
