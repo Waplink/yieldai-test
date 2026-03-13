@@ -129,10 +129,17 @@ export function useDeposit() {
           },
         });
         const signResult = await wallet.signTransaction({ transactionOrPayload: transaction } as any);
-        const senderAuthenticator = normalizeAuthenticator((signResult as any)?.authenticator ?? signResult);
+        const signResultAny = signResult as any;
+        const senderAuthenticator =
+          signResultAny?.args ??
+          signResultAny?.authenticator ??
+          normalizeAuthenticator(signResultAny);
+        if (!senderAuthenticator) {
+          throw new Error('Transaction signing failed: missing sender authenticator');
+        }
         response = await aptos.transaction.submit.simple({
           transaction,
-          senderAuthenticator,
+          senderAuthenticator: senderAuthenticator as any,
         });
       } else {
         try {
