@@ -179,6 +179,11 @@ export function useDeposit() {
             if (txData.success && txData.vm_status === "Executed successfully") {
               console.log('Transaction confirmed successfully, showing toast...');
               showTransactionSuccessToast({ hash: response.hash });
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('refreshPositions', { detail: { protocol: protocolKey } })
+                );
+              }
               console.log('Toast should be shown now');
               return response;
             } else if (txData.vm_status) {
