@@ -6,11 +6,27 @@ import { showTransactionSuccessToast } from '@/components/ui/transaction-toast';
 import { ToastAction } from '@/components/ui/toast';
 import { protocols } from '../protocols/protocolsRegistry';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
+import { GasStationService } from '@/lib/services/gasStation';
+
+async function getAptosExpireTimestampSecs(ttlSeconds: number): Promise<number | undefined> {
+  try {
+    const res = await fetch('https://fullnode.mainnet.aptoslabs.com/v1');
+    if (!res.ok) return undefined;
+    const ledger = await res.json();
+    const ledgerTimestampUsec = Number(ledger?.ledger_timestamp);
+    if (!Number.isFinite(ledgerTimestampUsec) || ledgerTimestampUsec <= 0) return undefined;
+    const ledgerTimestampSecs = Math.floor(ledgerTimestampUsec / 1_000_000);
+    return ledgerTimestampSecs + ttlSeconds;
+  } catch {
+    return undefined;
+  }
+}
 
 export function useDeposit() {
   const wallet = useWallet();
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const gasStationAvailable = GasStationService.getInstance().isAvailable();
 
   const deposit = useCallback(async (
     protocolKey: ProtocolKey,
@@ -69,6 +85,8 @@ export function useDeposit() {
 
       // Use signAndSubmitTransaction with global Gas Station transactionSubmitter from WalletProvider
       // Gas Station will automatically sponsor the transaction (free for user)
+      const ttlSeconds = gasStationAvailable ? 100 : 1800;
+      const expireTimestamp = await getAptosExpireTimestampSecs(ttlSeconds);
       const response = await wallet.signAndSubmitTransaction({
         data: {
           function: payload.function as `${string}::${string}::${string}`,
@@ -77,6 +95,7 @@ export function useDeposit() {
         },
         options: {
           maxGasAmount: maxGasAmount,
+          ...(expireTimestamp ? { expireTimestamp } : {}),
         },
       });
       console.log('Transaction response:', response);
@@ -127,7 +146,7 @@ export function useDeposit() {
     } finally {
       setIsLoading(false);
     }
-  }, [wallet, toast]);
+  }, [wallet, toast, gasStationAvailable]);
 
   return {
     deposit,
