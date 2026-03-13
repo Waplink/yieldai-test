@@ -3,7 +3,7 @@ import { toCanonicalAddress } from '@/lib/utils/addressNormalization';
 
 const DECIBEL_API_KEY = process.env.DECIBEL_API_KEY;
 const DECIBEL_API_BASE_URL =
-  process.env.DECIBEL_API_BASE_URL || 'https://api.testnet.aptoslabs.com/decibel';
+  process.env.DECIBEL_API_BASE_URL || 'https://api.mainnet.aptoslabs.com/decibel';
 
 /**
  * GET /api/protocols/decibel/predepositPoints
@@ -53,6 +53,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (!response.ok) {
+      if (response.status === 404 || response.status >= 500) {
+        return NextResponse.json({
+          success: true,
+          data: { account: decibelAddr, points: 0 },
+        });
+      }
       return NextResponse.json(
         {
           success: false,

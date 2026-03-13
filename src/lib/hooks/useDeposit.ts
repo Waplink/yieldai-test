@@ -87,7 +87,7 @@ export function useDeposit() {
       // Gas Station will automatically sponsor the transaction (free for user)
       const ttlSeconds = gasStationAvailable ? 100 : 1800;
       const expireTimestamp = await getAptosExpireTimestampSecs(ttlSeconds);
-      const response = await wallet.signAndSubmitTransaction({
+      const txInput = {
         data: {
           function: payload.function as `${string}::${string}::${string}`,
           typeArguments: payload.type_arguments,
@@ -97,7 +97,27 @@ export function useDeposit() {
           maxGasAmount: maxGasAmount,
           ...(expireTimestamp ? { expireTimestamp } : {}),
         },
-      });
+      } as any;
+
+      let response;
+      try {
+        response = await wallet.signAndSubmitTransaction(txInput);
+      } catch (submitError) {
+        const message = submitError instanceof Error ? submitError.message : String(submitError);
+        const isGasStationRuleMissing =
+          message.includes('Rule not found') || message.includes('signAndSubmit: 404');
+        const shouldFallbackToWalletGas = protocolKey === 'aptree' && isGasStationRuleMissing;
+
+        if (!shouldFallbackToWalletGas) {
+          throw submitError;
+        }
+
+        // APTree is not whitelisted in Gas Station yet; retry with wallet-paid gas.
+        response = await wallet.signAndSubmitTransaction({
+          ...txInput,
+          transactionSubmitter: null,
+        } as any);
+      }
       console.log('Transaction response:', response);
 
       if (response.hash) {

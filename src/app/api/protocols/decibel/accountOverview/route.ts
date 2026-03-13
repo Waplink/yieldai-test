@@ -3,7 +3,7 @@ import { toCanonicalAddress } from '@/lib/utils/addressNormalization';
 
 const DECIBEL_API_KEY = process.env.DECIBEL_API_KEY;
 const DECIBEL_API_BASE_URL =
-  process.env.DECIBEL_API_BASE_URL || 'https://api.testnet.aptoslabs.com/decibel';
+  process.env.DECIBEL_API_BASE_URL || 'https://api.mainnet.aptoslabs.com/decibel';
 const DECIBEL_MAINNET_URL = 'https://api.mainnet.aptoslabs.com/decibel';
 
 /**
@@ -101,6 +101,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            perp_equity_balance: 0,
+            usdc_cross_withdrawable_balance: 0,
+          },
+        });
+      }
       const usedTestnet = baseUrl.includes('testnet');
       if (usedTestnet && !process.env.DECIBEL_API_BASE_URL) {
         const mainnetBase = DECIBEL_MAINNET_URL.replace(/\/$/, '');
