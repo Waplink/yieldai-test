@@ -81,6 +81,9 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
       } else if (protocol.key === 'decibel' || protocol.name.toLowerCase().includes('decibel')) {
         apiPath = 'decibel';
         endpoint = 'userPositions';
+      } else if (protocol.key === 'aptree' || protocol.name.toLowerCase().includes('aptree')) {
+        apiPath = 'aptree';
+        endpoint = 'userPositions';
       }
       
       const response = await fetch(`/api/protocols/${apiPath}/${endpoint}?address=${account.address}`);
@@ -157,6 +160,8 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         return <EchoPositions />;
       case 'decibel':
         return <DecibelPositions />;
+      case 'aptree':
+        return <AptreePositions />;
       default:
         return (
           <div className="text-sm text-muted-foreground">
