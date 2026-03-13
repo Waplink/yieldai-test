@@ -6,6 +6,8 @@ import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { DepositModal } from "@/components/ui/deposit-modal";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 
 interface AptreePosition {
@@ -28,12 +30,22 @@ function sortByValueDesc(items: AptreePosition[]): AptreePosition[] {
   return [...items].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
 }
 
+const APTREE_EARN_URL = "https://www.aptree.io/earn";
+const USDT_FA_ADDRESS = "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b";
+
 export function AptreePositions() {
   const { account } = useWallet();
   const [positions, setPositions] = useState<AptreePosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aprPct, setAprPct] = useState<number | null>(null);
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [selectedDepositPosition, setSelectedDepositPosition] = useState<AptreePosition | null>(null);
+
+  const handleDepositClick = (position: AptreePosition) => {
+    setSelectedDepositPosition(position);
+    setShowDepositModal(true);
+  };
 
   const loadPositions = async () => {
     if (!account?.address) {
@@ -164,6 +176,26 @@ export function AptreePositions() {
                     <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
                   </div>
                   <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 4)}</div>
+                  <div className="flex gap-2 mt-2 justify-end">
+                    <Button
+                      onClick={() => handleDepositClick(position)}
+                      size="sm"
+                      variant="default"
+                      className="h-10"
+                    >
+                      Deposit
+                    </Button>
+                    {amount > 0 && (
+                      <Button
+                        onClick={() => window.open(APTREE_EARN_URL, "_blank")}
+                        size="sm"
+                        variant="outline"
+                        className="h-10"
+                      >
+                        Withdraw
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -215,6 +247,26 @@ export function AptreePositions() {
                       <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
                     </div>
                     <div className="text-sm text-muted-foreground">{formatNumber(amount, 4)}</div>
+                    <div className="flex gap-2 mt-2 justify-end">
+                      <Button
+                        onClick={() => handleDepositClick(position)}
+                        size="sm"
+                        variant="default"
+                        className="h-10"
+                      >
+                        Deposit
+                      </Button>
+                      {amount > 0 && (
+                        <Button
+                          onClick={() => window.open(APTREE_EARN_URL, "_blank")}
+                          size="sm"
+                          variant="outline"
+                          className="h-10"
+                        >
+                          Withdraw
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -226,6 +278,35 @@ export function AptreePositions() {
         <span className="text-xl">Total assets in APTree:</span>
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
       </div>
+
+      {selectedDepositPosition && (
+        <DepositModal
+          isOpen={showDepositModal}
+          onClose={() => {
+            setShowDepositModal(false);
+            setSelectedDepositPosition(null);
+          }}
+          protocol={{
+            name: "APTree",
+            logo: "/protocol_ico/aptree.png",
+            apy: aprPct || 0,
+            key: "aptree" as any,
+          }}
+          tokenIn={{
+            symbol: selectedDepositPosition.assetInfo?.symbol || "USDT",
+            logo: selectedDepositPosition.assetInfo?.logoUrl || "https://assets.panora.exchange/tokens/aptos/USDT.svg",
+            decimals: selectedDepositPosition.assetInfo?.decimals || 6,
+            address: USDT_FA_ADDRESS,
+          }}
+          tokenOut={{
+            symbol: selectedDepositPosition.assetInfo?.symbol || "USDT",
+            logo: selectedDepositPosition.assetInfo?.logoUrl || "https://assets.panora.exchange/tokens/aptos/USDT.svg",
+            decimals: selectedDepositPosition.assetInfo?.decimals || 6,
+            address: USDT_FA_ADDRESS,
+          }}
+          priceUSD={1}
+        />
+      )}
     </div>
   );
 }
