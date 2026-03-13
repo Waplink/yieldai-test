@@ -437,5 +437,19 @@
     },
     "airdrop": "",
     "contractAddresses": []
+  },
+  {
+    "name": "AI agent",
+    "key": "yield-ai",
+    "category": "Vault",
+    "url": "/",
+    "logoUrl": "/logo.png",
+    "description": "Personal safe (vault) for your assets. Only you can withdraw; anexecutor can",
+    "depositType": "external",
+    "isDepositEnabled": false,
+    "managedType": "native",
+    "contractAddresses": [
+	  "1111111111111111111111111"
+	]
   }
 ] 
