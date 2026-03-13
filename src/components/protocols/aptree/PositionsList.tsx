@@ -130,7 +130,9 @@ export function PositionsList({
     return null;
   }
 
-  if (!loading && positions.length === 0) {
+  // Do not pre-render loading skeleton for APTree:
+  // render the card only when real positions exist.
+  if (loading || positions.length === 0) {
     return null;
   }
 
@@ -139,7 +141,7 @@ export function PositionsList({
       protocol={protocol}
       totalValue={totalValue}
       positions={protocolPositions}
-      isLoading={loading && positions.length === 0}
+      isLoading={false}
       showManageButton={showManageButton}
     />
   );
