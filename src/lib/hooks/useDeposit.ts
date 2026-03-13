@@ -7,6 +7,8 @@ import { ToastAction } from '@/components/ui/toast';
 import { protocols } from '../protocols/protocolsRegistry';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { GasStationService } from '@/lib/services/gasStation';
+import { Aptos, AptosConfig, Network, AccountAddress } from '@aptos-labs/ts-sdk';
+import { normalizeAuthenticator } from './useTransactionSubmitter';
 
 async function getAptosExpireTimestampSecs(ttlSeconds: number): Promise<number | undefined> {
   try {
@@ -68,6 +70,14 @@ export function useDeposit() {
         function: payload.function,
         typeArguments: payload.type_arguments,
         functionArguments: payload.arguments,
+        readableFunctionArguments: payload.arguments.map((arg) => String(arg)),
+        decodedAptreeArguments:
+          protocolKey === 'aptree'
+            ? {
+                amountUsdtRaw: String(payload.arguments[0] ?? ''),
+                referralCode: String(payload.arguments[1] ?? ''),
+              }
+            : undefined,
         rawArguments: payload.arguments.map(arg => ({
           value: arg,
           type: typeof arg,
@@ -87,11 +97,14 @@ export function useDeposit() {
       // Gas Station will automatically sponsor the transaction (free for user)
       const ttlSeconds = gasStationAvailable ? 100 : 1800;
       const expireTimestamp = await getAptosExpireTimestampSecs(ttlSeconds);
+      const txInputData = {
+        function: payload.function as `${string}::${string}::${string}`,
+        typeArguments: payload.type_arguments,
+        functionArguments: payload.arguments
+      };
       const txInput = {
         data: {
-          function: payload.function as `${string}::${string}::${string}`,
-          typeArguments: payload.type_arguments,
-          functionArguments: payload.arguments
+          ...txInputData,
         },
         options: {
           maxGasAmount: maxGasAmount,
@@ -100,23 +113,46 @@ export function useDeposit() {
       } as any;
 
       let response;
-      try {
-        response = await wallet.signAndSubmitTransaction(txInput);
-      } catch (submitError) {
-        const message = submitError instanceof Error ? submitError.message : String(submitError);
-        const isGasStationRuleMissing =
-          message.includes('Rule not found') || message.includes('signAndSubmit: 404');
-        const shouldFallbackToWalletGas = protocolKey === 'aptree' && isGasStationRuleMissing;
+      const isAptreeDeposit = protocolKey === 'aptree';
 
-        if (!shouldFallbackToWalletGas) {
-          throw submitError;
+      if (isAptreeDeposit && wallet.signTransaction && wallet.account?.address) {
+        // APTree isn't whitelisted in Gas Station; submit directly without fee payer flow.
+        const aptos = new Aptos(new AptosConfig({ network: Network.MAINNET }));
+        const sender = AccountAddress.fromString(wallet.account.address.toString());
+        const transaction = await aptos.transaction.build.simple({
+          sender,
+          withFeePayer: false,
+          data: txInputData,
+          options: {
+            maxGasAmount: maxGasAmount,
+            ...(expireTimestamp ? { expireTimestamp } : {}),
+          },
+        });
+        const signResult = await wallet.signTransaction({ transactionOrPayload: transaction } as any);
+        const senderAuthenticator = normalizeAuthenticator((signResult as any)?.authenticator ?? signResult);
+        response = await aptos.transaction.submit.simple({
+          transaction,
+          senderAuthenticator,
+        });
+      } else {
+        try {
+          response = await wallet.signAndSubmitTransaction(txInput);
+        } catch (submitError) {
+          const message = submitError instanceof Error ? submitError.message : String(submitError);
+          const isGasStationRuleMissing =
+            message.includes('Rule not found') || message.includes('signAndSubmit: 404');
+          const shouldFallbackToWalletGas = isAptreeDeposit && isGasStationRuleMissing;
+
+          if (!shouldFallbackToWalletGas) {
+            throw submitError;
+          }
+
+          // Fallback path for wallets without signTransaction support.
+          response = await wallet.signAndSubmitTransaction({
+            ...txInput,
+            transactionSubmitter: null,
+          } as any);
         }
-
-        // APTree is not whitelisted in Gas Station yet; retry with wallet-paid gas.
-        response = await wallet.signAndSubmitTransaction({
-          ...txInput,
-          transactionSubmitter: null,
-        } as any);
       }
       console.log('Transaction response:', response);
 
@@ -156,11 +192,16 @@ export function useDeposit() {
 
       return response;
     } catch (error) {
-      console.error('Deposit error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      const isUserRejected =
+        message.includes('User has rejected the request') || message.includes('User rejected');
+      if (!isUserRejected) {
+        console.error('Deposit error:', error);
+      }
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to deposit',
-        variant: "destructive"
+        title: isUserRejected ? "Transaction canceled" : "Error",
+        description: isUserRejected ? "Deposit request was canceled in wallet." : message || 'Failed to deposit',
+        variant: isUserRejected ? "default" : "destructive"
       });
       throw error;
     } finally {
