@@ -207,6 +207,10 @@ class DecibelApi
 
 		$fromUnixMs = (time() - 86400) * 1000;
 		$limit = !empty($data['limit']) ? (int)$data['limit'] : 5000;
+		$weightedAverage = false;
+		if (isset($data['weighted_average'])) {
+			$weightedAverage = in_array(strtolower((string)$data['weighted_average']), ['1', 'true', 'yes', 'on'], true);
+		}
 		if ($limit <= 0) {
 			$limit = 5000;
 		}
@@ -273,6 +277,7 @@ class DecibelApi
 			return [
 				'success' => true,
 				'data' => $rows,
+				'weighted_average' => $weightedAverage ? $this->buildFundingWeightedAverage($rows) : null,
 				'error' => '',
 			];
 		}
@@ -281,6 +286,96 @@ class DecibelApi
 			'success' => false,
 			'data' => [],
 			'error' => !empty($result['info']) ? (is_array($result['info']) ? implode(' | ', $result['info']) : (string)$result['info']) : 'DB query failed',
+		];
+	}
+
+	/**
+	 * buildFundingWeightedAverage($rows=[])
+	 * Time-weighted funding APR analytics for current selection.
+	 */
+	private function buildFundingWeightedAverage($rows=[])
+	{
+		if (empty($rows) || !is_array($rows)) {
+			return [
+				'success' => false,
+				'error' => 'No data for weighted_average',
+			];
+		}
+
+		$records = [];
+		$positiveCount = 0;
+		foreach ($rows as $r) {
+			if (!is_array($r)) {
+				continue;
+			}
+
+			$bps = isset($r['funding_rate_bps']) ? (float)$r['funding_rate_bps'] : 0.0;
+			$isPositive = !empty($r['is_funding_positive']) ? 1 : 0;
+			$timeMs = isset($r['transaction_unix_ms']) ? (int)$r['transaction_unix_ms'] : 0;
+			if ($timeMs <= 0) {
+				continue;
+			}
+
+			if ($isPositive === 1) {
+				$positiveCount++;
+			}
+
+			$records[] = [
+				'time' => $timeMs,
+				'signed_bps' => $isPositive === 1 ? $bps : -1 * $bps,
+				'is_positive' => $isPositive,
+			];
+		}
+
+		$totalRecords = count($records);
+		if ($totalRecords < 2) {
+			return [
+				'success' => false,
+				'error' => 'Not enough points for weighted_average (need at least 2)',
+				'records_total' => $totalRecords,
+			];
+		}
+
+		// Sort from oldest to newest (required for correct time deltas)
+		usort($records, function($a, $b) {
+			return $a['time'] <=> $b['time'];
+		});
+
+		$totalWeightedBps = 0.0;
+		$totalTimeMs = 0;
+		for ($i = 0; $i < $totalRecords - 1; $i++) {
+			$current = $records[$i];
+			$next = $records[$i + 1];
+			$deltaMs = (int)$next['time'] - (int)$current['time'];
+			if ($deltaMs <= 0) {
+				continue;
+			}
+
+			$totalWeightedBps += ((float)$current['signed_bps'] * $deltaMs);
+			$totalTimeMs += $deltaMs;
+		}
+
+		if ($totalTimeMs <= 0) {
+			return [
+				'success' => false,
+				'error' => 'Invalid timeline for weighted_average',
+				'records_total' => $totalRecords,
+			];
+		}
+
+		// Time-weighted mean funding rate in bps (interval-aware).
+		$avgBps = $totalWeightedBps / $totalTimeMs;
+		$aprPercent = ($avgBps * 24 * 365) / 100;
+		$positivePercent = ($positiveCount / $totalRecords) * 100;
+
+		return [
+			'success' => true,
+			'avg_bps_time_weighted' => round($avgBps, 8),
+			'avg_yearly_apr_pct' => round($aprPercent, 4),
+			'direction' => $aprPercent > 0 ? 'Longs pay Shorts' : ($aprPercent < 0 ? 'Shorts pay Longs' : 'Neutral'),
+			'positive_time_pct' => round($positivePercent, 2),
+			'records_total' => $totalRecords,
+			'total_time_ms' => $totalTimeMs,
 		];
 	}
 
