@@ -41,6 +41,7 @@ export function PositionsList({
   const [positions, setPositions] = useState<AptreePosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalValue, setTotalValue] = useState(0);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const protocol = getProtocolByName("APTree");
   const onValueRef = useRef(onPositionsValueChange);
   const onCompleteRef = useRef(onPositionsCheckComplete);
@@ -94,7 +95,18 @@ export function PositionsList({
     return () => {
       cancelled = true;
     };
-  }, [address, refreshKey]);
+  }, [address, refreshKey, localRefreshKey]);
+
+  useEffect(() => {
+    const handleRefresh: EventListener = (evt) => {
+      const event = evt as CustomEvent<{ protocol?: string }>;
+      if (event?.detail?.protocol === "aptree") {
+        setLocalRefreshKey((k) => k + 1);
+      }
+    };
+    window.addEventListener("refreshPositions", handleRefresh);
+    return () => window.removeEventListener("refreshPositions", handleRefresh);
+  }, []);
 
   const protocolPositions = useMemo(
     () =>
