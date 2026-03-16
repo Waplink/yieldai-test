@@ -146,11 +146,27 @@ export function useDeposit() {
         if (!rawSenderAuthenticator || !senderAuthenticator) {
           throw new Error('Transaction signing failed: missing sender authenticator');
         }
-        response = await gasStationSubmitter.submitTransaction({
-          aptosConfig: aptos.config as any,
-          transaction,
-          senderAuthenticator: senderAuthenticator as any,
-        });
+        try {
+          response = await gasStationSubmitter.submitTransaction({
+            aptosConfig: aptos.config as any,
+            transaction,
+            senderAuthenticator: senderAuthenticator as any,
+          });
+        } catch (gasError) {
+          const ge = gasError as any;
+          const statusCode = ge?.statusCode ?? ge?.response?.status ?? 'unknown';
+          const rawMessage =
+            ge?.message ||
+            ge?.error ||
+            ge?.response?.data?.message ||
+            ge?.response?.statusText ||
+            '';
+          const messageText =
+            typeof rawMessage === 'string' && rawMessage.trim().length > 0
+              ? rawMessage
+              : 'Gas Station rejected sponsorship request';
+          throw new Error(`Gas Station error (${statusCode}): ${messageText}`);
+        }
       } else {
         try {
           response = await wallet.signAndSubmitTransaction(txInput);
@@ -214,7 +230,16 @@ export function useDeposit() {
 
       return response;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const rawMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null
+            ? ((error as any).message || (error as any).error || '')
+            : String(error);
+      const message =
+        typeof rawMessage === 'string' && rawMessage.trim().length > 0
+          ? rawMessage
+          : 'Unknown deposit error';
       const isUserRejected =
         message.includes('User has rejected the request') || message.includes('User rejected');
       const isGasStationRuleMissing =
