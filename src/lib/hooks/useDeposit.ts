@@ -7,8 +7,6 @@ import { ToastAction } from '@/components/ui/toast';
 import { protocols } from '../protocols/protocolsRegistry';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { GasStationService } from '@/lib/services/gasStation';
-import { Aptos, AptosConfig, Network, AccountAddress } from '@aptos-labs/ts-sdk';
-import { normalizeAuthenticator } from './useTransactionSubmitter';
 
 async function getAptosExpireTimestampSecs(ttlSeconds: number): Promise<number | undefined> {
   try {
@@ -66,7 +64,7 @@ export function useDeposit() {
       if (!wallet.connected) {
         throw new Error('Wallet not connected');
       }
-      if (!isAptreeDeposit && !wallet.signAndSubmitTransaction) {
+      if (!wallet.signAndSubmitTransaction) {
         throw new Error('Wallet does not support signAndSubmitTransaction');
       }
 
@@ -118,40 +116,17 @@ export function useDeposit() {
 
       let response;
 
-      if (isAptreeDeposit && wallet.signTransaction && wallet.account?.address) {
-        // Gasless APTree flow: sign sender tx, then submit via Gas Station sponsor.
+      if (isAptreeDeposit) {
+        // Gasless APTree flow: wallet signs/submits with explicit Gas Station submitter.
         const gasStationSubmitter = GasStationService.getInstance().getTransactionSubmitter();
         if (!gasStationSubmitter) {
           throw new Error('Gas Station is not available. Configure NEXT_PUBLIC_APTOS_GAS_STATION_KEY.');
         }
-
-        const aptos = new Aptos(new AptosConfig({ network: Network.MAINNET }));
-        const sender = AccountAddress.fromString(wallet.account.address.toString());
-        const transaction = await aptos.transaction.build.simple({
-          sender,
-          withFeePayer: true,
-          data: txInputData,
-          options: {
-            maxGasAmount: maxGasAmount,
-            ...(expireTimestamp ? { expireTimestamp } : {}),
-          },
-        });
-        const signResult = await wallet.signTransaction({ transactionOrPayload: transaction } as any);
-        const signResultAny = signResult as any;
-        const rawSenderAuthenticator =
-          signResultAny?.args ??
-          signResultAny?.authenticator ??
-          signResultAny;
-        const senderAuthenticator = normalizeAuthenticator(rawSenderAuthenticator);
-        if (!rawSenderAuthenticator || !senderAuthenticator) {
-          throw new Error('Transaction signing failed: missing sender authenticator');
-        }
         try {
-          response = await gasStationSubmitter.submitTransaction({
-            aptosConfig: aptos.config as any,
-            transaction,
-            senderAuthenticator: senderAuthenticator as any,
-          });
+          response = await wallet.signAndSubmitTransaction({
+            ...txInput,
+            transactionSubmitter: gasStationSubmitter as any,
+          } as any);
         } catch (gasError) {
           const ge = gasError as any;
           const statusCode = ge?.statusCode ?? ge?.response?.status ?? 'unknown';
