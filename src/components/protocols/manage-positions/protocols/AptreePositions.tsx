@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import Image from "next/image";
+import { ExternalLink } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -193,6 +194,7 @@ export function AptreePositions() {
                         className="h-10"
                       >
                         Withdraw
+                        <ExternalLink className="h-3 w-3" />
                       </Button>
                     )}
                   </div>
@@ -264,6 +266,7 @@ export function AptreePositions() {
                           className="h-10"
                         >
                           Withdraw
+                          <ExternalLink className="h-3 w-3" />
                         </Button>
                       )}
                     </div>
