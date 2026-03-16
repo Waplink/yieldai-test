@@ -1028,8 +1028,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                         .filter(pool => {
                           if (pool.protocol === 'Echelon' && EXCLUDED_ECHELON_TOKENS.includes(pool.token)) return false;
                           const protocol = getProtocolByName(pool.protocol);
-                          const isAptree = protocol?.key === 'aptree';
-                          if (!protocol || (protocol.depositType !== 'native' && !isAptree)) return false;
+                          if (!protocol || protocol.depositType !== 'native') return false;
                           return pool.asset.toUpperCase().includes('USDT') ||
                             pool.asset.toUpperCase().includes('USDC') ||
                             pool.asset.toUpperCase().includes('DAI') ||
@@ -1039,8 +1038,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                     : allLoadedData
                         .filter(pool => {
                           const protocol = getProtocolByName(pool.protocol);
-                          const isAptree = protocol?.key === 'aptree';
-                          if (!protocol || (protocol.depositType !== 'native' && !isAptree)) return false;
+                          if (!protocol || protocol.depositType !== 'native') return false;
                           if (!('symbol' in item) || !('exact' in item)) return false;
                           return item.exact
                             ? pool.asset.toUpperCase() === item.symbol
