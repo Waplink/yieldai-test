@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       const shares = toBigIntSafe(obj.shares);
       const underlyingAssets = toBigIntSafe(obj.underlyingAssets);
       // Jupiter returns a scaffold with zero values for non-participating wallets.
-      return shares > 0n || underlyingAssets > 0n;
+      return shares > BigInt(0) || underlyingAssets > BigInt(0);
     });
 
     return NextResponse.json({
