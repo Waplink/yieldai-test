@@ -168,11 +168,17 @@ export function useDeposit() {
         console.log('Checking transaction status for hash:', response.hash);
         const maxAttempts = 10;
         const delay = 2000;
+        // Small initial delay so fullnode/indexer has time to index tx hash.
+        await new Promise(resolve => setTimeout(resolve, 1200));
         
         for (let i = 0; i < maxAttempts; i++) {
           console.log(`Checking transaction status attempt ${i + 1}/${maxAttempts}`);
           try {
-            const txResponse = await fetch(`https://fullnode.mainnet.aptoslabs.com/v1/transactions/by_hash/${response.hash}`);
+            const txResponse = await fetch(`https://fullnode.mainnet.aptoslabs.com/v1/transactions/wait_by_hash/${response.hash}`);
+            if (txResponse.status === 404) {
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
             const txData = await txResponse.json();
             console.log('Transaction success:', txData.success);
             console.log('Transaction vm_status:', txData.vm_status);
@@ -192,7 +198,11 @@ export function useDeposit() {
               throw new Error(`Transaction failed: ${txData.vm_status}`);
             }
           } catch (error) {
-            console.error(`Attempt ${i + 1} failed:`, error);
+            const message = error instanceof Error ? error.message : String(error);
+            // wait_by_hash may still transiently fail while tx is being indexed.
+            if (!message.includes('404')) {
+              console.error(`Attempt ${i + 1} failed:`, error);
+            }
           }
           
           console.log(`Waiting ${delay}ms before next attempt...`);
