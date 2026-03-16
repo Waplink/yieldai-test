@@ -26,6 +26,7 @@ import { PositionsList as ThalaPositionsList } from "./protocols/thala/Positions
 import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
+import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { CardTitle } from '@/components/ui/card';
 import { useAptosAddressResolver } from '@/lib/hooks/useAptosAddressResolver';
 import { YieldCalculatorModal } from '@/components/ui/yield-calculator-modal';
@@ -65,6 +66,7 @@ export default function PortfolioPage() {
   const [decibelValue, setDecibelValue] = useState(0);
   const [decibelMainnetValue, setDecibelMainnetValue] = useState(0);
   const [aptreeValue, setAptreeValue] = useState(0);
+  const [yieldAIValue, setYieldAIValue] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -83,21 +85,22 @@ export default function PortfolioPage() {
   const isInitialLoading = isLoading || isRefreshing;
 
   const allProtocolNames = [
-    "Hyperion",
-    "Echelon",
-    "Aries",
-    "Joule",
-    "Tapp Exchange",
-    "Meso Finance",
-    "Auro Finance",
-    "Amnis Finance",
-    "Earnium",
-    "Aave",
-    "Moar Market",
-    "Thala",
-    "Echo Protocol",
-    "Decibel",
-    "APTree",
+   "Hyperion",
+   "Echelon",
+   "Aries",
+   "Joule",
+   "Tapp Exchange",
+   "Meso Finance",
+   "Auro Finance",
+   "Amnis Finance",
+   "Earnium",
+   "Aave",
+   "Moar Market",
+   "Thala",
+   "Echo Protocol",
+   "Decibel",
+   "APTree",
+   "AI agent",
   ];
 
   const resetChecking = useCallback(() => {
@@ -252,6 +255,9 @@ export default function PortfolioPage() {
   const handleAptreeValueChange = useCallback((value: number) => {
     setAptreeValue(value);
   }, []);
+  const handleYieldAIValueChange = useCallback((value: number) => {
+    setYieldAIValue(value);
+  }, []);
 
   // Считаем сумму по кошельку
   const walletTotal = tokens.reduce((sum, token) => {
@@ -261,7 +267,23 @@ export default function PortfolioPage() {
 
   // Считаем сумму по всем протоколам (Decibel: full assets when available, else pre-deposit fallback)
   const decibelTotal = decibelValue > 0 ? decibelValue : decibelMainnetValue;
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue + decibelTotal + aptreeValue;
+  const totalProtocolsValue =
+    hyperionValue +
+    echelonValue +
+    ariesValue +
+    jouleValue +
+    tappValue +
+    mesoValue +
+    auroValue +
+    amnisValue +
+    earniumValue +
+    aaveValue +
+    moarValue +
+    thalaValue +
+    echoValue +
+    decibelTotal +
+    aptreeValue +
+    yieldAIValue;
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
@@ -288,6 +310,7 @@ export default function PortfolioPage() {
     { name: 'Echo Protocol', value: echoValue },
     { name: 'Decibel', value: decibelTotal },
     { name: 'APTree', value: aptreeValue },
+    { name: 'AI agent', value: yieldAIValue },
   ];
 
   // Показываем скелетон во время начальной загрузки
@@ -541,6 +564,12 @@ export default function PortfolioPage() {
 					          name: 'APTree',
 					          showManageButton: false
 					        },
+                            {
+					          component: YieldAIPositionsList,
+					          value: yieldAIValue,
+					          name: 'AI agent',
+					          showManageButton: false
+					        },
                           ]
                           .sort((a, b) => b.value - a.value)
                           .map(({ component: Component, name }) => (
@@ -566,6 +595,7 @@ export default function PortfolioPage() {
                                 name === 'Echo Protocol' ? handleEchoValueChange :
                                 name === 'Decibel' ? handleDecibelValueChange :
                                 name === 'APTree' ? handleAptreeValueChange :
+                                name === 'AI agent' ? handleYieldAIValueChange :
                                 undefined
                               }
                               onMainnetValueChange={name === 'Decibel' ? handleDecibelMainnetValueChange : undefined}

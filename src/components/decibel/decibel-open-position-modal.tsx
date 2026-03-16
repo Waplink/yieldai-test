@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import { X } from 'lucide-react';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { DecibelChart } from './decibel-chart';
+import { DecibelChart, type DecibelChartLimitOrder } from './decibel-chart';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -35,6 +35,14 @@ import {
   buildCancelOrderPayload,
   type DecibelMarketConfig,
 } from '@/lib/protocols/decibel/closePosition';
+import { buildConfigureUserSettingsPayload } from '@/lib/protocols/decibel/configureUserSettings';
+import { fetchFundingApr, type FundingAprResult } from '@/lib/protocols/decibel/fundingApr';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export interface DecibelOpenPositionMarket {
   marketAddr: string;
@@ -96,21 +104,45 @@ function formatSizeShort(size: number): string {
   return formatNumber(size, 2);
 }
 
+/** Get expiration timestamp (chain time + ttl) to avoid TRANSACTION_EXPIRED. */
+async function getExpireTimestampSecs(
+  fullnodeBase: string,
+  ttlSeconds: number = 600
+): Promise<number | undefined> {
+  try {
+    const res = await fetch(fullnodeBase);
+    if (!res.ok) return undefined;
+    const info = await res.json();
+    const ledgerTimestamp = parseInt(info?.ledger_timestamp ?? '', 10);
+    if (!Number.isFinite(ledgerTimestamp)) return undefined;
+    return Math.floor(ledgerTimestamp / 1_000_000) + ttlSeconds;
+  } catch {
+    return undefined;
+  }
+}
+
 interface DecibelOpenPositionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   market: DecibelOpenPositionMarket | null;
+  /** All markets available for trading; used for market switcher in header. */
+  markets?: DecibelOpenPositionMarket[];
+  /** Called when user selects another market from the header dropdown. */
+  onMarketChange?: (market: DecibelOpenPositionMarket) => void;
 }
 
 export function DecibelOpenPositionModal({
   open,
   onOpenChange,
   market,
+  markets = [],
+  onMarketChange,
 }: DecibelOpenPositionModalProps) {
   const { account, signAndSubmitTransaction } = useWallet();
   const { toast } = useToast();
   const [chartInterval, setChartInterval] = useState<string>('1h');
   const [side, setSide] = useState<'long' | 'short'>('long');
+  const [leverage, setLeverage] = useState<number>(1);
   const [orderSizeUsd, setOrderSizeUsd] = useState('');
   const [availableToTrade, setAvailableToTrade] = useState<number | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -121,6 +153,9 @@ export function DecibelOpenPositionModal({
   const [subaccountAddr, setSubaccountAddr] = useState<string | null>(null);
   const [marketConfig, setMarketConfig] = useState<DecibelMarketConfig | null>(null);
   const [markPx, setMarkPx] = useState<number | null>(null);
+  const [fundingRateBps, setFundingRateBps] = useState<number | null>(null);
+  const [isFundingPositive, setIsFundingPositive] = useState<boolean | null>(null);
+  const [fundingApr24h, setFundingApr24h] = useState<FundingAprResult | null>(null);
   const [decibelNetwork, setDecibelNetwork] = useState<'mainnet' | 'testnet'>('mainnet');
   const [placing, setPlacing] = useState(false);
   const [marketPositions, setMarketPositions] = useState<DecibelPositionRow[]>([]);
@@ -251,22 +286,43 @@ export function DecibelOpenPositionModal({
   useEffect(() => {
     if (!open || !market) {
       setMarkPx(null);
+      setFundingRateBps(null);
+      setIsFundingPositive(null);
       return;
     }
     let cancelled = false;
     fetch(`/api/protocols/decibel/prices?market=${encodeURIComponent(market.marketAddr)}`)
       .then((r) => r.json())
-      .then((data: { success?: boolean; data?: { mark_px?: number }[] }) => {
+      .then((data: { success?: boolean; data?: { mark_px?: number; funding_rate_bps?: number; is_funding_positive?: boolean }[] }) => {
         if (cancelled) return;
         const list = data?.success && Array.isArray(data.data) ? data.data : [];
         const first = list[0];
         setMarkPx(typeof first?.mark_px === 'number' ? first.mark_px : null);
+        setFundingRateBps(typeof first?.funding_rate_bps === 'number' ? first.funding_rate_bps : null);
+        setIsFundingPositive(first?.is_funding_positive ?? null);
       })
       .catch(() => {
-        if (!cancelled) setMarkPx(null);
+        if (!cancelled) {
+          setMarkPx(null);
+          setFundingRateBps(null);
+          setIsFundingPositive(null);
+        }
       });
     return () => { cancelled = true; };
   }, [open, market?.marketAddr]);
+
+  // Funding 24h APR from external API (cached)
+  useEffect(() => {
+    if (!open || !market?.marketName) {
+      setFundingApr24h(null);
+      return;
+    }
+    let cancelled = false;
+    fetchFundingApr(market.marketName).then((data) => {
+      if (!cancelled) setFundingApr24h(data);
+    });
+    return () => { cancelled = true; };
+  }, [open, market?.marketName]);
 
   const fetchPositionsAndOrders = useCallback(async () => {
     if (!open || !account?.address || !market) {
@@ -321,6 +377,10 @@ export function DecibelOpenPositionModal({
     fetchPositionsAndOrders();
   }, [open, account?.address, market?.marketAddr, fetchPositionsAndOrders]);
 
+  useEffect(() => {
+    if (market) setLeverage(1);
+  }, [market?.marketAddr]);
+
   const orderSizeNum = orderSizeUsd.trim() === '' ? NaN : parseFloat(orderSizeUsd);
   const isValidSize =
     Number.isFinite(orderSizeNum) &&
@@ -347,6 +407,46 @@ export function DecibelOpenPositionModal({
     }
     setPlacing(true);
     try {
+      const fullnodeBase =
+        decibelNetwork === 'testnet'
+          ? 'https://fullnode.testnet.aptoslabs.com/v1'
+          : 'https://fullnode.mainnet.aptoslabs.com/v1';
+      const expireTimestamp = await getExpireTimestampSecs(fullnodeBase, 120);
+
+      // 1. Set leverage for this market (separate transaction)
+      const configurePayload = buildConfigureUserSettingsPayload({
+        subaccountAddr,
+        marketAddr: market.marketAddr,
+        isCross: true,
+        userLeverage: leverage,
+        isTestnet: decibelNetwork === 'testnet',
+      });
+      const configureResult = await signAndSubmitTransaction({
+        data: {
+          function: configurePayload.function as `${string}::${string}::${string}`,
+          typeArguments: configurePayload.typeArguments,
+          functionArguments: configurePayload.functionArguments as (string | number | boolean)[],
+        },
+        options: { maxGasAmount: 10000, ...(expireTimestamp != null && { expireTimestamp }) },
+      });
+      const configureHash = typeof configureResult?.hash === 'string' ? configureResult.hash : (configureResult as { hash?: string })?.hash;
+      if (configureHash) {
+        const fullnode = fullnodeBase;
+        for (let i = 0; i < 45; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const res = await fetch(`${fullnode}/transactions/by_hash/${configureHash}`);
+            if (res.ok) {
+              const tx = await res.json();
+              if (tx.success !== undefined) break;
+            }
+          } catch {
+            // keep polling
+          }
+        }
+      }
+
+      // 2. Place market order
       // Debug: log raw addresses before payload build (to see if decimal form comes from API)
       console.log('[Decibel Open] raw inputs:', {
         subaccountAddr: typeof subaccountAddr === 'string' && subaccountAddr.length > 30
@@ -413,7 +513,7 @@ export function DecibelOpenPositionModal({
           typeArguments: payload.typeArguments,
           functionArguments: payload.functionArguments as (string | number | boolean | bigint | null)[],
         },
-        options: { maxGasAmount: 20000 },
+        options: { maxGasAmount: 20000, ...(expireTimestamp != null && { expireTimestamp }) },
       });
       const txHash = typeof result?.hash === 'string' ? result.hash : (result as { hash?: string })?.hash ?? '';
       const baseName = market.marketName?.split('/')[0] ?? 'Position';
@@ -646,6 +746,21 @@ export function DecibelOpenPositionModal({
     return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
   };
 
+  const chartLimitOrders = useMemo((): DecibelChartLimitOrder[] => {
+    const pxDec = marketConfig?.px_decimals ?? 9;
+    return marketOrders
+      .filter((o) => o.price > 0 && Number.isFinite(o.price))
+      .map((o) => ({
+        price: o.price < 1e12 ? o.price : o.price / 10 ** pxDec,
+        reduceOnly: o.reduce_only ?? o.is_reduce_only === true,
+      }));
+  }, [marketOrders, marketConfig?.px_decimals]);
+
+  const chartEntryPrices = useMemo(
+    () => marketPositions.map((p) => p.entry_price).filter((p) => Number.isFinite(p) && p > 0),
+    [marketPositions]
+  );
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -653,35 +768,98 @@ export function DecibelOpenPositionModal({
         <DialogHeader className="shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              {market?.marketLogoUrl && (
-                <div className="w-8 h-8 sm:w-9 sm:h-9 relative shrink-0 rounded-full overflow-hidden bg-muted">
+              {markets.length > 0 && onMarketChange && market ? (
+                <Select
+                  value={market.marketAddr}
+                  onValueChange={(addr) => {
+                    const next = markets.find((m) => m.marketAddr === addr);
+                    if (next) onMarketChange(next);
+                  }}
+                >
+                  <SelectTrigger className="w-auto min-w-[140px] max-w-[220px] h-9 gap-2 border-none bg-transparent shadow-none hover:bg-muted/50 focus:ring-0">
+                    {market.marketLogoUrl && (
+                      <div className="w-6 h-6 relative shrink-0 rounded-full overflow-hidden bg-muted">
+                        <Image
+                          src={market.marketLogoUrl}
+                          alt=""
+                          width={24}
+                          height={24}
+                          className="object-contain"
+                          unoptimized
+                        />
+                      </div>
+                    )}
+                    <SelectValue>
+                      <span className="font-medium truncate">{market.marketName}</span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {markets.map((m) => (
+                      <SelectItem key={m.marketAddr} value={m.marketAddr} className="flex items-center gap-2">
+                        {m.marketLogoUrl && (
+                          <span className="w-5 h-5 rounded-full overflow-hidden bg-muted shrink-0 inline-flex items-center justify-center">
+                            <Image
+                              src={m.marketLogoUrl}
+                              alt=""
+                              width={20}
+                              height={20}
+                              className="object-contain"
+                              unoptimized
+                            />
+                          </span>
+                        )}
+                        <span className="truncate">{m.marketName}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <>
+                  {market?.marketLogoUrl && (
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 relative shrink-0 rounded-full overflow-hidden bg-muted">
+                      <Image
+                        src={market.marketLogoUrl}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="object-contain"
+                        unoptimized
+                      />
+                    </div>
+                  )}
+                  <DialogTitle className="truncate flex items-center gap-1.5 flex-wrap">
+                    {market ? `Trade — ${market.marketName}` : 'Trade'}
+                    {market && (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground font-normal text-sm">
+                        on
+                        <Image
+                          src="/protocol_ico/decibel.png"
+                          alt=""
+                          width={18}
+                          height={18}
+                          className="rounded-full object-contain shrink-0"
+                          unoptimized
+                        />
+                        Decibel
+                      </span>
+                    )}
+                  </DialogTitle>
+                </>
+              )}
+              {markets.length > 0 && onMarketChange && market && (
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground font-normal text-sm shrink-0">
+                  on
                   <Image
-                    src={market.marketLogoUrl}
+                    src="/protocol_ico/decibel.png"
                     alt=""
-                    width={36}
-                    height={36}
-                    className="object-contain"
+                    width={18}
+                    height={18}
+                    className="rounded-full object-contain shrink-0"
                     unoptimized
                   />
-                </div>
+                  Decibel
+                </span>
               )}
-              <DialogTitle className="truncate flex items-center gap-1.5 flex-wrap">
-                {market ? `Trade — ${market.marketName}` : 'Trade'}
-                {market && (
-                  <span className="inline-flex items-center gap-1.5 text-muted-foreground font-normal text-sm">
-                    on
-                    <Image
-                      src="/protocol_ico/decibel.png"
-                      alt=""
-                      width={18}
-                      height={18}
-                      className="rounded-full object-contain shrink-0"
-                      unoptimized
-                    />
-                    Decibel
-                  </span>
-                )}
-              </DialogTitle>
             </div>
             <Button
               onClick={() => onOpenChange(false)}
@@ -698,7 +876,7 @@ export function DecibelOpenPositionModal({
           {/* Left: chart + interval */}
           {market && (
             <div className="flex flex-col min-h-0 gap-3">
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <Label className="text-muted-foreground">Interval</Label>
                 <Select
                   value={chartInterval}
@@ -715,11 +893,77 @@ export function DecibelOpenPositionModal({
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Current funding (Decibel API): show in bps, positive = green, negative = red */}
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help underline decoration-dotted underline-offset-1" tabIndex={0}>
+                          Funding:
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        Current funding rate in basis points (1 bps = 0.01%). Positive = longs pay shorts.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {fundingRateBps != null && Number.isFinite(fundingRateBps) && isFundingPositive !== null ? (
+                    (() => {
+                      const bps = fundingRateBps * (isFundingPositive ? 1 : -1);
+                      return (
+                        <span
+                          className={cn(
+                            'font-medium',
+                            bps > 0 ? 'text-green-600 dark:text-green-400' : bps < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'
+                          )}
+                        >
+                          {bps > 0 ? '+' : ''}{bps} bps
+                        </span>
+                      );
+                    })()
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </span>
+                {/* Funding 24h APR (external API) */}
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help underline decoration-dotted underline-offset-1" tabIndex={0}>
+                          APR:
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[220px]">
+                        24h funding rate annualized (extrapolated to yearly yield).
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {fundingApr24h != null && Number.isFinite(fundingApr24h.avg_yearly_apr_pct) ? (
+                    <span
+                      className={cn(
+                        'font-medium',
+                        fundingApr24h.avg_yearly_apr_pct > 0
+                          ? 'text-green-600 dark:text-green-400'
+                          : fundingApr24h.avg_yearly_apr_pct < 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-muted-foreground'
+                      )}
+                    >
+                      {fundingApr24h.avg_yearly_apr_pct > 0 ? '+' : ''}
+                      {formatNumber(fundingApr24h.avg_yearly_apr_pct, 2)}%
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </span>
               </div>
               <div className="flex-1 min-h-[240px] sm:min-h-[280px] lg:min-h-0">
                 <DecibelChart
                   marketAddr={market.marketAddr}
                   interval={chartInterval}
+                  limitOrders={chartLimitOrders}
+                  entryPrices={chartEntryPrices}
                   className="w-full h-full min-h-[240px] sm:min-h-[280px] lg:min-h-[300px]"
                 />
               </div>
@@ -777,7 +1021,7 @@ export function DecibelOpenPositionModal({
               </div>
             </div>
 
-            {/* Order type (Market only) + Leverage 1x in one row */}
+            {/* Order type (Market only) + Leverage in one row */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Order type</Label>
@@ -792,11 +1036,21 @@ export function DecibelOpenPositionModal({
               </div>
               <div className="space-y-2">
                 <Label>Leverage</Label>
-                <div className="flex gap-1 p-0.5 rounded-lg border bg-muted/40">
-                  <span className="flex-1 rounded-md px-3 py-2 text-sm font-medium bg-background text-foreground shadow-sm text-center">
-                    1x
-                  </span>
-                </div>
+                <Select
+                  value={String(leverage)}
+                  onValueChange={(v) => setLeverage(Number(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 5, 10].map((x) => (
+                      <SelectItem key={x} value={String(x)}>
+                        {x}x
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

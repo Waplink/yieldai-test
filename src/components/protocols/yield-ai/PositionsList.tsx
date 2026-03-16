@@ -8,10 +8,11 @@ import { formatCurrency } from "@/lib/utils/numberFormat";
 import { useCollapsible } from "@/contexts/CollapsibleContext";
 import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { TokenList } from "@/components/portfolio/TokenList";
-import { PositionsList as MoarPositionsList } from "@/components/protocols/moar/PositionsList";
+import { ManagePositionsButton } from "@/components/protocols/ManagePositionsButton";
 import { PanoraPricesService } from "@/lib/services/panora/prices";
 import { Token } from "@/lib/types/token";
-import { APTOS_COIN_TYPE } from "@/lib/constants/yieldAiVault";
+import { APTOS_COIN_TYPE, USDC_FA_METADATA_MAINNET } from "@/lib/constants/yieldAiVault";
+import { normalizeAddress } from "@/lib/utils/addressNormalization";
 import type { TokenPrice } from "@/lib/types/panora";
 import styles from "@/shared/ProtocolCard/ProtocolCard.module.css";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,85 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  useMoarPositions,
+  useMoarRewards,
+  useMoarPools,
+} from "@/lib/query/hooks/protocols/moar";
+import { mapMoarPositionsToProtocolPositions } from "@/components/protocols/moar/mapMoarToProtocolPositions";
+import { ProtocolCardPosition } from "@/shared/ProtocolCard/ProtocolCardPosition/ProtocolCardPosition";
+
+/** Inline Moar positions + rewards for a single safe (no nested card). */
+function MoarInline({
+  safeAddress,
+  onValueChange,
+  refreshKey,
+}: {
+  safeAddress: string;
+  onValueChange: (value: number) => void;
+  refreshKey?: number;
+}) {
+  const { data: positions = [] } = useMoarPositions(safeAddress, {
+    refetchOnMount: refreshKey != null ? "always" : undefined,
+  });
+  const { data: rewardsResponse } = useMoarRewards(safeAddress);
+  const { data: poolsResponse } = useMoarPools();
+
+  const rewardsData = rewardsResponse?.data ?? [];
+  const rewardsTotalUsd = rewardsResponse?.totalUsd ?? 0;
+  const positionsValue = positions.reduce(
+    (sum, p) => sum + parseFloat(p.value || "0"),
+    0
+  );
+  const totalValue = positionsValue + rewardsTotalUsd;
+
+  const aprByPoolId = (() => {
+    if (!poolsResponse?.data) return {} as Record<number, number>;
+    const map: Record<number, number> = {};
+    (poolsResponse.data as { poolId?: number; totalAPY?: number }[]).forEach(
+      (pool) => {
+        if (pool.poolId !== undefined) {
+          map[pool.poolId] = pool.totalAPY ?? 0;
+        }
+      }
+    );
+    return map;
+  })();
+
+  const protocolPositions = mapMoarPositionsToProtocolPositions(
+    positions,
+    aprByPoolId
+  );
+
+  const totalRewardsUsd =
+    rewardsTotalUsd > 0
+      ? rewardsTotalUsd < 1
+        ? "<$1"
+        : formatCurrency(rewardsTotalUsd, 2)
+      : undefined;
+
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+  useEffect(() => {
+    onValueChangeRef.current(totalValue);
+  }, [totalValue]);
+
+  if (positions.length === 0 && rewardsTotalUsd === 0) return null;
+
+  return (
+    <div className="space-y-1 mt-2">
+      {protocolPositions.map((pos, i) => (
+        <ProtocolCardPosition key={pos.id ?? i} position={pos} />
+      ))}
+      {totalRewardsUsd && (
+        <div className={styles.totalRewardsRow}>
+          <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
+          <span className={styles.totalRewardsValue}>{totalRewardsUsd}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface PositionsListProps {
   address?: string;
@@ -35,7 +115,7 @@ export function PositionsList({
   onPositionsValueChange,
   refreshKey,
   onPositionsCheckComplete,
-  showManageButton = false,
+  showManageButton = true,
 }: PositionsListProps) {
   const walletAddress = address ?? null;
   const { toast } = useToast();
@@ -147,7 +227,13 @@ export function PositionsList({
               value: aptPrice ? String(usd) : null,
             });
           }
-          setTokensBySafe((prev) => ({ ...prev, [safeAddress]: tokens }));
+          // Only show base assets (USDC, APT); hide wrapper/unknown tokens (e.g. N/A)
+          const baseOnly = tokens.filter((t) => {
+            if (t.symbol === "USDC" || t.address === APTOS_COIN_TYPE) return true;
+            const addr = t.address.includes("::") ? t.address.split("::")[0] : t.address;
+            return normalizeAddress(addr) === normalizeAddress(USDC_FA_METADATA_MAINNET);
+          });
+          setTokensBySafe((prev) => ({ ...prev, [safeAddress]: baseOnly }));
         })
         .catch(() => {
           if (!cancelled) setTokensBySafe((prev) => ({ ...prev, [safeAddress]: [] }));
@@ -161,11 +247,19 @@ export function PositionsList({
   const tokensValue = Object.values(tokensBySafe).reduce(
     (sum, tokens) =>
       sum +
-      tokens.reduce((s, t) => s + (t.value ? parseFloat(t.value) : 0), 0),
+      tokens.reduce((s, t) => {
+        const v = t.value ? parseFloat(t.value) : 0;
+        return s + (Number.isFinite(v) ? v : 0);
+      }, 0),
     0
   );
-  const totalMoarValue = Object.values(moarValueBySafe).reduce((a, b) => a + b, 0);
-  const totalValue = tokensValue + totalMoarValue;
+  const totalMoarValue = Object.values(moarValueBySafe).reduce((a, b) => {
+    const v = Number(b);
+    return a + (Number.isFinite(v) ? v : 0);
+  }, 0);
+  const totalValue = Number.isFinite(tokensValue) && Number.isFinite(totalMoarValue)
+    ? tokensValue + totalMoarValue
+    : 0;
 
   useEffect(() => {
     onValueRef.current?.(totalValue);
@@ -214,8 +308,12 @@ export function PositionsList({
         </div>
       </div>
 
-      {expanded && (
-        <div className={styles.content}>
+      {safeAddresses.length > 0 && (
+        <div
+          className={styles.content}
+          style={{ display: expanded ? undefined : "none" }}
+          aria-hidden={!expanded}
+        >
           {safeAddresses.map((safeAddress) => (
             <div key={safeAddress} className="space-y-3 mt-2">
               <div className="flex items-center gap-1.5">
@@ -255,21 +353,29 @@ export function PositionsList({
                   </TooltipContent>
                 </Tooltip>
               </div>
+              <MoarInline
+                safeAddress={safeAddress}
+                onValueChange={(value) =>
+                  setMoarValueBySafe((prev) => ({ ...prev, [safeAddress]: value }))
+                }
+                refreshKey={refreshKey}
+              />
               {tokensBySafe[safeAddress]?.length ? (
-                <TokenList tokens={tokensBySafe[safeAddress]} disableDrag />
+                <TokenList
+                  tokens={tokensBySafe[safeAddress]}
+                  disableDrag
+                  getRightBadge={(t) => (t.symbol === "USDC" ? "AGENT WALLET" : undefined)}
+                />
               ) : tokensBySafe[safeAddress] === undefined ? (
                 <p className="text-sm text-muted-foreground">Loading tokens…</p>
               ) : null}
-              <MoarPositionsList
-                address={safeAddress}
-                refreshKey={refreshKey}
-                showManageButton={showManageButton}
-                onPositionsValueChange={(value) =>
-                  setMoarValueBySafe((prev) => ({ ...prev, [safeAddress]: value }))
-                }
-              />
             </div>
           ))}
+        </div>
+      )}
+      {expanded && showManageButton && protocol && (
+        <div className="px-3 pb-2">
+          <ManagePositionsButton protocol={protocol} />
         </div>
       )}
     </div>
