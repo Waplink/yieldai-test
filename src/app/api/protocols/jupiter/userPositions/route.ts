@@ -7,6 +7,17 @@ function isLikelySolanaAddress(input: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input);
 }
 
+function toBigIntSafe(value: unknown): bigint {
+  try {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number") return BigInt(Math.trunc(value));
+    if (typeof value === "string" && value.trim() !== "") return BigInt(value);
+  } catch {
+    // ignore parse errors
+  }
+  return BigInt(0);
+}
+
 /**
  * GET /api/protocols/jupiter/userPositions?address=<solana_wallet>
  * Returns Jupiter Lend user positions for a Solana wallet.
@@ -45,7 +56,14 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = await response.json().catch(() => []);
-    const positions = Array.isArray(payload) ? payload : [];
+    const allPositions = Array.isArray(payload) ? payload : [];
+    const positions = allPositions.filter((p) => {
+      const obj = (p ?? {}) as Record<string, unknown>;
+      const shares = toBigIntSafe(obj.shares);
+      const underlyingAssets = toBigIntSafe(obj.underlyingAssets);
+      // Jupiter returns a scaffold with zero values for non-participating wallets.
+      return shares > 0n || underlyingAssets > 0n;
+    });
 
     return NextResponse.json({
       success: true,
