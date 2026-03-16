@@ -61,9 +61,13 @@ export function useDeposit() {
       }
 
       console.log('Submitting transaction with payload:', payload);
+      const isAptreeDeposit = protocolKey === 'aptree';
 
-      if (!wallet.connected || !wallet.signAndSubmitTransaction) {
+      if (!wallet.connected) {
         throw new Error('Wallet not connected');
+      }
+      if (!isAptreeDeposit && !wallet.signAndSubmitTransaction) {
+        throw new Error('Wallet does not support signAndSubmitTransaction');
       }
 
       console.log('Transaction arguments:', {
@@ -113,15 +117,19 @@ export function useDeposit() {
       } as any;
 
       let response;
-      const isAptreeDeposit = protocolKey === 'aptree';
 
       if (isAptreeDeposit && wallet.signTransaction && wallet.account?.address) {
-        // APTree isn't whitelisted in Gas Station; submit directly without fee payer flow.
+        // Gasless APTree flow: sign sender tx, then submit via Gas Station sponsor.
+        const gasStationSubmitter = GasStationService.getInstance().getTransactionSubmitter();
+        if (!gasStationSubmitter) {
+          throw new Error('Gas Station is not available. Configure NEXT_PUBLIC_APTOS_GAS_STATION_KEY.');
+        }
+
         const aptos = new Aptos(new AptosConfig({ network: Network.MAINNET }));
         const sender = AccountAddress.fromString(wallet.account.address.toString());
         const transaction = await aptos.transaction.build.simple({
           sender,
-          withFeePayer: false,
+          withFeePayer: true,
           data: txInputData,
           options: {
             maxGasAmount: maxGasAmount,
@@ -130,14 +138,16 @@ export function useDeposit() {
         });
         const signResult = await wallet.signTransaction({ transactionOrPayload: transaction } as any);
         const signResultAny = signResult as any;
-        const senderAuthenticator =
+        const rawSenderAuthenticator =
           signResultAny?.args ??
           signResultAny?.authenticator ??
-          normalizeAuthenticator(signResultAny);
-        if (!senderAuthenticator) {
+          signResultAny;
+        const senderAuthenticator = normalizeAuthenticator(rawSenderAuthenticator);
+        if (!rawSenderAuthenticator || !senderAuthenticator) {
           throw new Error('Transaction signing failed: missing sender authenticator');
         }
-        response = await aptos.transaction.submit.simple({
+        response = await gasStationSubmitter.submitTransaction({
+          aptosConfig: aptos.config as any,
           transaction,
           senderAuthenticator: senderAuthenticator as any,
         });
@@ -207,12 +217,18 @@ export function useDeposit() {
       const message = error instanceof Error ? error.message : String(error);
       const isUserRejected =
         message.includes('User has rejected the request') || message.includes('User rejected');
+      const isGasStationRuleMissing =
+        message.includes('Rule not found') && message.includes('bridge::deposit');
       if (!isUserRejected) {
         console.error('Deposit error:', error);
       }
       toast({
-        title: isUserRejected ? "Transaction canceled" : "Error",
-        description: isUserRejected ? "Deposit request was canceled in wallet." : message || 'Failed to deposit',
+        title: isUserRejected ? "Transaction canceled" : isGasStationRuleMissing ? "Gasless rule missing" : "Error",
+        description: isUserRejected
+          ? "Deposit request was canceled in wallet."
+          : isGasStationRuleMissing
+            ? "Gas Station does not have a sponsorship rule for APTree deposit yet. Add rule for bridge::deposit to enable gasless tx."
+            : message || 'Failed to deposit',
         variant: isUserRejected ? "default" : "destructive"
       });
       throw error;
