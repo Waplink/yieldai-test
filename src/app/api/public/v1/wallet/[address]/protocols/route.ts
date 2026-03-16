@@ -15,7 +15,7 @@ type ProtocolResult = {
   error?: string;
 };
 
-const PROTOCOLS: ProtocolConfig[] = [
+const APTOS_PROTOCOLS: ProtocolConfig[] = [
   { key: 'hyperion', endpoint: '/api/protocols/hyperion/userPositions' },
   { key: 'echelon', endpoint: '/api/protocols/echelon/userPositions' },
   { key: 'aries', endpoint: '/api/protocols/aries/userPositions' },
@@ -31,6 +31,10 @@ const PROTOCOLS: ProtocolConfig[] = [
   { key: 'echo', endpoint: '/api/protocols/echo/userPositions' },
   { key: 'decibel', endpoint: '/api/protocols/decibel/userPositions' },
   { key: 'aptree', endpoint: '/api/protocols/aptree/userPositions' },
+];
+
+const SOLANA_PROTOCOLS: ProtocolConfig[] = [
+  { key: 'jupiter', endpoint: '/api/protocols/jupiter/userPositions' },
 ];
 
 function isRequireKey(): boolean {
@@ -61,6 +65,26 @@ function normalizeAptosAddress(input: string): { ok: boolean; clean?: string; pr
   const isHex64 = /^[0-9a-fA-F]{64}$/.test(no0x);
   if (!isHex64) return { ok: false, provided };
   return { ok: true, clean: '0x' + no0x.toLowerCase(), provided };
+}
+
+function normalizeSolanaAddress(input: string): { ok: boolean; clean?: string; provided: string } {
+  const provided = input;
+  const clean = input.trim();
+  const isBase58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(clean);
+  if (!isBase58) return { ok: false, provided };
+  return { ok: true, clean, provided };
+}
+
+function resolveAddressKind(input: string): { kind: 'aptos' | 'solana' | 'unknown'; clean?: string } {
+  const aptos = normalizeAptosAddress(input);
+  if (aptos.ok && aptos.clean) {
+    return { kind: 'aptos', clean: aptos.clean };
+  }
+  const sol = normalizeSolanaAddress(input);
+  if (sol.ok && sol.clean) {
+    return { kind: 'solana', clean: sol.clean };
+  }
+  return { kind: 'unknown' };
 }
 
 function extractPositions(payload: unknown): unknown[] {
@@ -171,13 +195,15 @@ export async function GET(
     }
 
     const { address } = await params;
-    const norm = normalizeAptosAddress(address);
-    if (!norm.ok || !norm.clean) {
+    const resolved = resolveAddressKind(address);
+    if (resolved.kind === 'unknown' || !resolved.clean) {
       return NextResponse.json({ error: 'invalid_address', address }, { status: 400 });
     }
 
+    const protocolsToFetch = resolved.kind === 'aptos' ? APTOS_PROTOCOLS : SOLANA_PROTOCOLS;
+
     const settled = await Promise.all(
-      PROTOCOLS.map((protocol) => fetchProtocolPositions(request, norm.clean as string, protocol))
+      protocolsToFetch.map((protocol) => fetchProtocolPositions(request, resolved.clean as string, protocol))
     );
 
     const protocolsWithPositions = settled.filter((p) => p.positionsCount > 0).length;
@@ -185,7 +211,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        address: norm.clean,
+        address: resolved.clean,
+        chain: resolved.kind,
         timestamp: new Date().toISOString(),
         protocolsTotal: settled.length,
         protocolsWithPositions,
