@@ -131,7 +131,7 @@ export function JupiterPositions() {
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 relative">
                     {logoUrl ? (
-                      <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
+                      <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" unoptimized />
                     ) : null}
                   </div>
                   <div>
@@ -168,7 +168,7 @@ export function JupiterPositions() {
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 relative">
                       {logoUrl ? (
-                        <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" />
+                        <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" unoptimized />
                       ) : null}
                     </div>
                     <div>
