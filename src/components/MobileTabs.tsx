@@ -20,6 +20,7 @@ import { PositionsList as ThalaPositionsList } from "./protocols/thala/Positions
 import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
+import { PositionsList as JupiterPositionsList } from "./protocols/jupiter/PositionsList";
 import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { useAptosNativeRestore } from "@/hooks/useAptosNativeRestore";
@@ -348,6 +349,7 @@ function MobileTabsContent() {
                       onRefresh={refreshSolana}
                       isRefreshing={isSolanaLoading}
                     />
+                    <JupiterPositionsList address={solanaAddress} />
                     <SolanaSignMessageButton />
                   </div>
                 )}

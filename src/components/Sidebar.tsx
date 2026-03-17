@@ -28,6 +28,7 @@ import { PositionsList as ThalaPositionsList } from "./protocols/thala/Positions
 import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
+import { PositionsList as JupiterPositionsList } from "./protocols/jupiter/PositionsList";
 import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
@@ -437,6 +438,7 @@ export default function Sidebar() {
                   isRefreshing={isSolanaLoading}
                   hideSmallAssets={hideSmallAssets}
                 />
+                    <JupiterPositionsList address={solanaAddress} />
                 <SolanaSignMessageButton />
               </div>
             )}
