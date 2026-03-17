@@ -201,7 +201,7 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2 flex-wrap">
             {protocol.logoUrl && (
-              <Image src={protocol.logoUrl} alt={protocol.name} width={32} height={32} className="object-contain" />
+              <Image src={protocol.logoUrl} alt={protocol.name} width={32} height={32} className="object-contain" unoptimized />
             )}
             <CardTitle className="text-lg sm:text-xl font-bold flex items-center gap-2">
               {protocol.name} positions
