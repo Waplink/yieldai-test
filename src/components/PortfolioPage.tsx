@@ -639,7 +639,7 @@ export default function PortfolioPage() {
                         isRefreshing={isSolanaLoading}
                         hideSmallAssets={hideSmallAssets}
                       />
-                      <JupiterPositionsList address={solanaAddress} />
+                      <JupiterPositionsList address={solanaAddress} showManageButton={false} />
                       <SolanaSignMessageButton />
                     </div>
                   )}

@@ -9,6 +9,7 @@ import { formatNumber } from "@/lib/utils/numberFormat";
 interface PositionsListProps {
   address?: string;
   onPositionsValueChange?: (value: number) => void;
+  showManageButton?: boolean;
 }
 
 interface JupiterPosition {
@@ -30,7 +31,11 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function PositionsList({ address, onPositionsValueChange }: PositionsListProps) {
+export function PositionsList({
+  address,
+  onPositionsValueChange,
+  showManageButton = true,
+}: PositionsListProps) {
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const protocol = getProtocolByName("Jupiter");
@@ -113,7 +118,7 @@ export function PositionsList({ address, onPositionsValueChange }: PositionsList
       totalValue={totalValue}
       positions={protocolPositions}
       isLoading={false}
-      showManageButton={true}
+      showManageButton={showManageButton}
     />
   );
 }
