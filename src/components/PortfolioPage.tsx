@@ -591,8 +591,8 @@ export default function PortfolioPage() {
                   {/* Solana должна отображаться независимо от Aptos-адреса */}
                   {solanaAddress && (
                     <div className="space-y-2 mt-6">
-                      <div className="w-full mb-3">
-                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <div className="w-full">
+                        <div className="flex h-8 items-center justify-between rounded-md border px-3 py-0">
                           <span className="font-mono text-sm truncate">{formatAddress(solanaAddress)}</span>
                           <div className="flex items-center gap-1">
                             <Button
