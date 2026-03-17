@@ -44,6 +44,15 @@ export function JupiterDepositModal({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    if (token.availableAmount > 0) {
+      setAmount(String(token.availableAmount));
+    } else {
+      setAmount("");
+    }
+  }, [isOpen, token.availableAmount]);
+
   const estimatedDaily = useMemo(() => {
     if (!isValid || !token.apy || token.apy <= 0) return 0;
     return (amountUi * token.apy) / 100 / 365;
@@ -119,9 +128,6 @@ export function JupiterDepositModal({
             </div>
           </div>
 
-          <div className="text-xs text-muted-foreground text-right -mt-2">
-            Available: {formatNumber(token.availableAmount, 6)} {token.symbol}
-          </div>
           {exceeds ? (
             <p className="text-sm text-destructive -mt-2">
               Amount exceeds available balance.
