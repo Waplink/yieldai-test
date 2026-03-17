@@ -61,6 +61,15 @@ export function JupiterPositions() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const rpcEndpoint = useMemo(() => {
+    return (
+      process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+      process.env.SOLANA_RPC_URL ||
+      (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+        ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+        : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234")
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,10 +218,7 @@ export function JupiterPositions() {
         throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
       }
 
-      const endpoint =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        "https://api.mainnet-beta.solana.com";
-      const connection = new Connection(endpoint, "confirmed");
+      const connection = new Connection(rpcEndpoint, "confirmed");
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
       const decoded = atob(txData.data.transaction);
@@ -305,10 +311,7 @@ export function JupiterPositions() {
         throw new Error(txData?.error || `Withdraw prepare failed: ${txResp.status}`);
       }
 
-      const endpoint =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        "https://api.mainnet-beta.solana.com";
-      const connection = new Connection(endpoint, "confirmed");
+      const connection = new Connection(rpcEndpoint, "confirmed");
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
       const decoded = atob(txData.data.transaction);
