@@ -79,6 +79,7 @@ export default function PortfolioPage() {
   const [decibelValue, setDecibelValue] = useState(0);
   const [decibelMainnetValue, setDecibelMainnetValue] = useState(0);
   const [aptreeValue, setAptreeValue] = useState(0);
+  const [jupiterValue, setJupiterValue] = useState(0);
   const [yieldAIValue, setYieldAIValue] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
@@ -179,6 +180,7 @@ export default function PortfolioPage() {
     setDecibelValue(0);
     setDecibelMainnetValue(0);
     setAptreeValue(0);
+    setJupiterValue(0);
     resetChecking();
     setRefreshKey((k) => k + 1);
   }, [loadPortfolio, resetChecking]);
@@ -192,6 +194,12 @@ export default function PortfolioPage() {
       setCheckingProtocols([]);
     }
   }, [loadPortfolio, resolvedAddress]);
+
+  useEffect(() => {
+    if (!solanaAddress) {
+      setJupiterValue(0);
+    }
+  }, [solanaAddress]);
 
   // Handle query parameter to open calculator
   useEffect(() => {
@@ -276,6 +284,9 @@ export default function PortfolioPage() {
   const handleYieldAIValueChange = useCallback((value: number) => {
     setYieldAIValue(value);
   }, []);
+  const handleJupiterValueChange = useCallback((value: number) => {
+    setJupiterValue(value);
+  }, []);
 
   // Считаем сумму по кошельку
   const walletTotal = tokens.reduce((sum, token) => {
@@ -305,6 +316,7 @@ export default function PortfolioPage() {
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;
+  const chartTotalAssets = totalAssets + (solanaTotalValue ?? 0) + jupiterValue;
 
   useEffect(() => {
     setTotalAssetsStore(totalAssets);
@@ -313,6 +325,7 @@ export default function PortfolioPage() {
   // Данные для чарта: кошелек + каждый протокол отдельным сектором
   const chartSectors = [
     { name: 'Wallet', value: walletTotal },
+    { name: 'Solana Wallet', value: solanaTotalValue ?? 0 },
     { name: 'Hyperion', value: hyperionValue },
     { name: 'Echelon', value: echelonValue },
     { name: 'Aries', value: ariesValue },
@@ -328,6 +341,7 @@ export default function PortfolioPage() {
     { name: 'Echo Protocol', value: echoValue },
     { name: 'Decibel', value: decibelTotal },
     { name: 'APTree', value: aptreeValue },
+    { name: 'Jupiter', value: jupiterValue },
     { name: 'AI agent', value: yieldAIValue },
   ];
 
@@ -456,7 +470,7 @@ export default function PortfolioPage() {
 				      <div className="flex items-center justify-center">
 				        <PortfolioChart
 				          data={chartSectors}
-				          totalValue={totalAssets.toString()}
+				          totalValue={chartTotalAssets.toString()}
 				          isLoading={checkingProtocols.length > 0 || isRefreshing}
 				        />
 				      </div>
@@ -645,7 +659,11 @@ export default function PortfolioPage() {
                         isRefreshing={isSolanaLoading}
                         hideSmallAssets={hideSmallAssets}
                       />
-                      <JupiterPositionsList address={solanaAddress} showManageButton={false} />
+                      <JupiterPositionsList
+                        address={solanaAddress}
+                        showManageButton={false}
+                        onPositionsValueChange={handleJupiterValueChange}
+                      />
                       <SolanaSignMessageButton />
                     </div>
                   )}
@@ -662,7 +680,7 @@ export default function PortfolioPage() {
 			  <div className="h-[500px] flex items-center justify-center to-slate-100 dark:from-slate-900 dark:to-slate-800 rounded p-8">
 				<PortfolioChart
 				  data={chartSectors}
-				  totalValue={totalAssets.toString()}
+				  totalValue={chartTotalAssets.toString()}
 				  isLoading={checkingProtocols.length > 0 || isRefreshing}
 				/>
 		      </div>
