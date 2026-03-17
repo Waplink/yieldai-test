@@ -114,7 +114,7 @@ export function PositionsList({ address, onPositionsValueChange }: PositionsList
       totalValue={totalValue}
       positions={protocolPositions}
       isLoading={false}
-      showManageButton={false}
+      showManageButton={true}
     />
   );
 }

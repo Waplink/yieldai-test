@@ -15,6 +15,7 @@ import { EarniumPositionsManaging } from "./protocols/EarniumPositions";
 import { AavePositions } from "./protocols/AavePositions";
 import { MoarPositions } from "./protocols/MoarPositions";
 import { AptreePositions } from "./protocols/AptreePositions";
+import { JupiterPositions } from "./protocols/JupiterPositions";
 import { ThalaPositions } from "./protocols/ThalaPositions";
 import { EchoPositions } from "./protocols/EchoPositions";
 import { DecibelPositions } from "./protocols/DecibelPositions";
@@ -25,6 +26,7 @@ import { useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { ProtocolSocialLinks } from "@/components/ui/protocol-social-links";
 import { AirdropInfoTooltip } from "@/components/ui/airdrop-info-tooltip";
+import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 
 interface ManagePositionsProps {
   protocol: Protocol;
@@ -33,11 +35,15 @@ interface ManagePositionsProps {
 
 export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
   const { account } = useWallet();
+  const { address: solanaAddress } = useSolanaPortfolio();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   const handleRefresh = async () => {
-    if (!account?.address) return;
+    const protocolNameLower = protocol.name.toLowerCase();
+    const isJupiter = protocolNameLower.includes('jupiter');
+    if (!account?.address && !isJupiter) return;
+    if (isJupiter && !solanaAddress) return;
     
     try {
       setIsRefreshing(true);
@@ -94,9 +100,13 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
           description: `${protocol.name} positions refreshed successfully`,
         });
         return;
+      } else if (protocol.name.toLowerCase().includes('jupiter')) {
+        apiPath = 'jupiter';
+        endpoint = 'userPositions';
       }
       
-      const response = await fetch(`/api/protocols/${apiPath}/${endpoint}?address=${account.address}`);
+      const refreshAddress = isJupiter ? String(solanaAddress || '') : String(account?.address || '');
+      const response = await fetch(`/api/protocols/${apiPath}/${endpoint}?address=${encodeURIComponent(refreshAddress)}`);
       
       if (!response.ok) {
         throw new Error(`API returned status ${response.status}`);
@@ -164,6 +174,8 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         return <MoarPositions />;
       case 'aptree':
         return <AptreePositions />;
+      case 'jupiter':
+        return <JupiterPositions />;
       case 'thala':
         return <ThalaPositions />;
       case 'echo protocol':
