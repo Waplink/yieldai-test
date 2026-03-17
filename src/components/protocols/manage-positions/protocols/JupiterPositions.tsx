@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,10 +9,9 @@ import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, Transaction } from "@solana/web3.js";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
+import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
+import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
 
 type JupiterPosition = {
   token?: {
@@ -72,10 +70,8 @@ export function JupiterPositions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<JupiterPosition | null>(null);
-  const [depositAmount, setDepositAmount] = useState("");
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const rpcEndpoint = useMemo(() => {
@@ -154,29 +150,25 @@ export function JupiterPositions() {
 
   const onDepositClick = (position: JupiterPosition) => {
     setSelectedPosition(position);
-    setDepositAmount("");
     setIsDepositOpen(true);
   };
 
   const closeDeposit = () => {
     setIsDepositOpen(false);
     setSelectedPosition(null);
-    setDepositAmount("");
   };
 
   const onWithdrawClick = (position: JupiterPosition) => {
     setSelectedPosition(position);
-    setWithdrawAmount("");
     setIsWithdrawOpen(true);
   };
 
   const closeWithdraw = () => {
     setIsWithdrawOpen(false);
     setSelectedPosition(null);
-    setWithdrawAmount("");
   };
 
-  const handleDeposit = async () => {
+  const handleDeposit = async (amountUi: number) => {
     if (!selectedPosition) return;
     if (!publicKey || !signTransaction) {
       toast({
@@ -187,7 +179,6 @@ export function JupiterPositions() {
       return;
     }
 
-    const amountUi = Number(depositAmount);
     if (!Number.isFinite(amountUi) || amountUi <= 0) {
       toast({
         title: "Invalid amount",
@@ -279,7 +270,7 @@ export function JupiterPositions() {
     }
   };
 
-  const handleWithdraw = async () => {
+  const handleWithdraw = async (amountUi: number) => {
     if (!selectedPosition) return;
     if (!publicKey || !signTransaction) {
       toast({
@@ -290,7 +281,6 @@ export function JupiterPositions() {
       return;
     }
 
-    const amountUi = Number(withdrawAmount);
     if (!Number.isFinite(amountUi) || amountUi <= 0) {
       toast({
         title: "Invalid amount",
@@ -524,87 +514,30 @@ export function JupiterPositions() {
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
       </div>
 
-      <Dialog open={isDepositOpen} onOpenChange={(open) => (open ? setIsDepositOpen(true) : closeDeposit())}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Deposit to Jupiter</DialogTitle>
-            <DialogDescription>
-              Enter amount to deposit {selectedMeta.symbol}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="jupiter-deposit-amount">Amount</Label>
-            <Input
-              id="jupiter-deposit-amount"
-              type="number"
-              min="0"
-              step="any"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              placeholder="0.00"
-            />
-            <div className="text-xs text-muted-foreground">
-              Available: {formatNumber(selectedMeta.amount, 6)} {selectedMeta.symbol}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDeposit} disabled={isDepositing}>
-              Cancel
-            </Button>
-            <Button onClick={handleDeposit} disabled={isDepositing}>
-              {isDepositing ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Deposit"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <JupiterDepositModal
+        isOpen={isDepositOpen}
+        onClose={closeDeposit}
+        onConfirm={handleDeposit}
+        isLoading={isDepositing}
+        token={{
+          symbol: selectedMeta.symbol,
+          logoUrl: selectedPosition?.token?.asset?.logoUrl,
+          availableAmount: selectedMeta.amount,
+          apy: toNumber(selectedPosition?.token?.totalRate, 0) / 100,
+        }}
+      />
 
-      <Dialog open={isWithdrawOpen} onOpenChange={(open) => (open ? setIsWithdrawOpen(true) : closeWithdraw())}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Withdraw from Jupiter</DialogTitle>
-            <DialogDescription>
-              Enter amount to withdraw {selectedMeta.symbol}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="jupiter-withdraw-amount">Amount</Label>
-            <Input
-              id="jupiter-withdraw-amount"
-              type="number"
-              min="0"
-              step="any"
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-              placeholder="0.00"
-            />
-            <div className="text-xs text-muted-foreground">
-              Supplied: {formatNumber(selectedMeta.amount, 6)} {selectedMeta.symbol}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeWithdraw} disabled={isWithdrawing}>
-              Cancel
-            </Button>
-            <Button onClick={handleWithdraw} disabled={isWithdrawing}>
-              {isWithdrawing ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                "Withdraw"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <JupiterWithdrawModal
+        isOpen={isWithdrawOpen}
+        onClose={closeWithdraw}
+        onConfirm={handleWithdraw}
+        isLoading={isWithdrawing}
+        token={{
+          symbol: selectedMeta.symbol,
+          logoUrl: selectedPosition?.token?.asset?.logoUrl,
+          suppliedAmount: selectedMeta.amount,
+        }}
+      />
     </div>
   );
 }
