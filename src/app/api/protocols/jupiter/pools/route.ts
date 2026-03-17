@@ -38,6 +38,7 @@ function mapPoolToInvestment(pool: JupiterPool): InvestmentData {
     borrowAPY: 0,
     token: pool.asset?.address || pool.address,
     protocol: "Jupiter",
+    logoUrl: pool.asset?.logoUrl,
     tvlUSD: totalAssets * price,
   };
 }

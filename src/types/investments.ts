@@ -13,6 +13,7 @@ export interface InvestmentData {
   borrowAPY: number;
   token: string;
   protocol: string;
+  logoUrl?: string;
   // Optional fields for additional data
   dailyVolumeUSD?: number;
   tvlUSD?: number;

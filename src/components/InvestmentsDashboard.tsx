@@ -728,6 +728,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 borrowAPY: typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0,
                 token: pool.token || '',
                 protocol: 'Jupiter',
+                logoUrl: pool.logoUrl || undefined,
                 tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
                 poolType: 'Lending',
               }));
@@ -1071,7 +1072,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
 
                   const tokenInfo = getTokenInfo(bestPool.asset, bestPool.token);
                   const displaySymbol = tokenInfo?.symbol || bestPool.asset;
-                  const logoUrl = tokenInfo?.logoUrl;
+                  const logoUrl = tokenInfo?.logoUrl || bestPool.logoUrl;
                   const protocol = getProtocolByName(bestPool.protocol);
 
                   // Check if this is a DEX pool with two tokens
@@ -1160,7 +1161,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                           className="mt-4 w-full"
                           tokenIn={{
                             symbol: isDex ? (bestPool.token1Info?.symbol || 'Unknown') : displaySymbol,
-                            logo: isDex ? (bestPool.token1Info?.logoUrl || '/file.svg') : (tokenInfo?.logoUrl || '/file.svg'),
+                            logo: isDex ? (bestPool.token1Info?.logoUrl || '/file.svg') : (logoUrl || '/file.svg'),
                             decimals: isDex ? (bestPool.token1Info?.decimals || 8) : (tokenInfo?.decimals || 8),
                             address: bestPool.token
                           }}
@@ -1420,7 +1421,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
 
                     const tokenInfo = getTokenInfo(item.asset, item.token);
                     const displaySymbol = tokenInfo?.symbol || item.asset;
-                    const logoUrl = tokenInfo?.logoUrl;
+                    const logoUrl = tokenInfo?.logoUrl || item.logoUrl;
                     const protocol = getProtocolByName(item.protocol);
 
                     // Check if this is a DEX pool with two or more tokens
@@ -1659,7 +1660,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   className="w-full"
                                   tokenIn={{
                                     symbol: displaySymbol,
-                                    logo: tokenInfo?.logoUrl || '/file.svg',
+                                    logo: logoUrl || '/file.svg',
                                     decimals: tokenInfo?.decimals || 8,
                                     address: item.token
                                   }}
