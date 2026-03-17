@@ -104,7 +104,6 @@ export function PositionsList({ address, onPositionsValueChange }: PositionsList
       }),
     [positions]
   );
-
   if (!protocol || !address) return null;
   if (positions.length === 0) return null;
 

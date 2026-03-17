@@ -41,6 +41,7 @@ export function SolanaWalletCard({
         return !isNaN(value) && value >= 1;
       })
     : tokens;
+  const hiddenCount = tokens.length - filteredTokens.length;
 
   return (
     <div>
@@ -93,6 +94,11 @@ export function SolanaWalletCard({
           <CardContent className="flex-1 overflow-y-auto px-3 pt-0">
             <ScrollArea className="h-full">
               {filteredTokens.length > 0 ? <TokenList tokens={filteredTokens} disableDrag={true} /> : null}
+              {hideSmallAssets && hiddenCount > 0 ? (
+                <div className="text-xs text-muted-foreground py-1 text-right">
+                  {hiddenCount} assets hidden
+                </div>
+              ) : null}
             </ScrollArea>
           </CardContent>
         )}

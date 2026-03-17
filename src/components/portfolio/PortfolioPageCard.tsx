@@ -20,14 +20,25 @@ interface PortfolioPageCardProps {
   tokens: Token[];
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
+  hideSmallAssets?: boolean;
+  onHideSmallAssetsChange?: (value: boolean) => void;
 }
 
-export function PortfolioPageCard({ totalValue, tokens, onRefresh, isRefreshing }: PortfolioPageCardProps) {
+export function PortfolioPageCard({
+  totalValue,
+  tokens,
+  onRefresh,
+  isRefreshing,
+  hideSmallAssets,
+  onHideSmallAssetsChange,
+}: PortfolioPageCardProps) {
   const { isExpanded, toggleSection } = useCollapsible();
-  const [hideSmallAssets, setHideSmallAssets] = useState(true);
+  const [internalHideSmallAssets, setInternalHideSmallAssets] = useState(true);
   const { state, validateDrop, handleDrop } = useDragDrop();
+  const effectiveHideSmallAssets = hideSmallAssets ?? internalHideSmallAssets;
+  const setHideSmallAssets = onHideSmallAssetsChange ?? setInternalHideSmallAssets;
 
-  const filteredTokens = hideSmallAssets 
+  const filteredTokens = effectiveHideSmallAssets
     ? tokens.filter(token => {
         const value = token.value ? parseFloat(token.value) : 0;
         return !isNaN(value) && value >= 1;
@@ -88,7 +99,7 @@ export function PortfolioPageCard({ totalValue, tokens, onRefresh, isRefreshing 
         <div className="flex items-center space-x-2">
           <Checkbox 
             id="hideSmallAssets" 
-            checked={hideSmallAssets}
+            checked={effectiveHideSmallAssets}
             onCheckedChange={(checked) => setHideSmallAssets(checked as boolean)}
           />
           <Label htmlFor="hideSmallAssets" className="text-sm">Hide assets {'<'}1$</Label>

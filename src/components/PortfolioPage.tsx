@@ -83,6 +83,7 @@ export default function PortfolioPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [addressInput, setAddressInput] = useState('');
   const [isYieldCalcOpen, setIsYieldCalcOpen] = useState(false);
+  const [hideSmallAssets, setHideSmallAssets] = useState(true);
   const setTotalAssetsStore = useWalletStore((s) => s.setTotalAssets);
 
   const params = useParams();
@@ -463,6 +464,8 @@ export default function PortfolioPage() {
                             tokens={tokens}
                             onRefresh={handleRefresh}
                             isRefreshing={isRefreshing}
+                            hideSmallAssets={hideSmallAssets}
+                            onHideSmallAssetsChange={setHideSmallAssets}
                           />
                           {checkingProtocols.length > 0 && (
                             <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
@@ -634,7 +637,7 @@ export default function PortfolioPage() {
                         totalValueUsd={solanaTotalValue}
                         onRefresh={refreshSolana}
                         isRefreshing={isSolanaLoading}
-                        hideSmallAssets={false}
+                        hideSmallAssets={hideSmallAssets}
                       />
                       <JupiterPositionsList address={solanaAddress} />
                       <SolanaSignMessageButton />
