@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
@@ -110,6 +110,7 @@ export function DepositButton({
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
   const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
   const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
+  const isJupiterDepositInFlightRef = useRef(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
@@ -316,6 +317,10 @@ export function DepositButton({
   };
 
   const handleJupiterDepositConfirm = async (amountUi: number) => {
+    if (isJupiterDepositInFlightRef.current || isJupiterDepositing) {
+      return;
+    }
+
     if (!tokenIn?.address) {
       toast({
         title: "Token error",
@@ -361,6 +366,7 @@ export function DepositButton({
     }
 
     try {
+      isJupiterDepositInFlightRef.current = true;
       setIsJupiterDepositing(true);
       const txResp = await fetch("/api/protocols/jupiter/deposit", {
         method: "POST",
@@ -412,8 +418,21 @@ export function DepositButton({
       setIsJupiterDialogOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast({ title: "Deposit failed", description: message, variant: "destructive" });
+      const normalized = message.toLowerCase();
+      if (
+        normalized.includes("public_signrawtransaction") &&
+        normalized.includes("already pending")
+      ) {
+        toast({
+          title: "Signature request already pending",
+          description: "Approve or reject the existing wallet request, then try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Deposit failed", description: message, variant: "destructive" });
+      }
     } finally {
+      isJupiterDepositInFlightRef.current = false;
       setIsJupiterDepositing(false);
     }
   };
