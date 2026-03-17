@@ -24,8 +24,13 @@ import {
 } from "@/components/ui/collapsible";
 import { useState, useEffect, useCallback } from "react";
 import { DepositModal } from "./deposit-modal";
+import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
+import { Connection, Transaction } from "@solana/web3.js";
+import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import { useToast } from "@/components/ui/use-toast";
 import {
   useWallet,
   AboutAptosConnect,
@@ -70,10 +75,27 @@ export function DepositButton({
 
   const [isExternalDialogOpen, setIsExternalDialogOpen] = useState(false);
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
+  const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
+  const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
   const { connected } = useWallet();
+  const { publicKey: solanaPublicKey, signTransaction } = useSolanaWallet();
+  const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
+  const { toast } = useToast();
+
+  const isJupiterProtocol = protocol.key === "jupiter";
+  const jupiterMint = tokenIn?.address || "";
+  const jupiterWalletAmount = (() => {
+    if (!jupiterMint) return 0;
+    const token = solanaTokens.find((t) => t.address === jupiterMint);
+    if (!token) return 0;
+    const rawAmount = Number(token.amount);
+    const decimals = Number(token.decimals);
+    if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
+    return rawAmount / Math.pow(10, decimals);
+  })();
 
   // Fetch real APR data for Amnis Finance, Echelon, and Kofi Finance
   useEffect(() => {
@@ -198,6 +220,19 @@ export function DepositButton({
   }, [connected, isWalletDialogOpen]);
 
   const handleClick = () => {
+    if (isJupiterProtocol) {
+      if (!solanaPublicKey || !signTransaction) {
+        toast({
+          title: "Solana wallet required",
+          description: "Connect Solana wallet to deposit to Jupiter.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setIsJupiterDialogOpen(true);
+      return;
+    }
+
     // Если кошелек не подключен, открываем диалог подключения
     if (!connected) {
       setIsWalletDialogOpen(true);
@@ -223,6 +258,101 @@ export function DepositButton({
 
   const handleNativeConfirm = (data: { amount: bigint }) => {
     setIsNativeDialogOpen(false);
+  };
+
+  const handleJupiterDepositConfirm = async (amountUi: number) => {
+    if (!tokenIn?.address) {
+      toast({
+        title: "Token error",
+        description: "Jupiter token address is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!solanaPublicKey || !signTransaction) {
+      toast({
+        title: "Solana wallet required",
+        description: "Connect Solana wallet to deposit to Jupiter.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!Number.isFinite(amountUi) || amountUi <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a valid deposit amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const decimals = tokenIn.decimals || 0;
+    const amountBaseUnits = Math.floor(amountUi * Math.pow(10, decimals));
+    if (!Number.isFinite(amountBaseUnits) || amountBaseUnits <= 0) {
+      toast({
+        title: "Amount too small",
+        description: "Increase amount to meet token precision.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsJupiterDepositing(true);
+      const txResp = await fetch("/api/protocols/jupiter/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset: tokenIn.address,
+          signer: solanaPublicKey.toString(),
+          amount: String(amountBaseUnits),
+        }),
+      });
+      const txData = await txResp.json().catch(() => null);
+      if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+        throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
+      }
+
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        process.env.SOLANA_RPC_URL ||
+        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
+      const connection = new Connection(endpoint, "confirmed");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+      const decoded = atob(txData.data.transaction);
+      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+      const transaction = Transaction.from(serialized);
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = solanaPublicKey;
+
+      const signed = await signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed"
+      );
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      await refreshSolana();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
+      }
+      toast({ title: "Deposit submitted", description: `Deposited ${amountUi} ${tokenIn.symbol}.` });
+      setIsJupiterDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({ title: "Deposit failed", description: message, variant: "destructive" });
+    } finally {
+      setIsJupiterDepositing(false);
+    }
   };
 
   return (
@@ -256,7 +386,7 @@ export function DepositButton({
         </AlertDialogContent>
       </AlertDialog>
 
-      {protocol.depositType === 'native' && tokenIn && tokenIn.address && balance && (
+      {protocol.depositType === 'native' && !isJupiterProtocol && tokenIn && tokenIn.address && balance && (
         <DepositModal
           isOpen={isNativeDialogOpen}
           onClose={() => setIsNativeDialogOpen(false)}
@@ -282,6 +412,22 @@ export function DepositButton({
           }}
           priceUSD={priceUSD || 0}
         poolAddress={poolAddress}
+        />
+      )}
+
+      {isJupiterProtocol && tokenIn && tokenIn.address && (
+        <JupiterDepositModal
+          isOpen={isJupiterDialogOpen}
+          onClose={() => setIsJupiterDialogOpen(false)}
+          onConfirm={handleJupiterDepositConfirm}
+          isLoading={isJupiterDepositing}
+          token={{
+            symbol: tokenIn.symbol,
+            logoUrl: tokenIn.logo,
+            availableAmount: jupiterWalletAmount,
+            apy: protocolAPY,
+            priceUsd: priceUSD || 0,
+          }}
         />
       )}
 
