@@ -19,6 +19,14 @@ import { useWalletStore } from '@/lib/stores/walletStore';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Copy, Check } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { useWallet } from '@aptos-labs/wallet-adapter-react';
+import { buildInitVaultPayload } from '@/lib/protocols/yield-ai/vaultDeposit';
+import { showTransactionSuccessToast } from '@/components/ui/transaction-toast';
+
+/** USDC decimals for converting human-readable amount to on-chain base units */
+const USDC_DECIMALS = 6;
+const DEFAULT_SAFE_MAX_PER_TX_USDC = '10000';
+const DEFAULT_SAFE_MAX_DAILY_USDC = '100000';
 
 interface YieldCalculatorModalProps {
   isOpen: boolean;
@@ -52,10 +60,16 @@ export function YieldCalculatorModal({
   initialAprMode
 }: YieldCalculatorModalProps) {
   const { address, tokens: contextTokens } = useWalletData();
+  const { account, signAndSubmitTransaction } = useWallet();
   // Используем внешние токены, если они переданы, иначе токены из контекста
   const tokens = externalTokens || contextTokens;
   const { fetchPositions, fetchRewards, isDataStale, getTotalValue, positions, lastPositionsUpdate } = useWalletStore();
   const { toast } = useToast();
+
+  const [hasSafe, setHasSafe] = useState<boolean | null>(null);
+  const [safeMaxPerTxUSDC, setSafeMaxPerTxUSDC] = useState(DEFAULT_SAFE_MAX_PER_TX_USDC);
+  const [safeMaxDailyUSDC, setSafeMaxDailyUSDC] = useState(DEFAULT_SAFE_MAX_DAILY_USDC);
+  const [isCreatingSafe, setIsCreatingSafe] = useState(false);
 
   const [apr, setApr] = useState<number>(0);
   const [aprInput, setAprInput] = useState<string>('0.00');
@@ -94,6 +108,31 @@ export function YieldCalculatorModal({
       fetchRewards(address, undefined, true);
     }
   }, [isOpen, address, fetchPositions, fetchRewards]);
+
+  // Check if user already has an AI agent safe (for showing/hiding create-safe UI)
+  useEffect(() => {
+    if (!isOpen || !address) {
+      setHasSafe(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/protocols/yield-ai/safes?owner=${encodeURIComponent(address)}`
+        );
+        const json = await res.json();
+        const list = json?.data?.safeAddresses;
+        const hasAny = Array.isArray(list) && list.length > 0;
+        if (!cancelled) setHasSafe(hasAny);
+      } catch {
+        if (!cancelled) setHasSafe(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, address]);
 
   // Helpers
   const computeWalletTotalFromContext = (walletTokens: any[]) => {
@@ -328,6 +367,80 @@ export function YieldCalculatorModal({
     }
   };
 
+  const handleCreateSafe = async () => {
+    if (!address || !account?.address || !signAndSubmitTransaction) {
+      toast({
+        title: "Wallet required",
+        description: "Connect your Aptos wallet to create an AI agent safe",
+        variant: "destructive",
+      });
+      return;
+    }
+    const maxPerTx = parseFloat(safeMaxPerTxUSDC);
+    const maxDaily = parseFloat(safeMaxDailyUSDC);
+    if (!Number.isFinite(maxPerTx) || maxPerTx <= 0) {
+      toast({
+        title: "Invalid limit",
+        description: "Max per transaction must be a positive number (USDC)",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!Number.isFinite(maxDaily) || maxDaily <= 0) {
+      toast({
+        title: "Invalid limit",
+        description: "Max daily must be a positive number (USDC)",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (maxDaily < maxPerTx) {
+      toast({
+        title: "Invalid limits",
+        description: "Max daily must be at least max per transaction",
+        variant: "destructive",
+      });
+      return;
+    }
+    const maxPerTxBase = BigInt(Math.round(maxPerTx * 10 ** USDC_DECIMALS));
+    const maxDailyBase = BigInt(Math.round(maxDaily * 10 ** USDC_DECIMALS));
+    try {
+      setIsCreatingSafe(true);
+      const payload = buildInitVaultPayload({
+        maxPerTxBaseUnits: maxPerTxBase,
+        maxDailyBaseUnits: maxDailyBase,
+      });
+      const result = await signAndSubmitTransaction({
+        data: {
+          function: payload.function as `${string}::${string}::${string}`,
+          typeArguments: payload.typeArguments,
+          functionArguments: payload.functionArguments,
+        },
+        options: { maxGasAmount: 20000 },
+      });
+      if (result?.hash) {
+        setHasSafe(true);
+        showTransactionSuccessToast({
+          hash: result.hash,
+          title: "AI agent safe created",
+        });
+        window.dispatchEvent(
+          new CustomEvent("refreshPositions", { detail: { protocol: "yield-ai" } })
+        );
+      }
+    } catch (err) {
+      console.error("Create safe failed:", err);
+      const message = err instanceof Error ? err.message : "Transaction failed";
+      toast({
+        title: "Failed to create safe",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingSafe(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto p-6 rounded-2xl w-[calc(100vw-2rem)] sm:w-auto">
@@ -474,6 +587,44 @@ export function YieldCalculatorModal({
                 )}
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Secret: Create AI agent safe (only when wallet connected and no safe yet) */}
+        {address && hasSafe === false && (
+          <div className="mt-4 pt-4 border-t border-border/50 space-y-2 opacity-60 hover:opacity-100 transition-opacity">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Max per tx (USDC)</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={safeMaxPerTxUSDC}
+                  onChange={(e) => setSafeMaxPerTxUSDC(e.target.value.replace(/[^0-9.]/g, ''))}
+                  className="h-8 text-xs"
+                  disabled={isCreatingSafe}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Max daily (USDC)</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={safeMaxDailyUSDC}
+                  onChange={(e) => setSafeMaxDailyUSDC(e.target.value.replace(/[^0-9.]/g, ''))}
+                  className="h-8 text-xs"
+                  disabled={isCreatingSafe}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleCreateSafe}
+              disabled={isCreatingSafe}
+              className="mt-2 w-full text-right text-[11px] text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isCreatingSafe ? 'Creating…' : 'Create AI agent safe'}
+            </button>
           </div>
         )}
       </DialogContent>

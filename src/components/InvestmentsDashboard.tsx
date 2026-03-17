@@ -683,7 +683,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 totalAPY: r.supplyApy ?? 0,
                 depositApy: r.supplyApy ?? 0,
                 borrowAPY: r.borrowApy ?? 0,
-                token: r.underlyingAddress ?? '',
+                token: r.token ?? r.underlyingAddress ?? '',
                 protocol: 'Echo Protocol',
                 poolType: 'Lending',
                 tvlUSD: 0,

@@ -4,6 +4,27 @@ import {
 } from "@/lib/constants/yieldAiVault";
 
 /**
+ * Builds the payload for vault::init_vault (create AI agent safe).
+ * Function: {MODULE}::vault::init_vault
+ * Arguments: max_per_tx (u64), max_daily (u64) in on-chain base units (e.g. USDC 6 decimals).
+ */
+export function buildInitVaultPayload(params: {
+  maxPerTxBaseUnits: bigint | string;
+  maxDailyBaseUnits: bigint | string;
+}): {
+  function: string;
+  typeArguments: string[];
+  functionArguments: string[];
+} {
+  const { maxPerTxBaseUnits, maxDailyBaseUnits } = params;
+  return {
+    function: `${YIELD_AI_VAULT_MODULE}::init_vault`,
+    typeArguments: [],
+    functionArguments: [String(maxPerTxBaseUnits), String(maxDailyBaseUnits)],
+  };
+}
+
+/**
  * Builds the payload for vault::deposit (Yield AI safe).
  * Function: {MODULE}::vault::deposit
  * Arguments: safe_address (address), metadata (address), amount (u64).

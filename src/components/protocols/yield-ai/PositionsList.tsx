@@ -127,10 +127,21 @@ export function PositionsList({
   const [tokensBySafe, setTokensBySafe] = useState<Record<string, Token[]>>({});
   const [moarValueBySafe, setMoarValueBySafe] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const onValueRef = useRef(onPositionsValueChange);
   const onCompleteRef = useRef(onPositionsCheckComplete);
   onValueRef.current = onPositionsValueChange;
   onCompleteRef.current = onPositionsCheckComplete;
+
+  // Refetch safes when refreshPositions event is dispatched for yield-ai (e.g. after create safe)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ protocol?: string }>)?.detail;
+      if (detail?.protocol === "yield-ai") setRefreshTrigger((t) => t + 1);
+    };
+    window.addEventListener("refreshPositions", handler);
+    return () => window.removeEventListener("refreshPositions", handler);
+  }, []);
 
   // Fetch safe addresses for owner
   useEffect(() => {
@@ -159,7 +170,7 @@ export function PositionsList({
     return () => {
       cancelled = true;
     };
-  }, [walletAddress]);
+  }, [walletAddress, refreshTrigger]);
 
   // For each safe: fetch safe-contents, build Token[] with prices
   useEffect(() => {

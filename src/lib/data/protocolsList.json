@@ -428,7 +428,7 @@
     "url": "https://www.aptree.io/earn",
     "logoUrl": "/protocol_ico/aptree.png",
     "description": "Simplified yield access layer on Aptos. Deposit stablecoins into optimized earn strategies.",
-    "depositType": "external",
+    "depositType": "native",
     "depositUrl": "https://www.aptree.io/earn",
     "isDepositEnabled": true,
     "managedType": "native",
