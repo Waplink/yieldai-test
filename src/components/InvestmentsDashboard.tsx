@@ -1151,14 +1151,14 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                             </Tooltip>
                           </TooltipProvider>
                           <div className="shrink-0 flex items-center gap-2 flex-wrap justify-end">
-                            <Badge variant="outline" className="text-xs whitespace-normal break-words max-w-full">{bestPool.protocol}</Badge>
                             <img
                               src={chainLogo.src}
                               alt={chainLogo.alt}
-                              width={14}
-                              height={14}
+                              width={18}
+                              height={18}
                               className="rounded-full shrink-0"
                             />
+                            <Badge variant="outline" className="text-xs whitespace-normal break-words max-w-full">{bestPool.protocol}</Badge>
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
                                 <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-muted/80 transition-colors cursor-help">
@@ -1538,16 +1538,16 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline">
-                              {item.protocol}
-                            </Badge>
                             <img
                               src={chainLogo.src}
                               alt={chainLogo.alt}
-                              width={14}
-                              height={14}
+                              width={18}
+                              height={18}
                               className="rounded-full shrink-0"
                             />
+                            <Badge variant="outline">
+                              {item.protocol}
+                            </Badge>
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
                                 <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-muted/80 transition-colors cursor-help">
