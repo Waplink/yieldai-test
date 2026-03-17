@@ -79,7 +79,7 @@ interface Token {
 
 function getChainLogoForProtocol(protocolName: string): { src: string; alt: string } {
   const protocol = getProtocolByName(protocolName);
-  const isSolana = protocol?.key === "jupiter";
+  const isSolana = (protocol?.name || protocolName).toLowerCase() === "jupiter";
   return isSolana
     ? { src: "/chain_ico/solana.svg", alt: "Solana" }
     : { src: "/chain_ico/aptos.svg", alt: "Aptos" };
