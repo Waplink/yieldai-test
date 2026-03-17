@@ -85,7 +85,7 @@ export function DepositButton({
   const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
   const { toast } = useToast();
 
-  const isJupiterProtocol = protocol.key === "jupiter";
+  const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
   const jupiterMint = tokenIn?.address || "";
   const jupiterWalletAmount = (() => {
     if (!jupiterMint) return 0;
