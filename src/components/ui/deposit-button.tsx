@@ -105,7 +105,6 @@ export function DepositButton({
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
   const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
   const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
-  const [isJupiterBalanceRefreshing, setIsJupiterBalanceRefreshing] = useState(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
@@ -279,14 +278,6 @@ export function DepositButton({
         return;
       }
       setIsJupiterDialogOpen(true);
-      setIsJupiterBalanceRefreshing(true);
-      refreshSolana()
-        .catch((error) => {
-          console.error("[Jupiter][DepositButton] Failed to refresh Solana balances:", error);
-        })
-        .finally(() => {
-          setIsJupiterBalanceRefreshing(false);
-        });
       return;
     }
 
@@ -486,7 +477,6 @@ export function DepositButton({
           onClose={() => setIsJupiterDialogOpen(false)}
           onConfirm={handleJupiterDepositConfirm}
           isLoading={isJupiterDepositing}
-          isBalanceLoading={isJupiterBalanceRefreshing}
           token={{
             symbol: jupiterDisplaySymbol,
             logoUrl: tokenIn.logo,
