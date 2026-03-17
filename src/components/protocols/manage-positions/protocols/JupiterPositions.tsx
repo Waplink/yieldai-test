@@ -63,7 +63,7 @@ function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
 }
 
 export function JupiterPositions() {
-  const { address: solanaAddress, tokens: solanaTokens } = useSolanaPortfolio();
+  const { address: solanaAddress, tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
   const { publicKey, signTransaction } = useSolanaWallet();
   const { toast } = useToast();
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
@@ -264,6 +264,7 @@ export function JupiterPositions() {
         description: `Deposited ${amountUi} ${symbol}.`,
       });
 
+      await refreshSolana();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
       }
@@ -383,6 +384,7 @@ export function JupiterPositions() {
         description: `Withdrew ${amountUi} ${symbol}.`,
       });
 
+      await refreshSolana();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
       }
