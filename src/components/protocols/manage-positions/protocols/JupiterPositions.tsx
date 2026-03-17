@@ -300,7 +300,7 @@ export function JupiterPositions() {
       return;
     }
 
-    const { mint, symbol, amount: suppliedAmount } = selectedMeta;
+    const { mint, symbol, amount: suppliedAmount, decimals } = selectedMeta;
     if (amountUi > suppliedAmount) {
       toast({
         title: "Amount too high",
@@ -319,6 +319,16 @@ export function JupiterPositions() {
       return;
     }
 
+    const amountBaseUnits = Math.floor(amountUi * Math.pow(10, decimals));
+    if (!Number.isFinite(amountBaseUnits) || amountBaseUnits <= 0) {
+      toast({
+        title: "Amount too small",
+        description: "Increase amount to meet token precision.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setIsWithdrawing(true);
 
@@ -328,7 +338,7 @@ export function JupiterPositions() {
         body: JSON.stringify({
           asset: mint,
           signer: publicKey.toString(),
-          amount: withdrawAmount,
+          amount: String(amountBaseUnits),
         }),
       });
 

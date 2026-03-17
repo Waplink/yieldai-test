@@ -26,10 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     const amount = String(body.amount).trim();
-    const amountNum = Number(amount);
-    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+    if (!/^\d+$/.test(amount) || amount === "0") {
       return NextResponse.json(
-        { success: false, error: "Invalid amount. Must be a positive number string." },
+        { success: false, error: "Invalid amount. Must be a positive integer string in base units." },
         { status: 400 }
       );
     }
