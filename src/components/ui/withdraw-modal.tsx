@@ -199,6 +199,7 @@ export function WithdrawModal({
                 width={24}
                 height={24}
                 className="object-contain"
+                unoptimized
               />
             )}
             Withdraw {tokenInfo?.symbol || "Token"}
