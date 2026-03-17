@@ -77,6 +77,14 @@ interface Token {
   logoUrl?: string;
 }
 
+function getChainLogoForProtocol(protocolName: string): { src: string; alt: string } {
+  const protocol = getProtocolByName(protocolName);
+  const isSolana = protocol?.key === "jupiter";
+  return isSolana
+    ? { src: "/chain_ico/solana.svg", alt: "Solana" }
+    : { src: "/chain_ico/aptos.svg", alt: "Aptos" };
+}
+
 export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1074,6 +1082,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   const displaySymbol = tokenInfo?.symbol || bestPool.asset;
                   const logoUrl = tokenInfo?.logoUrl || bestPool.logoUrl;
                   const protocol = getProtocolByName(bestPool.protocol);
+                  const chainLogo = getChainLogoForProtocol(bestPool.protocol);
 
                   // Check if this is a DEX pool with two tokens
                   const isDex = !!(bestPool.token1Info && bestPool.token2Info);
@@ -1143,6 +1152,13 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                           </TooltipProvider>
                           <div className="shrink-0 flex items-center gap-2 flex-wrap justify-end">
                             <Badge variant="outline" className="text-xs whitespace-normal break-words max-w-full">{bestPool.protocol}</Badge>
+                            <Image
+                              src={chainLogo.src}
+                              alt={chainLogo.alt}
+                              width={14}
+                              height={14}
+                              className="rounded-full"
+                            />
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
                                 <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-muted/80 transition-colors cursor-help">
@@ -1423,6 +1439,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                     const displaySymbol = tokenInfo?.symbol || item.asset;
                     const logoUrl = tokenInfo?.logoUrl || item.logoUrl;
                     const protocol = getProtocolByName(item.protocol);
+                    const chainLogo = getChainLogoForProtocol(item.protocol);
 
                     // Check if this is a DEX pool with two or more tokens
                     const isDex = !!(item.token1Info && item.token2Info) || !!(item as any).tokensInfo?.length;
@@ -1524,6 +1541,13 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                             <Badge variant="outline">
                               {item.protocol}
                             </Badge>
+                            <Image
+                              src={chainLogo.src}
+                              alt={chainLogo.alt}
+                              width={14}
+                              height={14}
+                              className="rounded-full"
+                            />
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
                                 <div className="flex items-center justify-center w-5 h-5 rounded-full bg-muted hover:bg-muted/80 transition-colors cursor-help">
