@@ -327,6 +327,14 @@ export function DepositButton({
       });
       return;
     }
+    if (amountUi > jupiterWalletAmount + 1e-12) {
+      toast({
+        title: "Insufficient balance",
+        description: `Available: ${jupiterWalletAmount.toFixed(6)} ${jupiterDisplaySymbol || tokenIn.symbol}.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     const decimals = tokenIn.decimals || 0;
     const amountBaseUnits = Math.floor(amountUi * Math.pow(10, decimals));

@@ -12,6 +12,7 @@ export interface InvestmentData {
   depositApy: number;
   borrowAPY: number;
   token: string;
+  tokenDecimals?: number;
   protocol: string;
   logoUrl?: string;
   // Optional fields for additional data

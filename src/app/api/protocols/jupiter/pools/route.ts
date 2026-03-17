@@ -40,6 +40,7 @@ function mapPoolToInvestment(pool: JupiterPool): InvestmentData {
     depositApy: totalApyPct,
     borrowAPY: 0,
     token: pool.asset?.address || pool.address,
+    tokenDecimals: decimals,
     protocol: "Jupiter",
     logoUrl: pool.asset?.logoUrl,
     tvlUSD: totalAssets * price,

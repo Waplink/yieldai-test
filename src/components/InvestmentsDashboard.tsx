@@ -735,6 +735,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 depositApy: typeof pool.depositApy === 'number' ? pool.depositApy : 0,
                 borrowAPY: typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0,
                 token: pool.token || '',
+                tokenDecimals: typeof pool.tokenDecimals === 'number' ? pool.tokenDecimals : undefined,
                 protocol: 'Jupiter',
                 logoUrl: pool.logoUrl || undefined,
                 tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
@@ -1178,7 +1179,12 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                           tokenIn={{
                             symbol: isDex ? (bestPool.token1Info?.symbol || 'Unknown') : displaySymbol,
                             logo: isDex ? (bestPool.token1Info?.logoUrl || '/file.svg') : (logoUrl || '/file.svg'),
-                            decimals: isDex ? (bestPool.token1Info?.decimals || 8) : (tokenInfo?.decimals || 8),
+                            decimals:
+                              isDex
+                                ? (bestPool.token1Info?.decimals || 8)
+                                : (protocol?.name === 'Jupiter'
+                                    ? (bestPool.tokenDecimals ?? tokenInfo?.decimals ?? 6)
+                                    : (tokenInfo?.decimals || 8)),
                             address: bestPool.token
                           }}
                           balance={BigInt(1000000000)} // TODO: Get real balance
@@ -1685,7 +1691,10 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   tokenIn={{
                                     symbol: displaySymbol,
                                     logo: logoUrl || '/file.svg',
-                                    decimals: tokenInfo?.decimals || 8,
+                                    decimals:
+                                      protocol?.name === 'Jupiter'
+                                        ? (item.tokenDecimals ?? tokenInfo?.decimals ?? 6)
+                                        : (tokenInfo?.decimals || 8),
                                     address: item.token
                                   }}
                                   balance={BigInt(1000000000)} // TODO: Get real balance
