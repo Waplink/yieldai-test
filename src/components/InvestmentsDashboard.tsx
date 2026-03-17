@@ -81,7 +81,7 @@ function getChainLogoForProtocol(protocolName: string): { src: string; alt: stri
   const protocol = getProtocolByName(protocolName);
   const isSolana = (protocol?.name || protocolName).toLowerCase() === "jupiter";
   return isSolana
-    ? { src: "/chain_ico/solana.svg?v=2", alt: "Solana" }
+    ? { src: "/chain_ico/solana.svg?v=3", alt: "Solana" }
     : { src: "/chain_ico/aptos.svg?v=2", alt: "Aptos" };
 }
 
