@@ -64,8 +64,8 @@ export default function ChatPanel() {
 
   const handlePortfolioTracker = () => {
     if (account?.address) {
-      // If wallet is connected, go directly to portfolio page with the address
-      router.push(`/portfolio/${account.address}`);
+      // If wallet is connected, use tracker route (address resolved from wallet connection)
+      router.push('/portfolio/tracker');
     } else {
       // If no wallet connected, go to portfolio input page
       router.push('/portfolio');
