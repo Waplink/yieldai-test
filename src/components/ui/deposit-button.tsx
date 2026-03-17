@@ -63,6 +63,20 @@ interface DepositButtonProps {
   poolAddress?: string;
 }
 
+const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
+  WSOL: "So11111111111111111111111111111111111111112",
+  JUPUSD: "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD",
+  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  EURC: "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+  USDG: "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+  USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
+};
+
+function normalizeMint(value?: string | null): string {
+  return (value ?? "").trim();
+}
+
 export function DepositButton({
   protocol,
   className,
@@ -86,10 +100,23 @@ export function DepositButton({
   const { toast } = useToast();
 
   const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
-  const jupiterMint = tokenIn?.address || "";
+  const jupiterSymbol = (tokenIn?.symbol || "").trim().toUpperCase();
+  const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
+  const jupiterMint = normalizeMint(tokenIn?.address);
+  const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
   const jupiterWalletAmount = (() => {
-    if (!jupiterMint) return 0;
-    const token = solanaTokens.find((t) => t.address === jupiterMint);
+    const resolvedMint = jupiterMint || jupiterMintBySymbol || "";
+    if (!resolvedMint) return 0;
+
+    const token =
+      solanaTokens.find((t) => normalizeMint(t.address) === resolvedMint) ||
+      (jupiterMintBySymbol
+        ? solanaTokens.find((t) => normalizeMint(t.address) === jupiterMintBySymbol)
+        : undefined) ||
+      (jupiterSymbol
+        ? solanaTokens.find((t) => (t.symbol || "").trim().toUpperCase() === jupiterSymbol)
+        : undefined);
+
     if (!token) return 0;
     const rawAmount = Number(token.amount);
     const decimals = Number(token.decimals);
@@ -422,7 +449,7 @@ export function DepositButton({
           onConfirm={handleJupiterDepositConfirm}
           isLoading={isJupiterDepositing}
           token={{
-            symbol: tokenIn.symbol,
+            symbol: jupiterDisplaySymbol,
             logoUrl: tokenIn.logo,
             availableAmount: jupiterWalletAmount,
             apy: protocolAPY,
