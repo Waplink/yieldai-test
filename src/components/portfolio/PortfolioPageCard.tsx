@@ -3,7 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { TokenList } from "@/components/portfolio/TokenList";
 import { Token } from "@/lib/types/token";
 import { useState } from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown, RefreshCw, Copy, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ interface PortfolioPageCardProps {
   isRefreshing?: boolean;
   hideSmallAssets?: boolean;
   onHideSmallAssetsChange?: (value: boolean) => void;
+  walletAddress?: string;
+  explorerUrl?: string;
 }
 
 export function PortfolioPageCard({
@@ -31,6 +33,8 @@ export function PortfolioPageCard({
   isRefreshing,
   hideSmallAssets,
   onHideSmallAssetsChange,
+  walletAddress,
+  explorerUrl,
 }: PortfolioPageCardProps) {
   const { isExpanded, toggleSection } = useCollapsible();
   const [internalHideSmallAssets, setInternalHideSmallAssets] = useState(true);
@@ -93,6 +97,8 @@ export function PortfolioPageCard({
     return "bg-red-50 border-red-200";
   };
 
+  const formatAddress = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-8)}`;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -129,6 +135,35 @@ export function PortfolioPageCard({
           <CollapsibleControls />
         </div>
       </div>
+      {walletAddress && (
+        <div className="w-full mb-3">
+          <div className="flex items-center justify-between rounded-md border px-3 py-2">
+            <span className="font-mono text-sm truncate">{formatAddress(walletAddress)}</span>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (explorerUrl) window.open(explorerUrl, "_blank");
+                }}
+                className="h-8 w-8 p-0"
+                title="View in explorer"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => navigator.clipboard.writeText(walletAddress)}
+                className="h-8 w-8 p-0"
+                title="Copy address"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <Card 
         className={`w-full h-full flex flex-col transition-colors ${getDropZoneClassName()}`}
         onDragOver={handleDragOver}

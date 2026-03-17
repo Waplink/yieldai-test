@@ -5,7 +5,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { AptosPortfolioService } from "@/lib/services/aptos/portfolio";
 import { Token } from "@/lib/types/token";
-import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { PortfolioChart } from './chart/PortfolioChart';
 import {  ArrowLeft, Wallet, Copy, ExternalLink } from 'lucide-react';
@@ -392,45 +391,6 @@ export default function PortfolioPage() {
                       </div>
 			        </div>
 
-					<div className="w-full mb-4 mt-2">
-				      <div className="relative w-full">
-                <Input
-                  value={resolvedAddress ? formatAddress(resolvedAddress) : ''}
-					        readOnly
-					        placeholder="Wallet address"
-					        className="font-mono text-sm h-10 pr-10 w-full truncate"
-				        />
-					    <div className="absolute right-1 top-1 flex gap-1 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 overflow-hidden h-8">
-					      <Button
-					        size="sm"
-					        variant="ghost"
-					        onClick={() => {
-					          if (resolvedAddress) {
-					            window.open(`https://explorer.aptoslabs.com/account/${resolvedAddress}`, '_blank');
-					          }
-					        }}
-					        className="h-8 w-8 p-0 pb-3 cursor-pointer"
-					        title="View on Aptos Explorer"
-					      >
-					        <ExternalLink className="h-4 w-4" />
-					      </Button>
-					      <Button
-					        size="sm"
-					        variant="ghost"
-					        onClick={() => {
-					          if (resolvedAddress) {
-					            navigator.clipboard.writeText(resolvedAddress);
-					          }
-					        }}
-					        className="h-8 w-8 p-0 pb-3 cursor-pointer"
-					        title="Copy address"
-					      >
-					        <Copy className="h-4 w-4" />
-					      </Button>
-					    </div>
-				      </div>
-			        </div>
-
 				    {/* Display ANS name if available */}
 				    {resolvedName && (
 				      <div className="mt-2 px-2">
@@ -463,6 +423,8 @@ export default function PortfolioPage() {
                             isRefreshing={isRefreshing}
                             hideSmallAssets={hideSmallAssets}
                             onHideSmallAssetsChange={setHideSmallAssets}
+                            walletAddress={resolvedAddress}
+                            explorerUrl={resolvedAddress ? `https://explorer.aptoslabs.com/account/${resolvedAddress}` : undefined}
                           />
                           {checkingProtocols.length > 0 && (
                             <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
@@ -629,6 +591,31 @@ export default function PortfolioPage() {
                   {/* Solana должна отображаться независимо от Aptos-адреса */}
                   {solanaAddress && (
                     <div className="space-y-2 mt-6">
+                      <div className="w-full mb-3">
+                        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                          <span className="font-mono text-sm truncate">{formatAddress(solanaAddress)}</span>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => window.open(`https://solscan.io/account/${solanaAddress}`, "_blank")}
+                              className="h-8 w-8 p-0"
+                              title="View on Solscan"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => navigator.clipboard.writeText(solanaAddress)}
+                              className="h-8 w-8 p-0"
+                              title="Copy address"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                       <SolanaWalletCard
                         tokens={solanaTokens}
                         totalValueUsd={solanaTotalValue}
