@@ -63,7 +63,7 @@ function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
 }
 
 export function JupiterPositions() {
-  const { address: solanaAddress } = useSolanaPortfolio();
+  const { address: solanaAddress, tokens: solanaTokens } = useSolanaPortfolio();
   const { publicKey, signTransaction } = useSolanaWallet();
   const { toast } = useToast();
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
@@ -147,6 +147,16 @@ export function JupiterPositions() {
     const mint = p?.token?.asset?.address || "";
     return { decimals, amount, symbol, mint };
   }, [selectedPosition]);
+
+  const selectedWalletAmount = useMemo(() => {
+    if (!selectedMeta.mint) return 0;
+    const walletToken = solanaTokens.find((token) => token.address === selectedMeta.mint);
+    if (!walletToken) return 0;
+    const rawAmount = Number(walletToken.amount);
+    const decimals = Number(walletToken.decimals);
+    if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
+    return rawAmount / Math.pow(10, decimals);
+  }, [selectedMeta.mint, solanaTokens]);
 
   const onDepositClick = (position: JupiterPosition) => {
     setSelectedPosition(position);
@@ -522,7 +532,7 @@ export function JupiterPositions() {
         token={{
           symbol: selectedMeta.symbol,
           logoUrl: selectedPosition?.token?.asset?.logoUrl,
-          availableAmount: selectedMeta.amount,
+          availableAmount: selectedWalletAmount,
           apy: toNumber(selectedPosition?.token?.totalRate, 0) / 100,
         }}
       />
