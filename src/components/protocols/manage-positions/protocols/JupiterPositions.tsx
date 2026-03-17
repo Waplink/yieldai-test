@@ -2,17 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
+import { Connection, Transaction } from "@solana/web3.js";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/use-toast";
 
 type JupiterPosition = {
   token?: {
     totalRate?: string;
     asset?: {
+      address?: string;
       symbol?: string;
       uiSymbol?: string;
       decimals?: number;
@@ -44,9 +51,15 @@ function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
 
 export function JupiterPositions() {
   const { address: solanaAddress } = useSolanaPortfolio();
+  const { publicKey, signTransaction } = useSolanaWallet();
+  const { toast } = useToast();
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<JupiterPosition | null>(null);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
+  const [isDepositing, setIsDepositing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +114,134 @@ export function JupiterPositions() {
       }, 0),
     [positions]
   );
+
+  const selectedMeta = useMemo(() => {
+    const p = selectedPosition;
+    const decimals = toNumber(p?.token?.asset?.decimals, 0);
+    const rawAmount = toNumber(p?.underlyingAssets, 0);
+    const amount = decimals > 0 ? rawAmount / Math.pow(10, decimals) : 0;
+    const symbol = p?.token?.asset?.uiSymbol || p?.token?.asset?.symbol || "Unknown";
+    const mint = p?.token?.asset?.address || "";
+    return { decimals, amount, symbol, mint };
+  }, [selectedPosition]);
+
+  const onDepositClick = (position: JupiterPosition) => {
+    setSelectedPosition(position);
+    setDepositAmount("");
+    setIsDepositOpen(true);
+  };
+
+  const closeDeposit = () => {
+    setIsDepositOpen(false);
+    setSelectedPosition(null);
+    setDepositAmount("");
+  };
+
+  const handleDeposit = async () => {
+    if (!selectedPosition) return;
+    if (!publicKey || !signTransaction) {
+      toast({
+        title: "Wallet not connected",
+        description: "Connect Solana wallet to deposit to Jupiter.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const amountUi = Number(depositAmount);
+    if (!Number.isFinite(amountUi) || amountUi <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a valid deposit amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { decimals, mint, symbol } = selectedMeta;
+    if (!mint) {
+      toast({
+        title: "Token error",
+        description: "Jupiter token address is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const amountBaseUnits = Math.floor(amountUi * Math.pow(10, decimals));
+    if (!Number.isFinite(amountBaseUnits) || amountBaseUnits <= 0) {
+      toast({
+        title: "Amount too small",
+        description: "Increase amount to meet token precision.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsDepositing(true);
+
+      const txResp = await fetch("/api/protocols/jupiter/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset: mint,
+          signer: publicKey.toString(),
+          amount: String(amountBaseUnits),
+        }),
+      });
+
+      const txData = await txResp.json().catch(() => null);
+      if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+        throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
+      }
+
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        "https://api.mainnet-beta.solana.com";
+      const connection = new Connection(endpoint, "confirmed");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+      const decoded = atob(txData.data.transaction);
+      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+      const transaction = Transaction.from(serialized);
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signed = await signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed"
+      );
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      toast({
+        title: "Deposit submitted",
+        description: `Deposited ${amountUi} ${symbol}.`,
+      });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
+      }
+      closeDeposit();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast({
+        title: "Deposit failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsDepositing(false);
+    }
+  };
 
   if (!solanaAddress) {
     return <div className="py-4 text-muted-foreground">Connect Solana wallet to view Jupiter positions.</div>;
@@ -161,9 +302,8 @@ export function JupiterPositions() {
                   </div>
                   <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 4)}</div>
                   <div className="flex gap-2 mt-2 justify-end">
-                    <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="default" className="h-10">
+                    <Button onClick={() => onDepositClick(position)} size="sm" variant="default" className="h-10">
                       Deposit
-                      <ExternalLink className="h-3 w-3" />
                     </Button>
                     <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="outline" className="h-10">
                       Withdraw
@@ -206,9 +346,8 @@ export function JupiterPositions() {
                     </div>
                     <div className="text-sm text-muted-foreground">{formatNumber(amount, 4)}</div>
                     <div className="flex gap-2 mt-2 justify-end">
-                      <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="default" className="h-10">
+                      <Button onClick={() => onDepositClick(position)} size="sm" variant="default" className="h-10">
                         Deposit
-                        <ExternalLink className="h-3 w-3" />
                       </Button>
                       <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="outline" className="h-10">
                         Withdraw
@@ -226,6 +365,47 @@ export function JupiterPositions() {
         <span className="text-xl">Total assets in Jupiter:</span>
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
       </div>
+
+      <Dialog open={isDepositOpen} onOpenChange={(open) => (open ? setIsDepositOpen(true) : closeDeposit())}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Deposit to Jupiter</DialogTitle>
+            <DialogDescription>
+              Enter amount to deposit {selectedMeta.symbol}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="jupiter-deposit-amount">Amount</Label>
+            <Input
+              id="jupiter-deposit-amount"
+              type="number"
+              min="0"
+              step="any"
+              value={depositAmount}
+              onChange={(e) => setDepositAmount(e.target.value)}
+              placeholder="0.00"
+            />
+            <div className="text-xs text-muted-foreground">
+              Available: {formatNumber(selectedMeta.amount, 6)} {selectedMeta.symbol}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDeposit} disabled={isDepositing}>
+              Cancel
+            </Button>
+            <Button onClick={handleDeposit} disabled={isDepositing}>
+              {isDepositing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Deposit"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
