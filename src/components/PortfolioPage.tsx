@@ -626,6 +626,20 @@ export default function PortfolioPage() {
                       </p>
                     </div>
                   )}
+                  {/* Solana должна отображаться независимо от Aptos-адреса */}
+                  {solanaAddress && (
+                    <div className="space-y-2 mt-6">
+                      <SolanaWalletCard
+                        tokens={solanaTokens}
+                        totalValueUsd={solanaTotalValue}
+                        onRefresh={refreshSolana}
+                        isRefreshing={isSolanaLoading}
+                        hideSmallAssets={false}
+                      />
+                      <JupiterPositionsList address={solanaAddress} />
+                      <SolanaSignMessageButton />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -669,20 +683,6 @@ export default function PortfolioPage() {
           return Number.isFinite(depositValue) && depositValue >= 0 ? depositValue : undefined;
         })()}
       />
-      {/* Solana должна отображаться независимо от Aptos-адреса */}
-      {solanaAddress && (
-        <div className="space-y-2 mt-6">
-          <SolanaWalletCard
-            tokens={solanaTokens}
-            totalValueUsd={solanaTotalValue}
-            onRefresh={refreshSolana}
-            isRefreshing={isSolanaLoading}
-            hideSmallAssets={false}
-          />
-          <JupiterPositionsList address={solanaAddress} />
-          <SolanaSignMessageButton />
-        </div>
-      )}
     </CollapsibleProvider>
   );
 }
