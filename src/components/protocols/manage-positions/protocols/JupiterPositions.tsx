@@ -11,6 +11,7 @@ import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 
 type JupiterPosition = {
   token?: {
+    totalRate?: string;
     asset?: {
       symbol?: string;
       uiSymbol?: string;
@@ -124,6 +125,7 @@ export function JupiterPositions() {
           const price = toNumber(position?.token?.asset?.price, 0);
           const value = amount * price;
           const logoUrl = position?.token?.asset?.logoUrl;
+          const aprPct = toNumber(position?.token?.totalRate, 0) / 100;
 
           return (
             <div key={`jupiter-${idx}`} className="p-3 sm:p-4 border-b last:border-b-0">
@@ -148,7 +150,15 @@ export function JupiterPositions() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
+                  <div className="flex items-center justify-end gap-2 mb-1">
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                    >
+                      APR: {formatNumber(aprPct, 2)}%
+                    </Badge>
+                    <div className="text-lg font-bold text-right w-24">{formatCurrency(value, 2)}</div>
+                  </div>
                   <div className="text-base text-muted-foreground font-semibold">{formatNumber(amount, 4)}</div>
                   <div className="flex gap-2 mt-2 justify-end">
                     <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="default" className="h-10">
@@ -185,7 +195,15 @@ export function JupiterPositions() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
+                    <div className="flex items-center justify-end gap-2 mb-1">
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
+                      >
+                        APR: {formatNumber(aprPct, 2)}%
+                      </Badge>
+                      <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
+                    </div>
                     <div className="text-sm text-muted-foreground">{formatNumber(amount, 4)}</div>
                     <div className="flex gap-2 mt-2 justify-end">
                       <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="default" className="h-10">
