@@ -136,7 +136,7 @@ export function PortfolioPageCard({
         </div>
       </div>
       {walletAddress && (
-        <div className="w-full">
+        <div className="w-full mb-2">
           <div className="flex h-8 items-center justify-between rounded-md border px-3 py-0">
             <span className="font-mono text-sm truncate">{formatAddress(walletAddress)}</span>
             <div className="flex items-center gap-1">
