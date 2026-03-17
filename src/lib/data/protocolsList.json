@@ -445,7 +445,7 @@
     "url": "https://jup.ag/lend",
     "logoUrl": "https://jup.ag/favicon.ico",
     "description": "Jupiter Lend protocol on Solana.",
-    "depositType": "external",
+    "depositType": "native",
     "depositUrl": "https://jup.ag/lend",
     "isDepositEnabled": true,
     "managedType": "native",
