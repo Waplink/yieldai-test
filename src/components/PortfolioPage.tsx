@@ -8,7 +8,7 @@ import { Token } from "@/lib/types/token";
 import { Input } from "@/components/ui/input";
 import { Button } from '@/components/ui/button';
 import { PortfolioChart } from './chart/PortfolioChart';
-import {  ArrowLeft, Wallet, Search, Copy, ExternalLink } from 'lucide-react';
+import {  ArrowLeft, Wallet, Copy, ExternalLink } from 'lucide-react';
 import { CollapsibleProvider } from "@/contexts/CollapsibleContext";
 import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { PositionsList as HyperionPositionsList } from "./protocols/hyperion/PositionsList";
@@ -84,7 +84,6 @@ export default function PortfolioPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingProtocols, setCheckingProtocols] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [addressInput, setAddressInput] = useState('');
   const [isYieldCalcOpen, setIsYieldCalcOpen] = useState(false);
   const [hideSmallAssets, setHideSmallAssets] = useState(true);
   const setTotalAssetsStore = useWalletStore((s) => s.setTotalAssets);
@@ -127,19 +126,7 @@ export default function PortfolioPage() {
   }, []);
 
   const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
-
-  const handleSearch = () => {
-    if (addressInput.trim()) {
-      router.push(`/portfolio/${addressInput}`);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
+    return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
   };
 
   const loadPortfolio = useCallback(async () => {
@@ -408,10 +395,9 @@ export default function PortfolioPage() {
 					<div className="w-full mb-4 mt-2">
 				      <div className="relative w-full">
                 <Input
-                  value={addressInput}
-					        onChange={(e) => setAddressInput(e.target.value)}
-					        onKeyDown={handleKeyDown}
-					        placeholder={input}
+                  value={resolvedAddress ? formatAddress(resolvedAddress) : ''}
+					        readOnly
+					        placeholder="Wallet address"
 					        className="font-mono text-sm h-10 pr-10 w-full truncate"
 				        />
 					    <div className="absolute right-1 top-1 flex gap-1 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 overflow-hidden h-8">
@@ -440,15 +426,6 @@ export default function PortfolioPage() {
 					        title="Copy address"
 					      >
 					        <Copy className="h-4 w-4" />
-					      </Button>
-					      <Button
-					        size="sm"
-					        variant="ghost"
-					        onClick={handleSearch}
-					        className="h-8 w-8 p-0 pb-3 cursor-pointer"
-					        title="Search"
-					      >
-					        <Search className="h-4 w-4" />
 					      </Button>
 					    </div>
 				      </div>
