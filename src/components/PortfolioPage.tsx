@@ -324,7 +324,7 @@ export default function PortfolioPage() {
 
   // Данные для чарта: кошелек + каждый протокол отдельным сектором
   const chartSectors = [
-    { name: 'Wallet', value: walletTotal },
+    { name: 'Aptos Wallet', value: walletTotal },
     { name: 'Solana Wallet', value: solanaTotalValue ?? 0 },
     { name: 'Hyperion', value: hyperionValue },
     { name: 'Echelon', value: echelonValue },
