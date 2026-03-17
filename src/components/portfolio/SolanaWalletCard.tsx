@@ -24,6 +24,22 @@ export function SolanaWalletCard({
 }: SolanaWalletCardProps) {
   const { isExpanded, toggleSection } = useCollapsible();
 
+  const getTokenUsdValue = (token: Token): number => {
+    const directValue = Number(token.value);
+    if (Number.isFinite(directValue)) {
+      return directValue;
+    }
+
+    const price = Number(token.price);
+    const rawAmount = Number(token.amount);
+    const decimals = Number(token.decimals);
+    if (!Number.isFinite(price) || !Number.isFinite(rawAmount) || !Number.isFinite(decimals)) {
+      return 0;
+    }
+
+    return (rawAmount / Math.pow(10, decimals)) * price;
+  };
+
   const displayTotal = useMemo(() => {
     // Show spinner if refreshing or if totalValueUsd is null (still calculating)
     if (isRefreshing || totalValueUsd === null) {
@@ -37,8 +53,8 @@ export function SolanaWalletCard({
 
   const filteredTokens = hideSmallAssets
     ? tokens.filter((token) => {
-        const value = token.value ? parseFloat(token.value) : 0;
-        return !isNaN(value) && value >= 1;
+        const value = getTokenUsdValue(token);
+        return Number.isFinite(value) && value >= 1;
       })
     : tokens;
   const hiddenCount = tokens.length - filteredTokens.length;
