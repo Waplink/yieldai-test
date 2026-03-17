@@ -1152,12 +1152,12 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                           </TooltipProvider>
                           <div className="shrink-0 flex items-center gap-2 flex-wrap justify-end">
                             <Badge variant="outline" className="text-xs whitespace-normal break-words max-w-full">{bestPool.protocol}</Badge>
-                            <Image
+                            <img
                               src={chainLogo.src}
                               alt={chainLogo.alt}
                               width={14}
                               height={14}
-                              className="rounded-full"
+                              className="rounded-full shrink-0"
                             />
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
@@ -1541,12 +1541,12 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                             <Badge variant="outline">
                               {item.protocol}
                             </Badge>
-                            <Image
+                            <img
                               src={chainLogo.src}
                               alt={chainLogo.alt}
                               width={14}
                               height={14}
-                              className="rounded-full"
+                              className="rounded-full shrink-0"
                             />
                             {protocol?.airdropInfo && (
                               <AirdropInfoTooltip airdropInfo={protocol.airdropInfo} size="sm">
