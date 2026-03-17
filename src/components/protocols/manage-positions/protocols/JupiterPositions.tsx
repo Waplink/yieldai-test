@@ -35,6 +35,23 @@ function toNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
+      return maybeMessage;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown error";
+    }
+  }
+  return "Unknown error";
+}
+
 function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
   return [...items].sort((a, b) => {
     const da = a.token?.asset?.decimals ?? 0;
@@ -283,7 +300,16 @@ export function JupiterPositions() {
       return;
     }
 
-    const { mint, symbol } = selectedMeta;
+    const { mint, symbol, amount: suppliedAmount } = selectedMeta;
+    if (amountUi > suppliedAmount) {
+      toast({
+        title: "Amount too high",
+        description: `Withdraw amount exceeds supplied balance (${formatNumber(suppliedAmount, 6)} ${symbol}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!mint) {
       toast({
         title: "Token error",
@@ -308,6 +334,10 @@ export function JupiterPositions() {
 
       const txData = await txResp.json().catch(() => null);
       if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+        console.error("[Jupiter][Withdraw] prepare failed", {
+          status: txResp.status,
+          body: txData,
+        });
         throw new Error(txData?.error || `Withdraw prepare failed: ${txResp.status}`);
       }
 
@@ -331,6 +361,10 @@ export function JupiterPositions() {
         "confirmed"
       );
       if (confirmation.value.err) {
+        console.error("[Jupiter][Withdraw] chain confirmation error", {
+          signature,
+          err: confirmation.value.err,
+        });
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
@@ -344,7 +378,11 @@ export function JupiterPositions() {
       }
       closeWithdraw();
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = getErrorMessage(e);
+      console.error("[Jupiter][Withdraw] failed", {
+        message,
+        error: e,
+      });
       toast({
         title: "Withdraw failed",
         description: message,

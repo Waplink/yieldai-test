@@ -57,6 +57,11 @@ export async function POST(request: NextRequest) {
 
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => "");
+      console.error("[Jupiter][Withdraw API] upstream error", {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        body: text,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -84,6 +89,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    console.error("[Jupiter][Withdraw API] internal error", error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }
