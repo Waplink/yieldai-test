@@ -305,6 +305,7 @@ export function DepositModal({
                 width={24}
                 height={24}
                 className="rounded-full"
+                unoptimized
               />
               <DialogTitle>Deposit to {protocol.name}</DialogTitle>
             </div>
@@ -322,6 +323,7 @@ export function DepositModal({
                   width={32}
                   height={32}
                   className="object-contain"
+                  unoptimized
                 />
               </div>
               <span>{displaySymbol}</span>
@@ -335,6 +337,7 @@ export function DepositModal({
                   width={32}
                   height={32}
                   className="object-contain"
+                  unoptimized
                 />
               </div>
               <span>{displayTokenOutSymbol}</span>
@@ -362,6 +365,7 @@ export function DepositModal({
                     width={16}
                     height={16}
                     className="rounded-full"
+                    unoptimized
                   />
                   <span className="text-sm">{displaySymbol}</span>
                   {amountString && (
