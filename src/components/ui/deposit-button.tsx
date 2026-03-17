@@ -77,6 +77,19 @@ function normalizeMint(value?: string | null): string {
   return (value ?? "").trim();
 }
 
+function canonicalJupiterSymbol(value?: string | null): string {
+  const normalized = (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.startsWith("WSOL")) return "WSOL";
+  if (normalized.startsWith("SOL")) return "WSOL";
+  if (normalized.startsWith("USDC")) return "USDC";
+  if (normalized.startsWith("USDT")) return "USDT";
+  if (normalized.startsWith("USDS")) return "USDS";
+  if (normalized.startsWith("USDG")) return "USDG";
+  if (normalized.startsWith("EURC")) return "EURC";
+  if (normalized.startsWith("JUPUSD")) return "JUPUSD";
+  return normalized;
+}
+
 export function DepositButton({
   protocol,
   className,
@@ -100,7 +113,7 @@ export function DepositButton({
   const { toast } = useToast();
 
   const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
-  const jupiterSymbol = (tokenIn?.symbol || "").trim().toUpperCase();
+  const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
@@ -114,7 +127,9 @@ export function DepositButton({
         ? solanaTokens.find((t) => normalizeMint(t.address) === jupiterMintBySymbol)
         : undefined) ||
       (jupiterSymbol
-        ? solanaTokens.find((t) => (t.symbol || "").trim().toUpperCase() === jupiterSymbol)
+        ? solanaTokens.find(
+            (t) => canonicalJupiterSymbol(t.symbol) === jupiterSymbol
+          )
         : undefined);
 
     if (!token) return 0;

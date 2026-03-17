@@ -29,9 +29,12 @@ function mapPoolToInvestment(pool: JupiterPool): InvestmentData {
 
   // Jupiter totalRate is in bps.
   const totalApyPct = toNumber(pool.totalRate, 0) / 100;
+  const displaySymbol = (pool.asset?.symbol || "UNKNOWN").toUpperCase() === "WSOL"
+    ? "SOL"
+    : (pool.asset?.symbol || "UNKNOWN");
 
   return {
-    asset: pool.asset?.symbol || "UNKNOWN",
+    asset: displaySymbol,
     provider: "Jupiter",
     totalAPY: totalApyPct,
     depositApy: totalApyPct,
