@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,8 +29,6 @@ type JupiterPosition = {
   };
   underlyingAssets?: string;
 };
-
-const JUPITER_EARN_URL = "https://jup.ag/lend/earn";
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -60,6 +58,9 @@ export function JupiterPositions() {
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +136,18 @@ export function JupiterPositions() {
     setIsDepositOpen(false);
     setSelectedPosition(null);
     setDepositAmount("");
+  };
+
+  const onWithdrawClick = (position: JupiterPosition) => {
+    setSelectedPosition(position);
+    setWithdrawAmount("");
+    setIsWithdrawOpen(true);
+  };
+
+  const closeWithdraw = () => {
+    setIsWithdrawOpen(false);
+    setSelectedPosition(null);
+    setWithdrawAmount("");
   };
 
   const handleDeposit = async () => {
@@ -243,6 +256,102 @@ export function JupiterPositions() {
     }
   };
 
+  const handleWithdraw = async () => {
+    if (!selectedPosition) return;
+    if (!publicKey || !signTransaction) {
+      toast({
+        title: "Wallet not connected",
+        description: "Connect Solana wallet to withdraw from Jupiter.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const amountUi = Number(withdrawAmount);
+    if (!Number.isFinite(amountUi) || amountUi <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a valid withdraw amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { mint, symbol } = selectedMeta;
+    if (!mint) {
+      toast({
+        title: "Token error",
+        description: "Jupiter token address is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsWithdrawing(true);
+
+      const txResp = await fetch("/api/protocols/jupiter/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset: mint,
+          signer: publicKey.toString(),
+          amount: withdrawAmount,
+        }),
+      });
+
+      const txData = await txResp.json().catch(() => null);
+      if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+        throw new Error(txData?.error || `Withdraw prepare failed: ${txResp.status}`);
+      }
+
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        "https://api.mainnet-beta.solana.com";
+      const connection = new Connection(endpoint, "confirmed");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+      const decoded = atob(txData.data.transaction);
+      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+      const transaction = Transaction.from(serialized);
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signed = await signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed"
+      );
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      toast({
+        title: "Withdraw submitted",
+        description: `Withdrew ${amountUi} ${symbol}.`,
+      });
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
+      }
+      closeWithdraw();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast({
+        title: "Withdraw failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
   if (!solanaAddress) {
     return <div className="py-4 text-muted-foreground">Connect Solana wallet to view Jupiter positions.</div>;
   }
@@ -305,9 +414,8 @@ export function JupiterPositions() {
                     <Button onClick={() => onDepositClick(position)} size="sm" variant="default" className="h-10">
                       Deposit
                     </Button>
-                    <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="outline" className="h-10">
+                    <Button onClick={() => onWithdrawClick(position)} size="sm" variant="outline" className="h-10">
                       Withdraw
-                      <ExternalLink className="h-3 w-3" />
                     </Button>
                   </div>
                 </div>
@@ -349,9 +457,8 @@ export function JupiterPositions() {
                       <Button onClick={() => onDepositClick(position)} size="sm" variant="default" className="h-10">
                         Deposit
                       </Button>
-                      <Button onClick={() => window.open(JUPITER_EARN_URL, "_blank")} size="sm" variant="outline" className="h-10">
+                      <Button onClick={() => onWithdrawClick(position)} size="sm" variant="outline" className="h-10">
                         Withdraw
-                        <ExternalLink className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
@@ -401,6 +508,47 @@ export function JupiterPositions() {
                 </>
               ) : (
                 "Deposit"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isWithdrawOpen} onOpenChange={(open) => (open ? setIsWithdrawOpen(true) : closeWithdraw())}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Withdraw from Jupiter</DialogTitle>
+            <DialogDescription>
+              Enter amount to withdraw {selectedMeta.symbol}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="jupiter-withdraw-amount">Amount</Label>
+            <Input
+              id="jupiter-withdraw-amount"
+              type="number"
+              min="0"
+              step="any"
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+              placeholder="0.00"
+            />
+            <div className="text-xs text-muted-foreground">
+              Supplied: {formatNumber(selectedMeta.amount, 6)} {selectedMeta.symbol}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeWithdraw} disabled={isWithdrawing}>
+              Cancel
+            </Button>
+            <Button onClick={handleWithdraw} disabled={isWithdrawing}>
+              {isWithdrawing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Withdraw"
               )}
             </Button>
           </DialogFooter>
