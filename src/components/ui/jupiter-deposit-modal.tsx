@@ -16,6 +16,7 @@ interface JupiterDepositModalProps {
   onClose: () => void;
   onConfirm: (amountUi: number) => void;
   isLoading?: boolean;
+  isBalanceLoading?: boolean;
   token: {
     symbol: string;
     logoUrl?: string;
@@ -30,6 +31,7 @@ export function JupiterDepositModal({
   onClose,
   onConfirm,
   isLoading = false,
+  isBalanceLoading = false,
   token,
 }: JupiterDepositModalProps) {
   const [amount, setAmount] = useState("");
@@ -120,6 +122,12 @@ export function JupiterDepositModal({
                 <Image src={token.logoUrl} alt={token.symbol} width={16} height={16} className="rounded-full" unoptimized />
               ) : null}
               <span className="text-sm">{token.symbol}</span>
+              {isBalanceLoading ? (
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  updating balance...
+                </span>
+              ) : null}
               {usdValue > 0 ? (
                 <span className="text-sm text-muted-foreground ml-2">
                   ~ ${usdValue.toFixed(2)}
