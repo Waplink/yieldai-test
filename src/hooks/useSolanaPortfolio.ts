@@ -12,7 +12,12 @@ interface SolanaPortfolioState {
   refresh: () => Promise<void>;
 }
 
-export function useSolanaPortfolio(): SolanaPortfolioState {
+interface UseSolanaPortfolioOptions {
+  enabled?: boolean;
+}
+
+export function useSolanaPortfolio(options?: UseSolanaPortfolioOptions): SolanaPortfolioState {
+  const enabled = options?.enabled ?? true;
   // 1) Aptos cross-chain wallet (Trust / derived) — даёт solanaWallet внутри себя.
   const { wallet: aptosWallet } = useAptosWallet();
   // 2) Обычный Solana-адаптер — независимое подключение Solana.
@@ -27,6 +32,15 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
+    if (!enabled) {
+      setAddress(null);
+      addressRef.current = null;
+      setTokens([]);
+      setTotalValueUsd(null);
+      setIsLoading(false);
+      return;
+    }
+
     // Приоритет: если есть Aptos cross-chain (Trust/Phantom) с solanaWallet внутри — считаем это "основным" адресом Solana.
     // Если нет — fallback на обычный Solana-кошелёк из @solana/wallet-adapter-react.
     const derivedAddress = getSolanaWalletAddress(aptosWallet ?? null);
@@ -59,10 +73,11 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
       setTokens([]);
       setTotalValueUsd(null);
     }
-  }, [aptosWallet, solanaPublicKey, solanaConnected, solanaWallet]);
+  }, [enabled, aptosWallet, solanaPublicKey, solanaConnected, solanaWallet]);
 
   // Poll adapter state for Phantom (which doesn't trigger React state updates properly)
   useEffect(() => {
+    if (!enabled) return;
     if (!solanaWallet?.adapter) return;
     
     // If we already have an address, no need to poll
@@ -89,9 +104,16 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [solanaWallet, address]);
+  }, [enabled, solanaWallet, address]);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setTokens([]);
+      setTotalValueUsd(null);
+      setIsLoading(false);
+      return;
+    }
+
     if (!addressRef.current) {
       setTokens([]);
       setTotalValueUsd(null);
@@ -153,27 +175,19 @@ export function useSolanaPortfolio(): SolanaPortfolioState {
       );
     } catch (error) {
       console.error("Error fetching Solana portfolio:", error);
-      // Don't clear tokens on error - keep existing data if available
-      // This prevents UI flickering when there's a temporary network issue
-      if (addressRef.current === currentAddress) {
-        // Only clear if we don't have any tokens yet
-        if (tokens.length === 0) {
-          setTokens([]);
-          setTotalValueUsd(null);
-        }
-      }
+      // Don't clear existing tokens on temporary errors to avoid flaky UI state.
     } finally {
       if (addressRef.current === currentAddress) {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    if (address) {
+    if (enabled && address) {
       refresh();
     }
-  }, [address, refresh]);
+  }, [enabled, address, refresh]);
 
   return {
     address,

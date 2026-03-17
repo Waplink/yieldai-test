@@ -99,6 +99,7 @@ export function DepositButton({
   priceUSD,
   poolAddress,
 }: DepositButtonProps) {
+  const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
 
   const [isExternalDialogOpen, setIsExternalDialogOpen] = useState(false);
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
@@ -109,10 +110,11 @@ export function DepositButton({
   const walletData = useWalletData();
   const { connected } = useWallet();
   const { publicKey: solanaPublicKey, signTransaction } = useSolanaWallet();
-  const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
+  const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio({
+    enabled: isJupiterProtocol,
+  });
   const { toast } = useToast();
 
-  const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const jupiterMint = normalizeMint(tokenIn?.address);
@@ -261,7 +263,7 @@ export function DepositButton({
     }
   }, [connected, isWalletDialogOpen]);
 
-  const handleClick = () => {
+  const handleClick = async () => {
     if (isJupiterProtocol) {
       if (!solanaPublicKey || !signTransaction) {
         toast({
@@ -271,6 +273,9 @@ export function DepositButton({
         });
         return;
       }
+      await refreshSolana().catch((error) => {
+        console.error("[Jupiter][DepositButton] Failed to refresh Solana balances:", error);
+      });
       setIsJupiterDialogOpen(true);
       return;
     }
