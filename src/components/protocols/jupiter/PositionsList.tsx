@@ -83,8 +83,16 @@ export function PositionsList({
     }
 
     load();
+    const handleRefresh: EventListener = (evt) => {
+      const event = evt as CustomEvent<{ protocol?: string }>;
+      if (event?.detail?.protocol === "jupiter") {
+        void load();
+      }
+    };
+    window.addEventListener("refreshPositions", handleRefresh);
     return () => {
       cancelled = true;
+      window.removeEventListener("refreshPositions", handleRefresh);
     };
   }, [address]);
 
