@@ -36,6 +36,7 @@ import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
 import { SolanaWalletCard } from "./portfolio/SolanaWalletCard";
 import { SolanaSignMessageButton } from "./SolanaSignMessageButton";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import { useAptosNativeRestore } from "@/hooks/useAptosNativeRestore";
 
 
 export default function PortfolioPage() {
@@ -54,6 +55,7 @@ export default function PortfolioPage() {
   }, []);
 
   const [tokens, setTokens] = useState<Token[]>([]);
+  const { address: connectedAptosAddress } = useAptosNativeRestore();
   const {
     address: solanaAddress,
     tokens: solanaTokens,
@@ -89,7 +91,9 @@ export default function PortfolioPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const input = params?.address as string;
+  const routeAddress = (params?.address as string | undefined) ?? "";
+  const queryAddress = (searchParams?.get("address") || "").trim();
+  const input = routeAddress || queryAddress || connectedAptosAddress || "";
 
   const { resolvedAddress, resolvedName, isLoading, error } = useAptosAddressResolver(input);
 
