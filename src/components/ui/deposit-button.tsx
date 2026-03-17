@@ -31,6 +31,7 @@ import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, Transaction } from "@solana/web3.js";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
+import { Token as SolanaToken } from "@/lib/types/token";
 import {
   useWallet,
   AboutAptosConnect,
@@ -61,6 +62,8 @@ interface DepositButtonProps {
   balance?: bigint;
   priceUSD?: number;
   poolAddress?: string;
+  solanaTokensOverride?: SolanaToken[];
+  refreshSolanaOverride?: () => Promise<void>;
 }
 
 const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
@@ -98,6 +101,8 @@ export function DepositButton({
   balance,
   priceUSD,
   poolAddress,
+  solanaTokensOverride,
+  refreshSolanaOverride,
 }: DepositButtonProps) {
   const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
 
@@ -110,9 +115,11 @@ export function DepositButton({
   const walletData = useWalletData();
   const { connected } = useWallet();
   const { publicKey: solanaPublicKey, signTransaction, connecting: solanaConnecting } = useSolanaWallet();
-  const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio({
-    enabled: isJupiterProtocol,
+  const { tokens: hookedSolanaTokens, refresh: hookedRefreshSolana } = useSolanaPortfolio({
+    enabled: isJupiterProtocol && !solanaTokensOverride,
   });
+  const solanaTokens = solanaTokensOverride ?? hookedSolanaTokens;
+  const refreshSolana = refreshSolanaOverride ?? hookedRefreshSolana;
   const { toast } = useToast();
 
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);

@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InvestmentsDashboardLoading } from "./InvestmentsDashboardLoading";
 import { DecibelIdeasBlock } from "./decibel-ideas-block";
+import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 
 // Список адресов токенов Echelon, которые нужно исключить из отображения
 const EXCLUDED_ECHELON_TOKENS = [
@@ -92,6 +93,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
   const [showOnlyStablePools, setShowOnlyStablePools] = useState(true);
   const [activeTab, setActiveTab] = useState<"lite" | "pro">("lite");
   const { selectedProtocol, setSelectedProtocol } = useProtocol();
+  const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
 
   // New states for progressive loading
   // Initialize loading states immediately to show tabs and skeletons right away
@@ -1189,6 +1191,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                           }}
                           balance={BigInt(1000000000)} // TODO: Get real balance
                           priceUSD={Number(tokenInfo?.usdPrice || 0)}
+                          solanaTokensOverride={solanaTokens}
+                          refreshSolanaOverride={refreshSolana}
                         />
                       </CardContent>
                     </Card>
@@ -1699,6 +1703,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   }}
                                   balance={BigInt(1000000000)} // TODO: Get real balance
                                   priceUSD={Number(tokenInfo?.usdPrice || 0)}
+                                  solanaTokensOverride={solanaTokens}
+                                  refreshSolanaOverride={refreshSolana}
                                 />
                               )
                             ) : (
