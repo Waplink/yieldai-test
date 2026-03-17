@@ -26,12 +26,16 @@ import { PositionsList as ThalaPositionsList } from "./protocols/thala/Positions
 import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsList";
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
+import { PositionsList as JupiterPositionsList } from "./protocols/jupiter/PositionsList";
 import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { CardTitle } from '@/components/ui/card';
 import { useAptosAddressResolver } from '@/lib/hooks/useAptosAddressResolver';
 import { YieldCalculatorModal } from '@/components/ui/yield-calculator-modal';
 import { useWalletStore } from "@/lib/stores/walletStore";
 import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
+import { SolanaWalletCard } from "./portfolio/SolanaWalletCard";
+import { SolanaSignMessageButton } from "./SolanaSignMessageButton";
+import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 
 
 export default function PortfolioPage() {
@@ -50,6 +54,13 @@ export default function PortfolioPage() {
   }, []);
 
   const [tokens, setTokens] = useState<Token[]>([]);
+  const {
+    address: solanaAddress,
+    tokens: solanaTokens,
+    totalValueUsd: solanaTotalValue,
+    isLoading: isSolanaLoading,
+    refresh: refreshSolana,
+  } = useSolanaPortfolio();
   const [hyperionValue, setHyperionValue] = useState(0);
   const [echelonValue, setEchelonValue] = useState(0);
   const [ariesValue, setAriesValue] = useState(0);
@@ -658,6 +669,20 @@ export default function PortfolioPage() {
           return Number.isFinite(depositValue) && depositValue >= 0 ? depositValue : undefined;
         })()}
       />
+      {/* Solana должна отображаться независимо от Aptos-адреса */}
+      {solanaAddress && (
+        <div className="space-y-2 mt-6">
+          <SolanaWalletCard
+            tokens={solanaTokens}
+            totalValueUsd={solanaTotalValue}
+            onRefresh={refreshSolana}
+            isRefreshing={isSolanaLoading}
+            hideSmallAssets={false}
+          />
+          <JupiterPositionsList address={solanaAddress} />
+          <SolanaSignMessageButton />
+        </div>
+      )}
     </CollapsibleProvider>
   );
 }
