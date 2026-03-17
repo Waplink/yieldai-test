@@ -439,6 +439,23 @@
     "contractAddresses": []
   },
   {
+    "name": "Jupiter",
+    "key": "jupiter",
+    "category": "Lending",
+    "url": "https://jup.ag/lend",
+    "logoUrl": "https://jup.ag/favicon.ico",
+    "description": "Jupiter Lend protocol on Solana.",
+    "depositType": "external",
+    "depositUrl": "https://jup.ag/lend",
+    "isDepositEnabled": true,
+    "managedType": "external",
+    "socialMedia": {
+      "twitter": "https://x.com/JupiterExchange"
+    },
+    "airdrop": "",
+    "contractAddresses": []
+  },
+  {
     "name": "AI agent",
     "key": "yield-ai",
     "category": "Vault",

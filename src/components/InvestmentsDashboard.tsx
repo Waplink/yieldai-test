@@ -100,7 +100,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Moar Market': true,
     'Decibel': true,
     'Echo Protocol': true,
-    'APTree': true
+    'APTree': true,
+    'Jupiter': true
   });
   const [protocolsError, setProtocolsError] = useState<Record<string, string | null>>({});
   const [protocolsData, setProtocolsData] = useState<Record<string, InvestmentData[]>>({});
@@ -117,7 +118,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Moar Market': '/protocol_ico/moar-market-logo-primary.png',
     'Decibel': '/protocol_ico/decibel.png',
     'Echo Protocol': '/protocol_ico/echo.png',
-    'APTree': '/protocol_ico/aptree.png'
+    'APTree': '/protocol_ico/aptree.png',
+    'Jupiter': 'https://jup.ag/favicon.ico'
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -710,6 +712,25 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   poolType: 'Yield'
                 };
               });
+            }
+          },
+          {
+            name: 'Jupiter',
+            url: '/api/protocols/jupiter/pools',
+            logoUrl: 'https://jup.ag/favicon.ico',
+            transform: (data: any) => {
+              const pools = Array.isArray(data?.data) ? data.data : [];
+              return pools.map((pool: any) => ({
+                asset: pool.asset || 'Unknown',
+                provider: 'Jupiter',
+                totalAPY: typeof pool.totalAPY === 'number' ? pool.totalAPY : 0,
+                depositApy: typeof pool.depositApy === 'number' ? pool.depositApy : 0,
+                borrowAPY: typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0,
+                token: pool.token || '',
+                protocol: 'Jupiter',
+                tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
+                poolType: 'Lending',
+              }));
             }
           }
         ];
@@ -1392,7 +1413,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
 
 
                     // Include whitelisted protocols that may not resolve tokenInfo yet.
-                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree';
+                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree' || item.protocol === 'Jupiter';
                   })
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
