@@ -21,8 +21,11 @@ export function PortfolioChart({ data, totalValue, isLoading = false }: Portfoli
   const displayTotalValue =
     typeof totalValue === "string" ? (parseFloat(totalValue) || sum) : sum
   
-  // Keep all positive sectors, including tiny values (e.g. small protocol balances).
-  const chartData: PieChartDatum[] = allData.map((d) => ({ name: d.name, value: d.value }))
+  // Фильтруем по процентам (скрываем менее 1%)
+  const chartData: PieChartDatum[] = allData.filter((d) => {
+    const percent = sum > 0 ? (d.value / sum) * 100 : 0
+    return percent >= 1
+  }).map((d) => ({ name: d.name, value: d.value }))
 
   // Если есть данные, показываем их (даже если идет загрузка)
   if (chartData.length > 0) {
