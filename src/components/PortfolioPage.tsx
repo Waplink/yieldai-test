@@ -91,9 +91,11 @@ export default function PortfolioPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const routeAddress = (params?.address as string | undefined) ?? "";
+  const routeAddress = ((params?.address as string | undefined) ?? "").trim();
   const queryAddress = (searchParams?.get("address") || "").trim();
-  const input = routeAddress || queryAddress || connectedAptosAddress || "";
+  const requestedAddress = routeAddress || queryAddress;
+  const isTrackerMode = requestedAddress.toLowerCase() === "tracker";
+  const input = isTrackerMode ? (connectedAptosAddress || "") : requestedAddress;
 
   const { resolvedAddress, resolvedName, isLoading, error } = useAptosAddressResolver(input);
 
