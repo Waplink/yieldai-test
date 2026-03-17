@@ -536,6 +536,7 @@ export function JupiterPositions() {
           logoUrl: selectedPosition?.token?.asset?.logoUrl,
           availableAmount: selectedWalletAmount,
           apy: toNumber(selectedPosition?.token?.totalRate, 0) / 100,
+          priceUsd: toNumber(selectedPosition?.token?.asset?.price, 0),
         }}
       />
 
