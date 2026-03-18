@@ -162,7 +162,10 @@ export function DepositButton({
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
-  const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
+  const adapterPublicKey =
+    solanaWallet?.adapter?.connected
+      ? ((solanaWallet.adapter.publicKey as PublicKey | null) ?? null)
+      : null;
   const effectiveSolanaAddress = toBase58Address(solanaPublicKey) || toBase58Address(adapterPublicKey);
   const hasSolanaSigner = !!sendTransaction || !!signTransaction;
   const jupiterMint = normalizeMint(tokenIn?.address);

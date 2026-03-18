@@ -48,8 +48,11 @@ export function useSolanaPortfolio(options?: UseSolanaPortfolioOptions): SolanaP
     // Try multiple sources for Solana address:
     // 1. Hook's publicKey (may be out of sync with adapter)
     // 2. Adapter's publicKey directly (more reliable for Phantom)
-    const hookAddress = solanaPublicKey ? solanaPublicKey.toBase58() : null;
-    const adapterAddress = solanaWallet?.adapter?.publicKey?.toBase58() ?? null;
+    const hookAddress = solanaConnected && solanaPublicKey ? solanaPublicKey.toBase58() : null;
+    const adapterAddress =
+      solanaWallet?.adapter?.connected
+        ? (solanaWallet.adapter.publicKey?.toBase58() ?? null)
+        : null;
     const fallbackAddress = hookAddress ?? adapterAddress;
     
     const effectiveAddress = derivedAddress ?? fallbackAddress;
@@ -84,6 +87,7 @@ export function useSolanaPortfolio(options?: UseSolanaPortfolioOptions): SolanaP
     if (address) return;
     
     const checkAdapter = () => {
+      if (!solanaWallet.adapter.connected) return;
       const adapterPk = solanaWallet.adapter.publicKey?.toBase58() ?? null;
       if (adapterPk && adapterPk !== addressRef.current) {
         console.log('[useSolanaPortfolio] Adapter publicKey detected via polling:', adapterPk);
