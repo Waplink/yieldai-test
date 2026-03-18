@@ -475,7 +475,13 @@ export function DepositButton({
       if (jupiterSymbol === "WSOL") {
         const owner = new PublicKey(effectiveSolanaAddress);
         const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
+        const {
+          blockhash: wrapBlockhash,
+          lastValidBlockHeight: wrapLastValidBlockHeight,
+        } = await connection.getLatestBlockhash("confirmed");
         const wrapTx = new Transaction();
+        wrapTx.feePayer = owner;
+        wrapTx.recentBlockhash = wrapBlockhash;
         wrapTx.add(
           createAssociatedTokenAccountIdempotentInstruction(owner, wsolAta, owner, NATIVE_MINT)
         );
@@ -501,7 +507,14 @@ export function DepositButton({
             preflightCommitment: "confirmed",
           });
         }
-        const wrapConfirmation = await connection.confirmTransaction(wrapSignature, "confirmed");
+        const wrapConfirmation = await connection.confirmTransaction(
+          {
+            signature: wrapSignature,
+            blockhash: wrapBlockhash,
+            lastValidBlockHeight: wrapLastValidBlockHeight,
+          },
+          "confirmed"
+        );
         if (wrapConfirmation.value.err) {
           throw new Error(`SOL wrap failed: ${JSON.stringify(wrapConfirmation.value.err)}`);
         }
