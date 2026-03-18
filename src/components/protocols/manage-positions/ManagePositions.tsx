@@ -282,7 +282,7 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="max-h-[65vh] overflow-y-auto overflow-x-hidden pr-1">
         {renderProtocolContent()}
       </CardContent>
     </Card>
