@@ -1,17 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 
 type DepositRequest = {
   asset: string;
   signer: string;
   amount: string;
+  preferLegacyInstruction?: boolean;
 };
 
 type JupiterDepositResponse = {
   transaction?: string;
 };
 
+type JupiterDepositInstructionResponse = {
+  programId: string;
+  accounts: Array<{
+    pubkey: string;
+    isSigner: boolean;
+    isWritable: boolean;
+  }>;
+  data: string;
+};
+
 function isSolanaAddress(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+}
+
+function getRpcEndpoint(): string {
+  return (
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    process.env.SOLANA_RPC_URL ||
+    (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+      ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+      : clusterApiUrl("mainnet-beta"))
+  );
+}
+
+async function buildLegacyTransactionFromInstruction(input: {
+  asset: string;
+  signer: string;
+  amount: string;
+}): Promise<string> {
+  const upstream = await fetch("https://lite-api.jup.ag/lend/v1/earn/deposit-instructions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      asset: input.asset,
+      signer: input.signer,
+      amount: input.amount,
+    }),
+    cache: "no-store",
+  });
+
+  if (!upstream.ok) {
+    const text = await upstream.text().catch(() => "");
+    throw new Error(`Jupiter instruction API error: ${upstream.status} ${upstream.statusText}${text ? ` - ${text}` : ""}`);
+  }
+
+  const payload = (await upstream.json().catch(() => null)) as JupiterDepositInstructionResponse | null;
+  if (!payload?.programId || !Array.isArray(payload.accounts) || !payload?.data) {
+    throw new Error("Invalid instruction response from Jupiter");
+  }
+
+  const instruction = new TransactionInstruction({
+    programId: new PublicKey(payload.programId),
+    keys: payload.accounts.map((account) => ({
+      pubkey: new PublicKey(account.pubkey),
+      isSigner: !!account.isSigner,
+      isWritable: !!account.isWritable,
+    })),
+    data: Buffer.from(payload.data, "base64"),
+  });
+
+  const connection = new Connection(getRpcEndpoint(), "confirmed");
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+
+  const transaction = new Transaction({
+    feePayer: new PublicKey(input.signer),
+    recentBlockhash: blockhash,
+  }).add(instruction);
+
+  return transaction.serialize({
+    requireAllSignatures: false,
+    verifySignatures: false,
+  }).toString("base64");
 }
 
 export async function POST(request: NextRequest) {
@@ -40,6 +115,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (body.preferLegacyInstruction) {
+      const transaction = await buildLegacyTransactionFromInstruction({
+        asset: body.asset,
+        signer: body.signer,
+        amount,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          transaction,
+          asset: body.asset,
+          signer: body.signer,
+          amount,
+        },
+      });
+    }
+
     const upstream = await fetch("https://lite-api.jup.ag/lend/v1/earn/deposit", {
       method: "POST",
       headers: {
@@ -50,7 +143,6 @@ export async function POST(request: NextRequest) {
         asset: body.asset,
         signer: body.signer,
         amount,
-        asLegacyTransaction: true,
       }),
       cache: "no-store",
     });

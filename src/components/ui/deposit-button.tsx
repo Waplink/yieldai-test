@@ -125,7 +125,13 @@ export function DepositButton({
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
   const { connected } = useWallet();
-  const { publicKey: solanaPublicKey, signTransaction, sendTransaction, connecting: solanaConnecting } = useSolanaWallet();
+  const {
+    publicKey: solanaPublicKey,
+    signTransaction,
+    sendTransaction,
+    connecting: solanaConnecting,
+    wallet: solanaWallet,
+  } = useSolanaWallet();
   const { tokens: hookedSolanaTokens, refresh: hookedRefreshSolana } = useSolanaPortfolio({
     enabled: isJupiterProtocol && !solanaTokensOverride,
   });
@@ -135,6 +141,7 @@ export function DepositButton({
 
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
+  const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
   const jupiterWalletAmount = (() => {
@@ -385,6 +392,7 @@ export function DepositButton({
           asset: tokenIn.address,
           signer: solanaPublicKey.toString(),
           amount: String(amountBaseUnits),
+          preferLegacyInstruction: isTrustWallet,
         }),
       });
       const txData = await txResp.json().catch(() => null);
