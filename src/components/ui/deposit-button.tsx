@@ -426,6 +426,14 @@ export function DepositButton({
       });
       return;
     }
+    if (jupiterSymbol === "WSOL") {
+      toast({
+        title: "Open in Jupiter",
+        description: "SOL deposit is temporarily routed via Jupiter Earn for reliability.",
+      });
+      window.open("https://jup.ag/earn", "_blank");
+      return;
+    }
     if (amountUi > jupiterWalletAmount + 1e-12) {
       toast({
         title: "Insufficient balance",
