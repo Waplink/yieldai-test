@@ -48,8 +48,9 @@ export async function GET(request: NextRequest) {
         error: errorMessage,
         tokens: [], // Return empty tokens array instead of failing completely
         totalValueUsd: 0,
+        success: false,
       },
-      { status: 500 },
+      { status: 200 },
     );
   }
 }

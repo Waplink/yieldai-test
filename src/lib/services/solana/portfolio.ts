@@ -23,17 +23,57 @@ export class SolanaPortfolioService {
   private rpcEndpoints: string[];
 
   private constructor() {
-    // List of RPC endpoints to try
-    this.rpcEndpoints = [
+    // Build robust RPC list with key-safe Helius handling.
+    const directEnvEndpoints = [
       process.env.SOLANA_RPC_URL,
       process.env.NEXT_PUBLIC_SOLANA_RPC_URL,
+    ]
+      .filter(Boolean)
+      .map((endpoint) => this.normalizeRpcEndpoint(endpoint as string))
+      .filter(Boolean) as string[];
+    const fallbackHelius = this.buildHeliusEndpointFromKey();
+
+    this.rpcEndpoints = [
+      ...directEnvEndpoints,
+      ...(fallbackHelius ? [fallbackHelius] : []),
       "https://rpc.ankr.com/solana",
-      "https://solana-api.projectserum.com",
       clusterApiUrl("mainnet-beta"),
-    ].filter(Boolean) as string[];
+    ];
+    // Deduplicate while preserving order.
+    this.rpcEndpoints = Array.from(new Set(this.rpcEndpoints));
 
     const endpoint = this.rpcEndpoints[0] || clusterApiUrl("mainnet-beta");
     this.connection = new Connection(endpoint, "confirmed");
+  }
+
+  private buildHeliusEndpointFromKey(): string | null {
+    const apiKey =
+      process.env.SOLANA_RPC_API_KEY ||
+      process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY ||
+      "";
+    if (!apiKey) return null;
+    return `https://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+  }
+
+  private normalizeRpcEndpoint(endpoint: string): string | null {
+    try {
+      const parsed = new URL(endpoint);
+      const isHelius = parsed.hostname.includes("helius-rpc.com");
+      if (!isHelius) return parsed.toString();
+
+      const keyInUrl = parsed.searchParams.get("api-key");
+      if (keyInUrl && keyInUrl.trim().length > 0) return parsed.toString();
+
+      const apiKey =
+        process.env.SOLANA_RPC_API_KEY ||
+        process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY ||
+        "";
+      if (!apiKey) return null;
+      parsed.searchParams.set("api-key", apiKey);
+      return parsed.toString();
+    } catch {
+      return null;
+    }
   }
 
   static getInstance(): SolanaPortfolioService {
