@@ -28,7 +28,7 @@ import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
 import { Token as SolanaToken } from "@/lib/types/token";
@@ -142,6 +142,9 @@ export function DepositButton({
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
+  const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
+  const effectiveSolanaPublicKey = solanaPublicKey ?? adapterPublicKey;
+  const hasSolanaSigner = !!sendTransaction || !!signTransaction;
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
   const jupiterWalletAmount = (() => {
@@ -290,9 +293,16 @@ export function DepositButton({
 
   const handleClick = async () => {
     if (isJupiterProtocol) {
-      if (!solanaPublicKey || (!sendTransaction && !signTransaction)) {
+      if (!effectiveSolanaPublicKey || !hasSolanaSigner) {
         if (solanaConnecting) {
           setIsJupiterDialogOpen(true);
+          return;
+        }
+        if (solanaWallet?.adapter?.connected) {
+          toast({
+            title: "Solana wallet reconnecting",
+            description: "Wallet is connected but not ready yet. Try again in a second.",
+          });
           return;
         }
         toast({
@@ -346,7 +356,14 @@ export function DepositButton({
       });
       return;
     }
-    if (!solanaPublicKey || (!sendTransaction && !signTransaction)) {
+    if (!effectiveSolanaPublicKey || !hasSolanaSigner) {
+      if (solanaWallet?.adapter?.connected) {
+        toast({
+          title: "Solana wallet reconnecting",
+          description: "Wallet is connected but not ready yet. Please retry.",
+        });
+        return;
+      }
       toast({
         title: "Solana wallet required",
         description: "Connect Solana wallet to deposit to Jupiter.",
@@ -390,7 +407,7 @@ export function DepositButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: tokenIn.address,
-          signer: solanaPublicKey.toString(),
+          signer: effectiveSolanaPublicKey.toString(),
           amount: String(amountBaseUnits),
           preferLegacyInstruction: false,
         }),
