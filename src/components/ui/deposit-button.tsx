@@ -28,7 +28,7 @@ import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, Transaction } from "@solana/web3.js";
+import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
 import { Token as SolanaToken } from "@/lib/types/token";
@@ -91,6 +91,11 @@ function canonicalJupiterSymbol(value?: string | null): string {
   if (normalized.startsWith("EURC")) return "EURC";
   if (normalized.startsWith("JUPUSD")) return "JUPUSD";
   return normalized;
+}
+
+function decodeBase64Tx(base64Tx: string): Uint8Array {
+  const decoded = atob(base64Tx);
+  return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
 }
 
 export function DepositButton({
@@ -389,23 +394,24 @@ export function DepositButton({
           ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
           : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
       const connection = new Connection(endpoint, "confirmed");
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const serialized = decodeBase64Tx(txData.data.transaction);
 
-      const decoded = atob(txData.data.transaction);
-      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
-      const transaction = Transaction.from(serialized);
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = solanaPublicKey;
+      let signedSerialized: Uint8Array;
+      try {
+        const v0Tx = VersionedTransaction.deserialize(serialized);
+        const signedV0 = await signTransaction(v0Tx as any);
+        signedSerialized = signedV0.serialize();
+      } catch {
+        const legacyTx = Transaction.from(serialized);
+        const signedLegacy = await signTransaction(legacyTx as any);
+        signedSerialized = signedLegacy.serialize();
+      }
 
-      const signed = await signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signed.serialize(), {
+      const signature = await connection.sendRawTransaction(signedSerialized, {
         skipPreflight: false,
         preflightCommitment: "confirmed",
       });
-      const confirmation = await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        "confirmed"
-      );
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
