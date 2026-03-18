@@ -420,8 +420,8 @@ export function JupiterPositions() {
 
   return (
     <div className="space-y-4 text-base">
-      <ScrollArea className="max-h-[420px]">
-        <div className="pb-4">
+      <ScrollArea className="max-h-[420px] mb-4">
+        <div className="pb-12">
           {positions.map((position, idx) => {
             const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
             const decimals = toNumber(position?.token?.asset?.decimals, 0);
