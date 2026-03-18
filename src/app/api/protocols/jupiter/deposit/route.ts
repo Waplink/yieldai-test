@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
+import { createSyncNativeInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } from "@solana/spl-token";
 
 type DepositRequest = {
   asset: string;
@@ -23,6 +24,9 @@ type JupiterDepositInstructionResponse = {
     data: string;
   }>;
 };
+
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+const JUP_LEND_PROGRAM_ID = "jup3YeL8QhtSx1e253b2FDvsMNC87fDrgQZivbrndc9";
 
 function isSolanaAddress(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
@@ -104,7 +108,37 @@ async function buildLegacyTransactionFromInstruction(input: {
     recentBlockhash: blockhash,
   });
 
+  const signerPubkey = new PublicKey(input.signer);
+  const shouldWrapNativeSol = input.asset === WSOL_MINT;
+  const wrapAmountLamports = Number(input.amount);
+  const shouldAddWrapInstructions =
+    shouldWrapNativeSol &&
+    Number.isFinite(wrapAmountLamports) &&
+    wrapAmountLamports > 0;
+
+  const wsolAta = shouldAddWrapInstructions
+    ? getAssociatedTokenAddressSync(NATIVE_MINT, signerPubkey, false)
+    : null;
+  let wrapInserted = false;
+
   for (const ix of instructions) {
+    if (
+      shouldAddWrapInstructions &&
+      !wrapInserted &&
+      ix.programId === JUP_LEND_PROGRAM_ID &&
+      wsolAta
+    ) {
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey: signerPubkey,
+          toPubkey: wsolAta,
+          lamports: wrapAmountLamports,
+        })
+      );
+      transaction.add(createSyncNativeInstruction(wsolAta));
+      wrapInserted = true;
+    }
+
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
@@ -116,6 +150,17 @@ async function buildLegacyTransactionFromInstruction(input: {
         data: Buffer.from(ix.data || "", "base64"),
       })
     );
+  }
+
+  if (shouldAddWrapInstructions && !wrapInserted && wsolAta) {
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: signerPubkey,
+        toPubkey: wsolAta,
+        lamports: wrapAmountLamports,
+      })
+    );
+    transaction.add(createSyncNativeInstruction(wsolAta));
   }
 
   return transaction.serialize({

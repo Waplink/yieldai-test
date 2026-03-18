@@ -451,7 +451,7 @@ export function DepositButton({
           asset: tokenIn.address,
           signer: effectiveSolanaAddress,
           amount: String(amountBaseUnits),
-          preferLegacyInstruction: false,
+          preferLegacyInstruction: jupiterSymbol === "WSOL",
         }),
       });
       const txData = await txResp.json().catch(() => null);
