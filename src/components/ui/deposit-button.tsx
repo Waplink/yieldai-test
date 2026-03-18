@@ -28,7 +28,13 @@ import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  createSyncNativeInstruction,
+  getAssociatedTokenAddressSync,
+  NATIVE_MINT,
+} from "@solana/spl-token";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
 import { Token as SolanaToken } from "@/lib/types/token";
@@ -456,6 +462,51 @@ export function DepositButton({
     try {
       isJupiterDepositInFlightRef.current = true;
       setIsJupiterDepositing(true);
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        process.env.SOLANA_RPC_URL ||
+        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
+      const connection = new Connection(endpoint, "confirmed");
+
+      // SOL uses dedicated 2-step flow:
+      // 1) wrap SOL -> WSOL (separate transaction), 2) Jupiter deposit.
+      if (jupiterSymbol === "WSOL") {
+        const owner = new PublicKey(effectiveSolanaAddress);
+        const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
+        const wrapTx = new Transaction();
+        wrapTx.add(
+          createAssociatedTokenAccountIdempotentInstruction(owner, wsolAta, owner, NATIVE_MINT)
+        );
+        wrapTx.add(
+          SystemProgram.transfer({
+            fromPubkey: owner,
+            toPubkey: wsolAta,
+            lamports: amountBaseUnits,
+          })
+        );
+        wrapTx.add(createSyncNativeInstruction(wsolAta));
+
+        let wrapSignature: string;
+        if (sendTransaction && !isTrustWallet) {
+          wrapSignature = await sendTransaction(wrapTx as any, connection, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        } else {
+          const signedWrap = await signTransaction!(wrapTx as any);
+          wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        }
+        const wrapConfirmation = await connection.confirmTransaction(wrapSignature, "confirmed");
+        if (wrapConfirmation.value.err) {
+          throw new Error(`SOL wrap failed: ${JSON.stringify(wrapConfirmation.value.err)}`);
+        }
+      }
+
       const txResp = await fetch("/api/protocols/jupiter/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -471,13 +522,6 @@ export function DepositButton({
         throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
       }
 
-      const endpoint =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        process.env.SOLANA_RPC_URL ||
-        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
-      const connection = new Connection(endpoint, "confirmed");
       const serialized = decodeBase64Tx(txData.data.transaction);
 
       const txForWallet = isVersionedTransactionBytes(serialized)
