@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
@@ -420,8 +419,7 @@ export function JupiterPositions() {
 
   return (
     <div className="space-y-4 text-base">
-      <ScrollArea className="max-h-[420px] mb-4">
-        <div className="pb-12">
+      <div className="max-h-[420px] overflow-y-auto overflow-x-hidden mb-4 pb-12">
           {positions.map((position, idx) => {
             const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
             const decimals = toNumber(position?.token?.asset?.decimals, 0);
@@ -521,8 +519,7 @@ export function JupiterPositions() {
               </div>
             );
           })}
-        </div>
-      </ScrollArea>
+      </div>
       <div className="flex items-center justify-between pt-6 pb-6">
         <span className="text-xl">Total assets in Jupiter:</span>
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
