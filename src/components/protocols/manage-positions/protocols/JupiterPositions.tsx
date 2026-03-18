@@ -421,17 +421,18 @@ export function JupiterPositions() {
   return (
     <div className="space-y-4 text-base">
       <ScrollArea className="max-h-[420px]">
-        {positions.map((position, idx) => {
-          const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
-          const decimals = toNumber(position?.token?.asset?.decimals, 0);
-          const amount = toNumber(position?.underlyingAssets, 0) / Math.pow(10, decimals || 0);
-          const price = toNumber(position?.token?.asset?.price, 0);
-          const value = amount * price;
-          const logoUrl = position?.token?.asset?.logoUrl;
-          const aprPct = toNumber(position?.token?.totalRate, 0) / 100;
+        <div className="pb-4">
+          {positions.map((position, idx) => {
+            const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
+            const decimals = toNumber(position?.token?.asset?.decimals, 0);
+            const amount = toNumber(position?.underlyingAssets, 0) / Math.pow(10, decimals || 0);
+            const price = toNumber(position?.token?.asset?.price, 0);
+            const value = amount * price;
+            const logoUrl = position?.token?.asset?.logoUrl;
+            const aprPct = toNumber(position?.token?.totalRate, 0) / 100;
 
-          return (
-            <div key={`jupiter-${idx}`} className="p-3 sm:p-4 border-b last:border-b-0">
+            return (
+              <div key={`jupiter-${idx}`} className="p-3 sm:p-4 border-b last:border-b-0">
               <div className="hidden sm:flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 relative">
@@ -517,9 +518,10 @@ export function JupiterPositions() {
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
       </ScrollArea>
       <div className="flex items-center justify-between pt-6 pb-6">
         <span className="text-xl">Total assets in Jupiter:</span>
