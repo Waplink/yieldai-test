@@ -98,6 +98,11 @@ function decodeBase64Tx(base64Tx: string): Uint8Array {
   return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
 }
 
+function isVersionedTransactionBytes(serialized: Uint8Array): boolean {
+  // Solana versioned transaction starts with a version discriminator bit.
+  return serialized.length > 0 && (serialized[0] & 0x80) !== 0;
+}
+
 export function DepositButton({
   protocol,
   className,
@@ -397,11 +402,11 @@ export function DepositButton({
       const serialized = decodeBase64Tx(txData.data.transaction);
 
       let signedSerialized: Uint8Array;
-      try {
+      if (isVersionedTransactionBytes(serialized)) {
         const v0Tx = VersionedTransaction.deserialize(serialized);
         const signedV0 = await signTransaction(v0Tx as any);
         signedSerialized = signedV0.serialize();
-      } catch {
+      } else {
         const legacyTx = Transaction.from(serialized);
         const signedLegacy = await signTransaction(legacyTx as any);
         signedSerialized = signedLegacy.serialize();
