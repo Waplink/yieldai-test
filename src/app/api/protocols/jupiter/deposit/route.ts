@@ -13,13 +13,15 @@ type JupiterDepositResponse = {
 };
 
 type JupiterDepositInstructionResponse = {
-  programId: string;
-  accounts: Array<{
-    pubkey: string;
-    isSigner: boolean;
-    isWritable: boolean;
+  instructions?: Array<{
+    programId: string;
+    accounts: Array<{
+      pubkey: string;
+      isSigner: boolean;
+      isWritable: boolean;
+    }>;
+    data: string;
   }>;
-  data: string;
 };
 
 function isSolanaAddress(value: string): boolean {
@@ -61,19 +63,10 @@ async function buildLegacyTransactionFromInstruction(input: {
   }
 
   const payload = (await upstream.json().catch(() => null)) as JupiterDepositInstructionResponse | null;
-  if (!payload?.programId || !Array.isArray(payload.accounts) || !payload?.data) {
+  const instructions = payload?.instructions ?? [];
+  if (!Array.isArray(instructions) || instructions.length === 0) {
     throw new Error("Invalid instruction response from Jupiter");
   }
-
-  const instruction = new TransactionInstruction({
-    programId: new PublicKey(payload.programId),
-    keys: payload.accounts.map((account) => ({
-      pubkey: new PublicKey(account.pubkey),
-      isSigner: !!account.isSigner,
-      isWritable: !!account.isWritable,
-    })),
-    data: Buffer.from(payload.data, "base64"),
-  });
 
   const connection = new Connection(getRpcEndpoint(), "confirmed");
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
@@ -81,7 +74,21 @@ async function buildLegacyTransactionFromInstruction(input: {
   const transaction = new Transaction({
     feePayer: new PublicKey(input.signer),
     recentBlockhash: blockhash,
-  }).add(instruction);
+  });
+
+  for (const ix of instructions) {
+    transaction.add(
+      new TransactionInstruction({
+        programId: new PublicKey(ix.programId),
+        keys: ix.accounts.map((account) => ({
+          pubkey: new PublicKey(account.pubkey),
+          isSigner: !!account.isSigner,
+          isWritable: !!account.isWritable,
+        })),
+        data: Buffer.from(ix.data || "", "base64"),
+      })
+    );
+  }
 
   return transaction.serialize({
     requireAllSignatures: false,
