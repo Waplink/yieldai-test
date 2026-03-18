@@ -142,7 +142,6 @@ export function DepositButton({
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
-  const isTrustUnsupportedJupiterToken = isTrustWallet && jupiterSymbol !== "USDC";
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
   const jupiterWalletAmount = (() => {
@@ -361,14 +360,6 @@ export function DepositButton({
         description: "Enter a valid deposit amount.",
         variant: "destructive",
       });
-      return;
-    }
-    if (isTrustUnsupportedJupiterToken) {
-      toast({
-        title: "Open in Jupiter",
-        description: `${jupiterDisplaySymbol || tokenIn.symbol} deposit is unstable in Trust wallet popup. Opening Jupiter Earn instead.`,
-      });
-      window.open("https://jup.ag/earn", "_blank");
       return;
     }
     if (amountUi > jupiterWalletAmount + 1e-12) {
