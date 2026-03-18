@@ -125,7 +125,7 @@ export function DepositButton({
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
   const { connected } = useWallet();
-  const { publicKey: solanaPublicKey, signTransaction, connecting: solanaConnecting } = useSolanaWallet();
+  const { publicKey: solanaPublicKey, signTransaction, sendTransaction, connecting: solanaConnecting } = useSolanaWallet();
   const { tokens: hookedSolanaTokens, refresh: hookedRefreshSolana } = useSolanaPortfolio({
     enabled: isJupiterProtocol && !solanaTokensOverride,
   });
@@ -283,7 +283,7 @@ export function DepositButton({
 
   const handleClick = async () => {
     if (isJupiterProtocol) {
-      if (!solanaPublicKey || !signTransaction) {
+      if (!solanaPublicKey || (!sendTransaction && !signTransaction)) {
         if (solanaConnecting) {
           setIsJupiterDialogOpen(true);
           return;
@@ -339,7 +339,7 @@ export function DepositButton({
       });
       return;
     }
-    if (!solanaPublicKey || !signTransaction) {
+    if (!solanaPublicKey || (!sendTransaction && !signTransaction)) {
       toast({
         title: "Solana wallet required",
         description: "Connect Solana wallet to deposit to Jupiter.",
@@ -401,21 +401,23 @@ export function DepositButton({
       const connection = new Connection(endpoint, "confirmed");
       const serialized = decodeBase64Tx(txData.data.transaction);
 
-      let signedSerialized: Uint8Array;
-      if (isVersionedTransactionBytes(serialized)) {
-        const v0Tx = VersionedTransaction.deserialize(serialized);
-        const signedV0 = await signTransaction(v0Tx as any);
-        signedSerialized = signedV0.serialize();
-      } else {
-        const legacyTx = Transaction.from(serialized);
-        const signedLegacy = await signTransaction(legacyTx as any);
-        signedSerialized = signedLegacy.serialize();
-      }
+      const txForWallet = isVersionedTransactionBytes(serialized)
+        ? VersionedTransaction.deserialize(serialized)
+        : Transaction.from(serialized);
 
-      const signature = await connection.sendRawTransaction(signedSerialized, {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
-      });
+      let signature: string;
+      if (sendTransaction) {
+        signature = await sendTransaction(txForWallet as any, connection, {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+      } else {
+        const signed = await signTransaction!(txForWallet as any);
+        signature = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+      }
       const confirmation = await connection.confirmTransaction(signature, "confirmed");
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
@@ -438,6 +440,11 @@ export function DepositButton({
           title: "Signature request already pending",
           description: "Approve or reject the existing wallet request, then try again.",
           variant: "destructive",
+        });
+      } else if (normalized.includes("user rejected")) {
+        toast({
+          title: "Transaction cancelled",
+          description: "Request was rejected in wallet.",
         });
       } else {
         toast({ title: "Deposit failed", description: message, variant: "destructive" });
