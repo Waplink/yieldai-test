@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
         asset: body.asset,
         signer: body.signer,
         amount,
+        asLegacyTransaction: true,
       }),
       cache: "no-store",
     });
