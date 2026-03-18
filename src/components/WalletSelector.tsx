@@ -79,10 +79,16 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
   const crossChainSolanaAddress = useMemo(() => getSolanaWalletAddress(wallet), [wallet]);
   
   // Direct Solana address (from Solana adapter)
-  const directSolanaAddress = useMemo(() => solanaPublicKey?.toBase58() ?? null, [solanaPublicKey]);
+  const directSolanaAddress = useMemo(() => {
+    if (!solanaConnected || !solanaPublicKey) return null;
+    return solanaPublicKey.toBase58();
+  }, [solanaConnected, solanaPublicKey]);
   
-  // Also check adapter state directly for Phantom
-  const adapterSolanaAddress = useMemo(() => solanaWallet?.adapter?.publicKey?.toBase58() ?? null, [solanaWallet]);
+  // Also check adapter state directly for wallets where hook state can lag.
+  const adapterSolanaAddress = useMemo(() => {
+    if (!solanaWallet?.adapter?.connected) return null;
+    return solanaWallet.adapter.publicKey?.toBase58() ?? null;
+  }, [solanaWallet]);
   
   // Polled address state for Phantom (which doesn't trigger React updates properly)
   const [polledSolanaAddress, setPolledSolanaAddress] = useState<string | null>(null);
@@ -117,6 +123,10 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
     }
     
     const checkAdapter = () => {
+      if (!solanaWallet.adapter.connected) {
+        setPolledSolanaAddress(null);
+        return;
+      }
       const adapterPk = solanaWallet.adapter.publicKey?.toBase58() ?? null;
       if (adapterPk && adapterPk !== polledSolanaAddress) {
         console.log('[WalletSelector] Adapter publicKey detected via polling:', adapterPk);
@@ -246,9 +256,21 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
       if (aptosConnected) {
         await disconnect();
       }
-      if (solanaConnected) {
-        await disconnectSolana();
+      if (solanaConnected || solanaWallet?.adapter?.connected || !!solanaAddress) {
+        try {
+          await disconnectSolana();
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          const name = (error as { name?: string })?.name;
+          const isBenign =
+            name === "WalletDisconnectedError" ||
+            name === "WalletNotConnectedError" ||
+            msg.includes("WalletDisconnectedError") ||
+            msg.includes("WalletNotConnectedError");
+          if (!isBenign) throw error;
+        }
       }
+      setPolledSolanaAddress(null);
       toast({
         title: "Success",
         description: "Wallet disconnected successfully",
@@ -260,7 +282,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
         description: error instanceof Error ? error.message : "Failed to disconnect wallet",
       });
     }
-  }, [aptosConnected, solanaConnected, disconnect, disconnectSolana, toast]);
+  }, [aptosConnected, solanaConnected, solanaWallet, solanaAddress, disconnect, disconnectSolana, toast]);
 
   // Handler for disconnecting only Solana (mirrors /bridge handleDisconnectSolana)
   const handleDisconnectSolanaOnly = useCallback(async () => {
@@ -312,9 +334,21 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
       }
       
       // Disconnect Solana
-      if (solanaConnected) {
-        await disconnectSolana();
+      if (solanaConnected || solanaWallet?.adapter?.connected || !!solanaAddress) {
+        try {
+          await disconnectSolana();
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          const name = (error as { name?: string })?.name;
+          const isBenign =
+            name === "WalletDisconnectedError" ||
+            name === "WalletNotConnectedError" ||
+            msg.includes("WalletDisconnectedError") ||
+            msg.includes("WalletNotConnectedError");
+          if (!isBenign) throw error;
+        }
       }
+      setPolledSolanaAddress(null);
       
       // Clean up localStorage
       if (typeof window !== "undefined") {
@@ -340,7 +374,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
         description: error instanceof Error ? error.message : "Failed to disconnect Solana wallet",
       });
     }
-  }, [solanaConnected, aptosConnected, wallet, disconnectSolana, disconnect, toast]);
+  }, [solanaConnected, solanaWallet, solanaAddress, aptosConnected, wallet, disconnectSolana, disconnect, toast]);
 
   // Handler for disconnecting only Aptos (mirrors /bridge handleDisconnectAptos)
   const handleDisconnectAptosOnly = useCallback(async () => {
