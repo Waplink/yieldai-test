@@ -103,6 +103,26 @@ function isVersionedTransactionBytes(serialized: Uint8Array): boolean {
   return serialized.length > 0 && (serialized[0] & 0x80) !== 0;
 }
 
+function toBase58Address(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof (value as { toBase58?: () => string }).toBase58 === "function") {
+    try {
+      return (value as { toBase58: () => string }).toBase58();
+    } catch {
+      // noop
+    }
+  }
+  if (typeof (value as { toString?: () => string }).toString === "function") {
+    try {
+      return (value as { toString: () => string }).toString();
+    } catch {
+      // noop
+    }
+  }
+  return "";
+}
+
 export function DepositButton({
   protocol,
   className,
@@ -143,7 +163,7 @@ export function DepositButton({
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
-  const effectiveSolanaPublicKey = solanaPublicKey ?? adapterPublicKey;
+  const effectiveSolanaAddress = toBase58Address(solanaPublicKey) || toBase58Address(adapterPublicKey);
   const hasSolanaSigner = !!sendTransaction || !!signTransaction;
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
@@ -293,7 +313,7 @@ export function DepositButton({
 
   const handleClick = async () => {
     if (isJupiterProtocol) {
-      if (!effectiveSolanaPublicKey || !hasSolanaSigner) {
+      if (!effectiveSolanaAddress || !hasSolanaSigner) {
         if (solanaConnecting) {
           setIsJupiterDialogOpen(true);
           return;
@@ -356,7 +376,7 @@ export function DepositButton({
       });
       return;
     }
-    if (!effectiveSolanaPublicKey || !hasSolanaSigner) {
+    if (!effectiveSolanaAddress || !hasSolanaSigner) {
       if (solanaWallet?.adapter?.connected) {
         toast({
           title: "Solana wallet reconnecting",
@@ -407,7 +427,7 @@ export function DepositButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: tokenIn.address,
-          signer: effectiveSolanaPublicKey.toString(),
+          signer: effectiveSolanaAddress,
           amount: String(amountBaseUnits),
           preferLegacyInstruction: false,
         }),
