@@ -168,6 +168,8 @@ export function DepositButton({
       : null;
   const effectiveSolanaAddress = toBase58Address(solanaPublicKey) || toBase58Address(adapterPublicKey);
   const hasSolanaSigner = !!sendTransaction || !!signTransaction;
+  const solanaAdapterIdentity = `${solanaWallet?.adapter?.name || "unknown"}:${effectiveSolanaAddress || "no-address"}:${solanaWallet?.adapter?.connected ? "connected" : "disconnected"}`;
+  const prevSolanaAdapterIdentityRef = useRef<string>(solanaAdapterIdentity);
   const jupiterMint = normalizeMint(tokenIn?.address);
   const jupiterMintBySymbol = JUPITER_MINT_BY_SYMBOL[jupiterSymbol];
   const jupiterWalletAmount = (() => {
@@ -314,6 +316,16 @@ export function DepositButton({
     }
   }, [connected, isWalletDialogOpen]);
 
+  // Reset local Jupiter flow state when active Solana adapter identity changes.
+  // This prevents stale signer/in-flight state after switching wallets (Trust <-> Phantom).
+  useEffect(() => {
+    if (prevSolanaAdapterIdentityRef.current !== solanaAdapterIdentity) {
+      isJupiterDepositInFlightRef.current = false;
+      setIsJupiterDepositing(false);
+      prevSolanaAdapterIdentityRef.current = solanaAdapterIdentity;
+    }
+  }, [solanaAdapterIdentity]);
+
   const handleClick = async () => {
     if (isJupiterProtocol) {
       if (!effectiveSolanaAddress || !hasSolanaSigner) {
@@ -332,6 +344,13 @@ export function DepositButton({
           title: "Solana wallet required",
           description: "Connect Solana wallet to deposit to Jupiter.",
           variant: "destructive",
+        });
+        return;
+      }
+      if (!solanaWallet?.adapter?.connected) {
+        toast({
+          title: "Solana wallet reconnecting",
+          description: "Wallet adapter is not fully ready yet. Please retry.",
         });
         return;
       }

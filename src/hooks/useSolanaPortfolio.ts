@@ -55,7 +55,14 @@ export function useSolanaPortfolio(options?: UseSolanaPortfolioOptions): SolanaP
         : null;
     const fallbackAddress = hookAddress ?? adapterAddress;
     
-    const effectiveAddress = derivedAddress ?? fallbackAddress;
+    // IMPORTANT: when a direct Solana adapter is connected (Phantom/Solflare/Trust),
+    // it should take priority over the Aptos-derived cross-chain address.
+    // Otherwise, switching wallets can leave a stale address from previous adapter.
+    const hasDirectSolanaSession =
+      !!solanaConnected || !!solanaWallet?.adapter?.connected;
+    const effectiveAddress = hasDirectSolanaSession
+      ? (fallbackAddress ?? derivedAddress)
+      : (derivedAddress ?? fallbackAddress);
 
     console.log('[useSolanaPortfolio] Address detection:', {
       aptosWalletName: aptosWallet?.name ?? null,
