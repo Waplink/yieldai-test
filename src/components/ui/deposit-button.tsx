@@ -75,6 +75,7 @@ const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
   USDG: "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
   USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
 };
+const SOL_FEE_RESERVE_UI = 0.003;
 
 function normalizeMint(value?: string | null): string {
   return (value ?? "").trim();
@@ -422,12 +423,15 @@ export function DepositButton({
       return;
     }
     if (jupiterSymbol === "WSOL") {
-      toast({
-        title: "Open in Jupiter",
-        description: "SOL deposit is temporarily routed via Jupiter Earn for reliability.",
-      });
-      window.open("https://jup.ag/earn", "_blank");
-      return;
+      const maxSpendableSol = Math.max(0, jupiterWalletAmount - SOL_FEE_RESERVE_UI);
+      if (amountUi > maxSpendableSol + 1e-12) {
+        toast({
+          title: "Leave SOL for fees",
+          description: `For SOL deposits, keep about ${SOL_FEE_RESERVE_UI} SOL for network fees. Max now: ${maxSpendableSol.toFixed(6)} SOL.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     if (amountUi > jupiterWalletAmount + 1e-12) {
       toast({
