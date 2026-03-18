@@ -392,7 +392,7 @@ export function DepositButton({
           asset: tokenIn.address,
           signer: solanaPublicKey.toString(),
           amount: String(amountBaseUnits),
-          preferLegacyInstruction: isTrustWallet,
+          preferLegacyInstruction: false,
         }),
       });
       const txData = await txResp.json().catch(() => null);
@@ -414,7 +414,7 @@ export function DepositButton({
         : Transaction.from(serialized);
 
       let signature: string;
-      if (sendTransaction) {
+      if (sendTransaction && !isTrustWallet) {
         signature = await sendTransaction(txForWallet as any, connection, {
           skipPreflight: false,
           preflightCommitment: "confirmed",
