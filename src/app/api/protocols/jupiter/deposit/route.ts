@@ -29,13 +29,41 @@ function isSolanaAddress(value: string): boolean {
 }
 
 function getRpcEndpoint(): string {
-  return (
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+  const directUrl =
     process.env.SOLANA_RPC_URL ||
-    (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-      ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-      : clusterApiUrl("mainnet-beta"))
-  );
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    "";
+  const apiKey =
+    process.env.SOLANA_RPC_API_KEY ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY ||
+    "";
+
+  if (directUrl) {
+    try {
+      const parsed = new URL(directUrl);
+      const isHelius = parsed.hostname.includes("helius-rpc.com");
+      if (isHelius) {
+        const keyFromUrl = parsed.searchParams.get("api-key");
+        if (keyFromUrl && keyFromUrl.trim().length > 0) {
+          return parsed.toString();
+        }
+        if (apiKey) {
+          parsed.searchParams.set("api-key", apiKey);
+          return parsed.toString();
+        }
+        return clusterApiUrl("mainnet-beta");
+      }
+      return parsed.toString();
+    } catch {
+      // ignore malformed URL and fallback below
+    }
+  }
+
+  if (apiKey) {
+    return `https://mainnet.helius-rpc.com/?api-key=${apiKey}`;
+  }
+
+  return clusterApiUrl("mainnet-beta");
 }
 
 async function buildLegacyTransactionFromInstruction(input: {
