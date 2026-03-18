@@ -75,6 +75,7 @@ const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
   USDG: "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
   USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
 };
+const SOL_DEPOSIT_RESERVE = 0.003;
 
 function normalizeMint(value?: string | null): string {
   return (value ?? "").trim();
@@ -191,7 +192,11 @@ export function DepositButton({
     const rawAmount = Number(token.amount);
     const decimals = Number(token.decimals);
     if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
-    return rawAmount / Math.pow(10, decimals);
+    const amountUi = rawAmount / Math.pow(10, decimals);
+    if (jupiterSymbol === "WSOL") {
+      return Math.max(0, amountUi - SOL_DEPOSIT_RESERVE);
+    }
+    return amountUi;
   })();
 
   // Fetch real APR data for Amnis Finance, Echelon, and Kofi Finance
@@ -451,7 +456,7 @@ export function DepositButton({
           asset: tokenIn.address,
           signer: effectiveSolanaAddress,
           amount: String(amountBaseUnits),
-          preferLegacyInstruction: jupiterSymbol === "WSOL",
+          preferLegacyInstruction: false,
         }),
       });
       const txData = await txResp.json().catch(() => null);
