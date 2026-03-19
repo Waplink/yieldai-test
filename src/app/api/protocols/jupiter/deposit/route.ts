@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 
 type DepositRequest = {
   asset: string;
@@ -23,6 +29,11 @@ type JupiterDepositInstructionResponse = {
     data: string;
   }>;
 };
+
+const TOKEN_2022_JUPITER_MINTS = new Set([
+  "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH", // USDG
+  "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA", // USDS
+]);
 
 function isSolanaAddress(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
@@ -104,11 +115,45 @@ async function buildLegacyTransactionFromInstruction(input: {
     recentBlockhash: blockhash,
   });
 
+  const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
+  const mintPk = new PublicKey(input.asset);
+  const ownerPk = new PublicKey(input.signer);
+  const legacyAta = getAssociatedTokenAddressSync(
+    mintPk,
+    ownerPk,
+    false,
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  ).toBase58();
+  const token2022Ata = getAssociatedTokenAddressSync(
+    mintPk,
+    ownerPk,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  ).toBase58();
+  const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
+  const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
+  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
+
   for (const ix of instructions) {
+    const patchedAccounts =
+      isToken2022Mint && ix.programId === ataProgramIdStr
+        ? ix.accounts.map((account) => {
+            if (account.pubkey === tokenProgramStr) {
+              return { ...account, pubkey: token2022ProgramStr };
+            }
+            if (account.pubkey === legacyAta) {
+              return { ...account, pubkey: token2022Ata };
+            }
+            return account;
+          })
+        : ix.accounts;
+
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: ix.accounts.map((account) => ({
+        keys: patchedAccounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
