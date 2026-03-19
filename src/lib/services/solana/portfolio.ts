@@ -3,6 +3,7 @@ import { Token } from "@/lib/types/token";
 import { JupiterTokenMetadataService } from "./tokenMetadata";
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 
 const KNOWN_TOKENS: Record<
@@ -87,23 +88,31 @@ export class SolanaPortfolioService {
     const owner = new PublicKey(address);
 
     // Try multiple RPC endpoints if the first one fails
-    let tokenAccounts: Awaited<ReturnType<Connection["getParsedTokenAccountsByOwner"]>> | null = null;
+    let parsedTokenAccounts: Array<{ account: unknown }> | null = null;
     let lamports: number | null = null;
 
     let lastError: Error | null = null;
     for (const endpoint of this.rpcEndpoints) {
       try {
         const connection = new Connection(endpoint, "confirmed");
-        const [accounts, balance] = await Promise.all([
+        const [legacyAccounts, token2022Accounts, balance] = await Promise.all([
           connection.getParsedTokenAccountsByOwner(
             owner,
             { programId: TOKEN_PROGRAM_ID },
             "confirmed",
           ),
+          connection.getParsedTokenAccountsByOwner(
+            owner,
+            { programId: TOKEN_2022_PROGRAM_ID },
+            "confirmed",
+          ),
           connection.getBalance(owner, "confirmed"),
         ]);
         
-        tokenAccounts = accounts;
+        parsedTokenAccounts = [
+          ...(legacyAccounts?.value ?? []),
+          ...(token2022Accounts?.value ?? []),
+        ];
         lamports = balance;
         
         // Update connection if successful
@@ -116,13 +125,13 @@ export class SolanaPortfolioService {
       }
     }
 
-    if (!tokenAccounts || lamports === null) {
+    if (!parsedTokenAccounts || lamports === null) {
       throw lastError || new Error("Failed to fetch portfolio from all RPC endpoints");
     }
 
     const tokens: Token[] = [];
 
-    for (const { account } of tokenAccounts.value) {
+    for (const { account } of parsedTokenAccounts) {
       const parsed = account.data as {
         program: string;
         parsed?: {
