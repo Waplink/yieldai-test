@@ -314,7 +314,7 @@ export function YieldAIPositions() {
         )}
       </div>
 
-      <ScrollArea className="max-h-[420px]">
+      <ScrollArea>
         {moarPositions.map((position) => {
           const value = parseFloat(position.value || "0");
           const decimals = position.assetInfo?.decimals ?? 8;

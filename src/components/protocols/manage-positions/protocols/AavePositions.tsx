@@ -406,7 +406,7 @@ export function AavePositions() {
 
   return (
     <div className="space-y-3 sm:space-y-4 text-base">
-      <ScrollArea className="h-[60vh] sm:h-auto">
+      <ScrollArea>
         {sortedPositions.map((position, index) => {
           const tokenInfo = getTokenInfo(position.underlying_asset);
           const amount = position.amount;

@@ -95,7 +95,7 @@ export function AriesPositions() {
 
   return (
     <Card className="w-full">
-      <ScrollArea className="h-[400px]">
+      <ScrollArea>
         {positions.map((position, index) => {
           const tokenInfo = getTokenInfo(position.assetName);
           const amount = parseFloat(position.balance) / (tokenInfo?.decimals ? 10 ** tokenInfo.decimals : 1e8);

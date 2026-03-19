@@ -217,7 +217,7 @@ export function EchoPositions() {
 
   return (
     <div className="space-y-4 text-base">
-      <ScrollArea className="max-h-[420px]">
+      <ScrollArea>
         {sortedPositions.map((position) => (
           <EchoPositionRow key={`${position.type ?? 'supply'}-${position.positionId}`} position={position} />
         ))}

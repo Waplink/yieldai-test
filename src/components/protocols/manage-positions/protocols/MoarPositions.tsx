@@ -352,7 +352,7 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
 
   return (
     <div className="space-y-3 sm:space-y-4 text-base">
-      <ScrollArea className="sm:h-auto">
+      <ScrollArea>
         {sortedPositions.map((position, index) => {
           const tokenInfo = getTokenInfo(position.assetInfo.symbol);
           const value = parseFloat(position.value || "0");

@@ -114,7 +114,7 @@ export function AptreePositions() {
 
   return (
     <div className="space-y-4 text-base">
-      <ScrollArea className="max-h-[420px]">
+      <ScrollArea>
         {sortedPositions.map((position, index) => {
           const decimals = position.assetInfo?.decimals ?? 6;
           const amountFromBalance = Number(position.balance || 0) / Math.pow(10, decimals);
