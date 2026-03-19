@@ -451,6 +451,15 @@ export function JupiterPositions() {
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = effectivePublicKey;
 
+      if (!resolvedSendTransaction && !resolvedSignTransaction) {
+        const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
+        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? activeSendTransaction;
+        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? activeSignTransaction;
+      }
+      if (!resolvedSendTransaction && !resolvedSignTransaction) {
+        throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+      }
+
       let signature: string;
       if (resolvedSendTransaction) {
         try {
@@ -458,8 +467,10 @@ export function JupiterPositions() {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
-        } catch {
-          if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        } catch (sendError) {
+          if (!resolvedSignTransaction) {
+            throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
+          }
           const signed = await resolvedSignTransaction(transaction);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
@@ -467,7 +478,9 @@ export function JupiterPositions() {
           });
         }
       } else {
-        if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        if (!resolvedSignTransaction) {
+          throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+        }
         const signed = await resolvedSignTransaction(transaction);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
@@ -628,6 +641,15 @@ export function JupiterPositions() {
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = effectivePublicKey;
 
+      if (!resolvedSendTransaction && !resolvedSignTransaction) {
+        const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
+        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? activeSendTransaction;
+        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? activeSignTransaction;
+      }
+      if (!resolvedSendTransaction && !resolvedSignTransaction) {
+        throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+      }
+
       let signature: string;
       if (resolvedSendTransaction) {
         try {
@@ -635,8 +657,10 @@ export function JupiterPositions() {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
-        } catch {
-          if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        } catch (sendError) {
+          if (!resolvedSignTransaction) {
+            throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
+          }
           const signed = await resolvedSignTransaction(transaction);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
@@ -644,7 +668,9 @@ export function JupiterPositions() {
           });
         }
       } else {
-        if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        if (!resolvedSignTransaction) {
+          throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+        }
         const signed = await resolvedSignTransaction(transaction);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
@@ -693,8 +719,10 @@ export function JupiterPositions() {
                   skipPreflight: false,
                   preflightCommitment: "confirmed",
                 });
-              } catch {
-                if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+              } catch (sendError) {
+                if (!resolvedSignTransaction) {
+                  throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
+                }
                 const signedUnwrap = await resolvedSignTransaction(unwrapTx);
                 unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
                   skipPreflight: false,
@@ -702,7 +730,9 @@ export function JupiterPositions() {
                 });
               }
             } else {
-              if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+              if (!resolvedSignTransaction) {
+                throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+              }
               const signedUnwrap = await resolvedSignTransaction(unwrapTx);
               unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
                 skipPreflight: false,
