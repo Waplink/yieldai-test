@@ -168,6 +168,7 @@ export function DepositButton({
   const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
   const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
   const isJupiterDepositInFlightRef = useRef(false);
+  const attemptedSolanaReconnectRef = useRef(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
@@ -381,6 +382,7 @@ export function DepositButton({
     if (prevSolanaAdapterIdentityRef.current !== solanaAdapterIdentity) {
       isJupiterDepositInFlightRef.current = false;
       setIsJupiterDepositing(false);
+      attemptedSolanaReconnectRef.current = false;
       prevSolanaAdapterIdentityRef.current = solanaAdapterIdentity;
     }
   }, [solanaAdapterIdentity]);
@@ -504,12 +506,33 @@ export function DepositButton({
     const signerAddress = session.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
     const runtimeSendTransaction = session.sendTransaction ?? activeSendTransaction;
     const runtimeSignTransaction = session.signTransaction ?? activeSignTransaction;
+    let resolvedSignerAddress = signerAddress;
+    let resolvedSendTransaction = runtimeSendTransaction;
+    let resolvedSignTransaction = runtimeSignTransaction;
 
-    if (!signerAddress || (!runtimeSendTransaction && !runtimeSignTransaction)) {
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      const adapter = solanaWallet?.adapter as { connect?: () => Promise<void> } | undefined;
+      if (adapter && typeof adapter.connect === "function" && !attemptedSolanaReconnectRef.current) {
+        attemptedSolanaReconnectRef.current = true;
+        try {
+          await adapter.connect();
+        } catch (reconnectError) {
+          // ignore and keep fallback handling below
+          console.warn("[Jupiter][Deposit] adapter reconnect failed", reconnectError);
+        }
+        const retried = await waitForReadySolanaSession(8, 250);
+        resolvedSignerAddress =
+          retried.signerAddress || toBase58Address(solanaPublicKey) || toBase58Address(solanaWallet?.adapter?.publicKey) || "";
+        resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
+        resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+      }
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
       if (session.hasSession || hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
-          description: "Wallet API is still syncing after reconnect. Try again in 1-2 seconds.",
+          description: "Wallet API is unavailable in current session. Reconnect Solana wallet and try again.",
         });
         return;
       }
@@ -573,7 +596,7 @@ export function DepositButton({
       // SOL uses dedicated 2-step flow:
       // 1) wrap SOL -> WSOL (separate transaction), 2) Jupiter deposit.
       if (jupiterSymbol === "WSOL") {
-        const owner = new PublicKey(signerAddress);
+        const owner = new PublicKey(resolvedSignerAddress);
         const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
         const {
           blockhash: wrapBlockhash,
@@ -596,39 +619,39 @@ export function DepositButton({
 
         let wrapSignature: string;
         const wrapAttemptErrors: string[] = [];
-        if (runtimeSendTransaction && !isTrustWallet) {
+        if (resolvedSendTransaction && !isTrustWallet) {
           try {
-            wrapSignature = await runtimeSendTransaction(wrapTx as any, connection, {
+            wrapSignature = await resolvedSendTransaction(wrapTx as any, connection, {
               skipPreflight: false,
               preflightCommitment: "confirmed",
             });
           } catch (sendError) {
             wrapAttemptErrors.push(`sendTransaction: ${getErrorText(sendError)}`);
-            if (!runtimeSignTransaction) {
+            if (!resolvedSignTransaction) {
               throw new Error(wrapAttemptErrors.join(" | "));
             }
-            const signedWrap = await runtimeSignTransaction(wrapTx as any);
+            const signedWrap = await resolvedSignTransaction(wrapTx as any);
             wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
               skipPreflight: false,
               preflightCommitment: "confirmed",
             });
           }
         } else {
-          if (!runtimeSignTransaction) {
+          if (!resolvedSignTransaction) {
             throw new Error("Solana signer is not ready");
           }
           try {
-            const signedWrap = await runtimeSignTransaction(wrapTx as any);
+            const signedWrap = await resolvedSignTransaction(wrapTx as any);
             wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
               skipPreflight: false,
               preflightCommitment: "confirmed",
             });
           } catch (signError) {
             wrapAttemptErrors.push(`signTransaction: ${getErrorText(signError)}`);
-            if (!runtimeSendTransaction) {
+            if (!resolvedSendTransaction) {
               throw new Error(wrapAttemptErrors.join(" | "));
             }
-            wrapSignature = await runtimeSendTransaction(wrapTx as any, connection, {
+            wrapSignature = await resolvedSendTransaction(wrapTx as any, connection, {
               skipPreflight: false,
               preflightCommitment: "confirmed",
             });
@@ -652,7 +675,7 @@ export function DepositButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: tokenIn.address,
-          signer: signerAddress,
+          signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
           preferLegacyInstruction: jupiterSymbol === "WSOL",
         }),
@@ -670,39 +693,39 @@ export function DepositButton({
 
       let signature: string;
       const attemptErrors: string[] = [];
-      if (runtimeSendTransaction && !isTrustWallet) {
+      if (resolvedSendTransaction && !isTrustWallet) {
         try {
-          signature = await runtimeSendTransaction(txForWallet as any, connection, {
+          signature = await resolvedSendTransaction(txForWallet as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         } catch (sendError) {
           attemptErrors.push(`sendTransaction: ${getErrorText(sendError)}`);
-          if (!runtimeSignTransaction) {
+          if (!resolvedSignTransaction) {
             throw new Error(attemptErrors.join(" | "));
           }
-          const signed = await runtimeSignTransaction(txForWallet as any);
+          const signed = await resolvedSignTransaction(txForWallet as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         }
       } else {
-        if (!runtimeSignTransaction) {
+        if (!resolvedSignTransaction) {
           throw new Error("Solana signer is not ready");
         }
         try {
-          const signed = await runtimeSignTransaction(txForWallet as any);
+          const signed = await resolvedSignTransaction(txForWallet as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         } catch (signError) {
           attemptErrors.push(`signTransaction: ${getErrorText(signError)}`);
-          if (!runtimeSendTransaction) {
+          if (!resolvedSendTransaction) {
             throw new Error(attemptErrors.join(" | "));
           }
-          signature = await runtimeSendTransaction(txForWallet as any, connection, {
+          signature = await resolvedSendTransaction(txForWallet as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
