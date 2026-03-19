@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { createCloseAccountInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } from "@solana/spl-token";
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -53,6 +53,15 @@ function getErrorMessage(error: unknown): string {
     }
   }
   return "Unknown error";
+}
+
+function decodeBase64Tx(base64Tx: string): Uint8Array {
+  const decoded = atob(base64Tx);
+  return Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+}
+
+function isVersionedTransactionBytes(serialized: Uint8Array): boolean {
+  return serialized.length > 0 && (serialized[0] & 0x80) !== 0;
 }
 
 function toBase58Address(value: unknown): string {
@@ -444,12 +453,15 @@ export function JupiterPositions() {
       const connection = new Connection(rpcEndpoint, "confirmed");
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
-      const decoded = atob(txData.data.transaction);
-      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
-      const transaction = Transaction.from(serialized);
+      const serialized = decodeBase64Tx(txData.data.transaction);
+      const transaction = isVersionedTransactionBytes(serialized)
+        ? VersionedTransaction.deserialize(serialized)
+        : Transaction.from(serialized);
       const effectivePublicKey = new PublicKey(resolvedSignerAddress);
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = effectivePublicKey;
+      if (!(transaction instanceof VersionedTransaction)) {
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = effectivePublicKey;
+      }
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
         const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
@@ -463,7 +475,7 @@ export function JupiterPositions() {
       let signature: string;
       if (resolvedSendTransaction) {
         try {
-          signature = await resolvedSendTransaction(transaction, connection, {
+          signature = await resolvedSendTransaction(transaction as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
@@ -471,7 +483,7 @@ export function JupiterPositions() {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
-          const signed = await resolvedSignTransaction(transaction);
+          const signed = await resolvedSignTransaction(transaction as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -481,7 +493,7 @@ export function JupiterPositions() {
         if (!resolvedSignTransaction) {
           throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
         }
-        const signed = await resolvedSignTransaction(transaction);
+        const signed = await resolvedSignTransaction(transaction as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
@@ -512,7 +524,24 @@ export function JupiterPositions() {
       }
       closeDeposit();
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = getErrorMessage(e);
+      const normalized = message.toLowerCase();
+      if (normalized.includes("public_signrawtransaction") && normalized.includes("already pending")) {
+        toast({
+          title: "Signature request already pending",
+          description: "Approve or reject the existing wallet request, then try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (normalized.includes("user rejected")) {
+        toast({
+          title: "Transaction cancelled",
+          description: "Request was rejected in wallet.",
+        });
+        return;
+      }
+      console.error("[Jupiter][Deposit] failed", { message, error: e });
       toast({
         title: "Deposit failed",
         description: message,
@@ -634,12 +663,15 @@ export function JupiterPositions() {
       const connection = new Connection(rpcEndpoint, "confirmed");
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
-      const decoded = atob(txData.data.transaction);
-      const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
-      const transaction = Transaction.from(serialized);
+      const serialized = decodeBase64Tx(txData.data.transaction);
+      const transaction = isVersionedTransactionBytes(serialized)
+        ? VersionedTransaction.deserialize(serialized)
+        : Transaction.from(serialized);
       const effectivePublicKey = new PublicKey(resolvedSignerAddress);
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = effectivePublicKey;
+      if (!(transaction instanceof VersionedTransaction)) {
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = effectivePublicKey;
+      }
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
         const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
@@ -653,7 +685,7 @@ export function JupiterPositions() {
       let signature: string;
       if (resolvedSendTransaction) {
         try {
-          signature = await resolvedSendTransaction(transaction, connection, {
+          signature = await resolvedSendTransaction(transaction as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
@@ -661,7 +693,7 @@ export function JupiterPositions() {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
-          const signed = await resolvedSignTransaction(transaction);
+          const signed = await resolvedSignTransaction(transaction as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -671,7 +703,7 @@ export function JupiterPositions() {
         if (!resolvedSignTransaction) {
           throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
         }
-        const signed = await resolvedSignTransaction(transaction);
+        const signed = await resolvedSignTransaction(transaction as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
