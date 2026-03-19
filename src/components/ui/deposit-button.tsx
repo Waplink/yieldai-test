@@ -718,7 +718,7 @@ interface ConnectWalletDialogProps {
 }
 
 function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
-  const { wallets = [], notDetectedWallets = [] } = useWallet();
+  const { wallets = [], notDetectedWallets = [], wallet: selectedWallet, connected } = useWallet();
 
   const { aptosConnectWallets, availableWallets, installableWallets } =
     groupAndSortWallets(
@@ -776,7 +776,12 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
 
       <div className="flex flex-col gap-3 pt-3">
         {availableWallets.map((wallet) => (
-          <WalletRow key={wallet.name} wallet={wallet} onConnect={close} />
+          <WalletRow
+            key={wallet.name}
+            wallet={wallet}
+            onConnect={close}
+            isConnected={connected && selectedWallet?.name === wallet.name}
+          />
         ))}
         {!!installableWallets.length && (
           <Collapsible className="flex flex-col gap-3">
@@ -791,6 +796,7 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
                   key={wallet.name}
                   wallet={wallet}
                   onConnect={close}
+                  isConnected={connected && selectedWallet?.name === wallet.name}
                 />
               ))}
             </CollapsibleContent>
@@ -804,9 +810,17 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
 interface WalletRowProps {
   wallet: AdapterWallet | AdapterNotDetectedWallet;
   onConnect?: () => void;
+  isConnected?: boolean;
 }
 
-function WalletRow({ wallet, onConnect }: WalletRowProps) {
+function isDerivedAptosWalletName(name?: string): boolean {
+  if (!name) return false;
+  const normalized = name.toLowerCase();
+  return normalized.includes("derived wallet") || normalized.endsWith(" (solana)");
+}
+
+function WalletRow({ wallet, onConnect, isConnected = false }: WalletRowProps) {
+  const isDerived = isDerivedAptosWalletName(wallet.name);
   return (
     <WalletItem
       wallet={wallet}
@@ -820,6 +834,10 @@ function WalletRow({ wallet, onConnect }: WalletRowProps) {
       {isInstallRequired(wallet) ? (
         <Button size="sm" variant="ghost" asChild>
           <WalletItem.InstallLink />
+        </Button>
+      ) : isConnected && isDerived ? (
+        <Button size="sm" variant="secondary" disabled>
+          Connected
         </Button>
       ) : (
         <WalletItem.ConnectButton asChild>
