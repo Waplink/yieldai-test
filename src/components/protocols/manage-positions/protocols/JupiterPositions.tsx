@@ -466,7 +466,7 @@ export function JupiterPositions() {
 
   return (
     <div className="space-y-4 text-base">
-      <div className="max-h-[420px] overflow-y-auto overflow-x-hidden mb-4 pb-12">
+      <div className="mb-4">
           {positions.map((position, idx) => {
             const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
             const decimals = toNumber(position?.token?.asset?.decimals, 0);
