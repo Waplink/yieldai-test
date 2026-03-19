@@ -37,6 +37,7 @@ import {
 } from "@solana/spl-token";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Token as SolanaToken } from "@/lib/types/token";
 import {
   useWallet,
@@ -563,7 +564,15 @@ export function DepositButton({
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "jupiter" } }));
       }
-      toast({ title: "Deposit submitted", description: `Deposited ${amountUi} ${tokenIn.symbol}.` });
+      toast({
+        title: "Deposit submitted",
+        description: `Deposited ${amountUi} ${tokenIn.symbol}.`,
+        action: (
+          <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
+            View on Solscan
+          </ToastAction>
+        ),
+      });
       setIsJupiterDialogOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -10,6 +10,7 @@ import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { createCloseAccountInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } from "@solana/spl-token";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
 
@@ -264,6 +265,11 @@ export function JupiterPositions() {
       toast({
         title: "Deposit submitted",
         description: `Deposited ${amountUi} ${symbol}.`,
+        action: (
+          <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
+            View on Solscan
+          </ToastAction>
+        ),
       });
 
       await refreshSolana();
@@ -428,6 +434,11 @@ export function JupiterPositions() {
       toast({
         title: "Withdraw submitted",
         description: `Withdrew ${amountUi} ${symbol}.`,
+        action: (
+          <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
+            View on Solscan
+          </ToastAction>
+        ),
       });
 
       await refreshSolana();
