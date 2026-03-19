@@ -84,6 +84,7 @@ const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
   USDG: "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
   USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
 };
+const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG", "USDS"]);
 const SOL_FEE_RESERVE_UI = 0.003;
 
 function normalizeMint(value?: string | null): string {
@@ -747,7 +748,7 @@ export function DepositButton({
           asset: tokenIn.address,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
-          preferLegacyInstruction: jupiterSymbol === "WSOL",
+          preferLegacyInstruction: JUPITER_PREFER_LEGACY_SYMBOLS.has(jupiterSymbol),
         }),
       });
       const txData = await txResp.json().catch(() => null);
