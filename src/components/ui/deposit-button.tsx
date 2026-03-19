@@ -383,12 +383,7 @@ export function DepositButton({
       | undefined;
 
     const runtimeAdapterAddress = toBase58Address(runtimeAdapter?.publicKey);
-    const runtimeAddress =
-      toBase58Address(solanaPublicKey) ||
-      runtimeAdapterAddress ||
-      hookedSolanaAddress ||
-      getSolanaWalletAddress(aptosWallet ?? null) ||
-      "";
+    const runtimeSignerAddress = toBase58Address(solanaPublicKey) || runtimeAdapterAddress || "";
 
     const runtimeSend =
       sendTransaction ??
@@ -402,12 +397,16 @@ export function DepositButton({
         : undefined);
 
     return {
-      address: runtimeAddress,
+      signerAddress: runtimeSignerAddress,
       sendTransaction: runtimeSend,
       signTransaction: runtimeSign,
       hasSigner: !!runtimeSend || !!runtimeSign,
       hasSession:
-        !!runtimeAddress || !!runtimeAdapter?.connected || !!solanaConnecting || !!getSolanaWalletAddress(aptosWallet ?? null),
+        !!runtimeSignerAddress ||
+        !!runtimeAdapter?.connected ||
+        !!solanaConnecting ||
+        !!hookedSolanaAddress ||
+        !!getSolanaWalletAddress(aptosWallet ?? null),
       adapterReady: !!runtimeAdapter?.connected || (!!runtimeAdapterAddress && (!!runtimeSend || !!runtimeSign)),
     };
   }, [solanaWallet, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
@@ -415,7 +414,7 @@ export function DepositButton({
   const waitForReadySolanaSession = useCallback(
     async (retries = 4, delayMs = 200) => {
       let session = resolveSolanaSession();
-      for (let i = 0; i < retries && (!session.address || !session.hasSigner); i++) {
+      for (let i = 0; i < retries && (!session.signerAddress || !session.hasSigner); i++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         session = resolveSolanaSession();
       }
@@ -427,7 +426,7 @@ export function DepositButton({
   const handleClick = async () => {
     if (isJupiterProtocol) {
       const session = await waitForReadySolanaSession();
-      if (!session.address || !session.hasSigner) {
+      if (!session.signerAddress || !session.hasSigner) {
         if (session.hasSession || hasAnySolanaSession) {
           toast({
             title: "Solana wallet reconnecting",
@@ -494,7 +493,7 @@ export function DepositButton({
       return;
     }
     const session = await waitForReadySolanaSession();
-    const signerAddress = session.address || effectiveSolanaAddress;
+    const signerAddress = session.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
     const runtimeSendTransaction = session.sendTransaction ?? activeSendTransaction;
     const runtimeSignTransaction = session.signTransaction ?? activeSignTransaction;
 
