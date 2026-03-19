@@ -160,7 +160,11 @@ export function DepositButton({
     connecting: solanaConnecting,
     wallet: solanaWallet,
   } = useSolanaWallet();
-  const { tokens: hookedSolanaTokens, refresh: hookedRefreshSolana } = useSolanaPortfolio({
+  const {
+    address: hookedSolanaAddress,
+    tokens: hookedSolanaTokens,
+    refresh: hookedRefreshSolana,
+  } = useSolanaPortfolio({
     enabled: isJupiterProtocol && !solanaTokensOverride,
   });
   const solanaTokens = solanaTokensOverride ?? hookedSolanaTokens;
@@ -170,12 +174,15 @@ export function DepositButton({
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
-  const adapterPublicKey =
-    solanaWallet?.adapter?.connected
-      ? ((solanaWallet.adapter.publicKey as PublicKey | null) ?? null)
-      : null;
-  const effectiveSolanaAddress = toBase58Address(solanaPublicKey) || toBase58Address(adapterPublicKey);
-  const hasSolanaSigner = !!sendTransaction || !!signTransaction;
+  const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
+  const adapterAddress = toBase58Address(adapterPublicKey);
+  const effectiveSolanaAddress =
+    toBase58Address(solanaPublicKey) || adapterAddress || hookedSolanaAddress || "";
+  const hasAdapterSigner =
+    typeof (solanaWallet?.adapter as { sendTransaction?: unknown } | undefined)?.sendTransaction === "function" ||
+    typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function";
+  const hasSolanaSigner = !!sendTransaction || !!signTransaction || hasAdapterSigner;
+  const adapterSeemsReady = !!solanaWallet?.adapter?.connected || (!!adapterAddress && hasSolanaSigner);
   const solanaAdapterIdentity = `${solanaWallet?.adapter?.name || "unknown"}:${effectiveSolanaAddress || "no-address"}:${solanaWallet?.adapter?.connected ? "connected" : "disconnected"}`;
   const prevSolanaAdapterIdentityRef = useRef<string>(solanaAdapterIdentity);
   const jupiterMint = normalizeMint(tokenIn?.address);
@@ -355,7 +362,7 @@ export function DepositButton({
         });
         return;
       }
-      if (!solanaWallet?.adapter?.connected) {
+      if (!adapterSeemsReady) {
         toast({
           title: "Solana wallet reconnecting",
           description: "Wallet adapter is not fully ready yet. Please retry.",
