@@ -27,7 +27,7 @@ import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
-import { isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
+import { getAptosWalletNameFromStorage, isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import {
@@ -720,7 +720,13 @@ interface ConnectWalletDialogProps {
 
 function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
   const { wallets = [], notDetectedWallets = [], wallet: selectedWallet, connected } = useWallet();
-  const isSelectedDerived = connected && isDerivedAptosWalletReliable(selectedWallet as { name?: string } | null);
+  const storedAptosWalletName = getAptosWalletNameFromStorage();
+  const isSelectedDerived =
+    connected &&
+    (
+      isDerivedAptosWalletReliable(selectedWallet as { name?: string } | null) ||
+      String(storedAptosWalletName || "").trim().endsWith(" (Solana)")
+    );
 
   const { aptosConnectWallets, availableWallets, installableWallets } =
     groupAndSortWallets(
@@ -752,6 +758,7 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
               key={wallet.name}
               wallet={wallet}
               onConnect={close}
+              isDerivedSelected={isSelectedDerived}
             />
           ))}
           <p className="flex gap-1 justify-center items-center text-muted-foreground text-sm">
@@ -862,13 +869,14 @@ function WalletRow({ wallet, onConnect, isConnected = false, isDerivedSelected =
   );
 }
 
-function AptosConnectWalletRow({ wallet, onConnect }: WalletRowProps) {
+function AptosConnectWalletRow({ wallet, onConnect, isDerivedSelected = false }: WalletRowProps) {
+  const walletLabel = getWalletLabel(wallet.name, false, isDerivedSelected);
   return (
     <WalletItem wallet={wallet} onConnect={onConnect}>
       <WalletItem.ConnectButton asChild>
         <Button size="lg" variant="outline" className="w-full gap-4">
           <WalletItem.Icon className="h-5 w-5" />
-          <WalletItem.Name className="text-base font-normal" />
+          <span className="text-base font-normal">{walletLabel}</span>
         </Button>
       </WalletItem.ConnectButton>
     </WalletItem>
