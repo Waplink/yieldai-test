@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
+import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
+import { useWallet as useAptosWallet } from "@aptos-labs/wallet-adapter-react";
 
 type JupiterPosition = {
   token?: {
@@ -53,6 +55,26 @@ function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
+function toBase58Address(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof (value as { toBase58?: () => string }).toBase58 === "function") {
+    try {
+      return (value as { toBase58: () => string }).toBase58();
+    } catch {
+      // noop
+    }
+  }
+  if (typeof (value as { toString?: () => string }).toString === "function") {
+    try {
+      return (value as { toString: () => string }).toString();
+    } catch {
+      // noop
+    }
+  }
+  return "";
+}
+
 function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
   return [...items].sort((a, b) => {
     const da = a.token?.asset?.decimals ?? 0;
@@ -67,7 +89,17 @@ function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
 
 export function JupiterPositions() {
   const { address: solanaAddress, tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
-  const { publicKey, signTransaction, wallet: solanaWallet } = useSolanaWallet();
+  const { wallet: aptosWallet } = useAptosWallet();
+  const {
+    publicKey,
+    signTransaction,
+    sendTransaction,
+    connecting: solanaConnecting,
+    wallet: solanaWallet,
+    wallets: solanaWallets,
+    select: selectSolanaWallet,
+    connect: connectSolanaWallet,
+  } = useSolanaWallet();
   const { toast } = useToast();
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,14 +110,38 @@ export function JupiterPositions() {
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
-  const effectivePublicKey = publicKey ?? adapterPublicKey ?? (solanaAddress ? new PublicKey(solanaAddress) : null);
+  const adapterAddress = toBase58Address(adapterPublicKey);
+  const derivedSolanaAddress = getSolanaWalletAddress(aptosWallet ?? null) ?? "";
+  const effectiveSignerAddress =
+    toBase58Address(publicKey) || adapterAddress || solanaAddress || derivedSolanaAddress || "";
   const adapterSignTransaction =
     typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function"
       ? ((solanaWallet?.adapter as { signTransaction: (transaction: Transaction) => Promise<Transaction> }).signTransaction.bind(
           solanaWallet?.adapter
         ) as (transaction: Transaction) => Promise<Transaction>)
       : undefined;
+  const adapterSendTransaction =
+    typeof (solanaWallet?.adapter as { sendTransaction?: unknown } | undefined)?.sendTransaction === "function"
+      ? ((solanaWallet?.adapter as {
+          sendTransaction: (
+            transaction: unknown,
+            connection: Connection,
+            options?: { skipPreflight?: boolean; preflightCommitment?: "processed" | "confirmed" | "finalized" }
+          ) => Promise<string>;
+        }).sendTransaction.bind(solanaWallet?.adapter) as (
+          transaction: unknown,
+          connection: Connection,
+          options?: { skipPreflight?: boolean; preflightCommitment?: "processed" | "confirmed" | "finalized" }
+        ) => Promise<string>)
+      : undefined;
   const activeSignTransaction = signTransaction ?? adapterSignTransaction;
+  const activeSendTransaction = sendTransaction ?? adapterSendTransaction;
+  const hasAnySolanaSession =
+    !!effectiveSignerAddress ||
+    !!solanaAddress ||
+    !!derivedSolanaAddress ||
+    !!solanaConnecting ||
+    !!solanaWallet?.adapter?.connected;
   const rpcEndpoint = useMemo(() => {
     return (
       process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
@@ -190,9 +246,146 @@ export function JupiterPositions() {
     setSelectedPosition(null);
   };
 
+  const resolveSolanaSession = useCallback(() => {
+    const connectedAdapterFromList = solanaWallets.find((w) => w?.adapter?.connected)?.adapter;
+    const runtimeAdapter = (solanaWallet?.adapter || connectedAdapterFromList) as
+      | {
+          connected?: boolean;
+          publicKey?: PublicKey | null;
+          sendTransaction?: (
+            transaction: unknown,
+            connection: Connection,
+            options?: { skipPreflight?: boolean; preflightCommitment?: "processed" | "confirmed" | "finalized" }
+          ) => Promise<string>;
+          signTransaction?: (transaction: Transaction) => Promise<Transaction>;
+        }
+      | undefined;
+    const runtimeAdapterAddress = toBase58Address(runtimeAdapter?.publicKey);
+    const runtimeSignerAddress = toBase58Address(publicKey) || runtimeAdapterAddress || effectiveSignerAddress;
+
+    const runtimeSend =
+      activeSendTransaction ??
+      (typeof runtimeAdapter?.sendTransaction === "function"
+        ? runtimeAdapter.sendTransaction.bind(runtimeAdapter)
+        : undefined);
+    const runtimeSign =
+      activeSignTransaction ??
+      (typeof runtimeAdapter?.signTransaction === "function"
+        ? runtimeAdapter.signTransaction.bind(runtimeAdapter)
+        : undefined);
+
+    return {
+      adapter: runtimeAdapter,
+      signerAddress: runtimeSignerAddress,
+      sendTransaction: runtimeSend,
+      signTransaction: runtimeSign,
+      hasSigner: !!runtimeSend || !!runtimeSign,
+      hasSession:
+        !!runtimeSignerAddress ||
+        !!runtimeAdapter?.connected ||
+        !!solanaConnecting ||
+        !!solanaAddress ||
+        !!getSolanaWalletAddress(aptosWallet ?? null),
+    };
+  }, [
+    solanaWallets,
+    solanaWallet,
+    publicKey,
+    effectiveSignerAddress,
+    activeSendTransaction,
+    activeSignTransaction,
+    solanaConnecting,
+    solanaAddress,
+    aptosWallet,
+  ]);
+
+  const waitForReadySolanaSession = useCallback(
+    async (retries = 20, delayMs = 250) => {
+      let session = resolveSolanaSession();
+      for (let i = 0; i < retries && (!session.signerAddress || !session.hasSigner); i++) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        session = resolveSolanaSession();
+      }
+      return session;
+    },
+    [resolveSolanaSession]
+  );
+
+  const recoverSolanaWalletSelection = useCallback(async () => {
+    const preferredName =
+      (solanaWallet?.adapter?.name as string | undefined) ||
+      (solanaWallets.find((w) => w?.adapter?.connected)?.adapter?.name as string | undefined) ||
+      (() => {
+        try {
+          const raw = window.localStorage.getItem("walletName");
+          if (!raw) return undefined;
+          const parsed = JSON.parse(raw);
+          return typeof parsed === "string" ? parsed : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+
+    if (!preferredName) return;
+
+    const exists = solanaWallets.some((w) => w?.adapter?.name === preferredName);
+    if (exists && typeof selectSolanaWallet === "function") {
+      try {
+        selectSolanaWallet(preferredName as any);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (typeof connectSolanaWallet === "function") {
+      try {
+        await connectSolanaWallet();
+      } catch {
+        // ignore
+      }
+    }
+  }, [solanaWallet, solanaWallets, selectSolanaWallet, connectSolanaWallet]);
+
   const handleDeposit = async (amountUi: number) => {
     if (!selectedPosition) return;
-    if (!effectivePublicKey || !activeSignTransaction) {
+    const session = await waitForReadySolanaSession();
+    let resolvedSignerAddress = session.signerAddress || effectiveSignerAddress;
+    let resolvedSendTransaction = session.sendTransaction ?? activeSendTransaction;
+    let resolvedSignTransaction = session.signTransaction ?? activeSignTransaction;
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      const adapter = (session.adapter ||
+        solanaWallet?.adapter ||
+        solanaWallets.find((w) => w?.adapter?.connected)?.adapter) as { connect?: () => Promise<void> } | undefined;
+      if (adapter && typeof adapter.connect === "function") {
+        try {
+          await adapter.connect();
+        } catch (reconnectError) {
+          console.warn("[Jupiter][Deposit] adapter reconnect failed", reconnectError);
+        }
+        const retried = await waitForReadySolanaSession(8, 250);
+        resolvedSignerAddress = retried.signerAddress || effectiveSignerAddress;
+        resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
+        resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+      }
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      await recoverSolanaWalletSelection();
+      const retriedAfterSelect = await waitForReadySolanaSession(10, 250);
+      resolvedSignerAddress = retriedAfterSelect.signerAddress || effectiveSignerAddress;
+      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? activeSendTransaction;
+      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      if (session.hasSession || hasAnySolanaSession) {
+        toast({
+          title: "Solana wallet reconnecting",
+          description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
+        });
+        return;
+      }
       toast({
         title: "Wallet not connected",
         description: "Connect Solana wallet to deposit to Jupiter.",
@@ -238,7 +431,7 @@ export function JupiterPositions() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: mint,
-          signer: effectivePublicKey.toString(),
+          signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
         }),
       });
@@ -254,14 +447,33 @@ export function JupiterPositions() {
       const decoded = atob(txData.data.transaction);
       const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
       const transaction = Transaction.from(serialized);
+      const effectivePublicKey = new PublicKey(resolvedSignerAddress);
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = effectivePublicKey;
 
-      const signed = await activeSignTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
-      });
+      let signature: string;
+      if (resolvedSendTransaction) {
+        try {
+          signature = await resolvedSendTransaction(transaction, connection, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        } catch {
+          if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+          const signed = await resolvedSignTransaction(transaction);
+          signature = await connection.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        }
+      } else {
+        if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        const signed = await resolvedSignTransaction(transaction);
+        signature = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+      }
 
       const confirmation = await connection.confirmTransaction(
         { signature, blockhash, lastValidBlockHeight },
@@ -300,7 +512,44 @@ export function JupiterPositions() {
 
   const handleWithdraw = async (amountUi: number) => {
     if (!selectedPosition) return;
-    if (!effectivePublicKey || !activeSignTransaction) {
+    const session = await waitForReadySolanaSession();
+    let resolvedSignerAddress = session.signerAddress || effectiveSignerAddress;
+    let resolvedSendTransaction = session.sendTransaction ?? activeSendTransaction;
+    let resolvedSignTransaction = session.signTransaction ?? activeSignTransaction;
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      const adapter = (session.adapter ||
+        solanaWallet?.adapter ||
+        solanaWallets.find((w) => w?.adapter?.connected)?.adapter) as { connect?: () => Promise<void> } | undefined;
+      if (adapter && typeof adapter.connect === "function") {
+        try {
+          await adapter.connect();
+        } catch (reconnectError) {
+          console.warn("[Jupiter][Withdraw] adapter reconnect failed", reconnectError);
+        }
+        const retried = await waitForReadySolanaSession(8, 250);
+        resolvedSignerAddress = retried.signerAddress || effectiveSignerAddress;
+        resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
+        resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+      }
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      await recoverSolanaWalletSelection();
+      const retriedAfterSelect = await waitForReadySolanaSession(10, 250);
+      resolvedSignerAddress = retriedAfterSelect.signerAddress || effectiveSignerAddress;
+      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? activeSendTransaction;
+      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      if (session.hasSession || hasAnySolanaSession) {
+        toast({
+          title: "Solana wallet reconnecting",
+          description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
+        });
+        return;
+      }
       toast({
         title: "Wallet not connected",
         description: "Connect Solana wallet to withdraw from Jupiter.",
@@ -355,7 +604,7 @@ export function JupiterPositions() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: mint,
-          signer: effectivePublicKey.toString(),
+          signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
         }),
       });
@@ -375,14 +624,33 @@ export function JupiterPositions() {
       const decoded = atob(txData.data.transaction);
       const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
       const transaction = Transaction.from(serialized);
+      const effectivePublicKey = new PublicKey(resolvedSignerAddress);
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = effectivePublicKey;
 
-      const signed = await activeSignTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
-      });
+      let signature: string;
+      if (resolvedSendTransaction) {
+        try {
+          signature = await resolvedSendTransaction(transaction, connection, {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        } catch {
+          if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+          const signed = await resolvedSignTransaction(transaction);
+          signature = await connection.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          });
+        }
+      } else {
+        if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+        const signed = await resolvedSignTransaction(transaction);
+        signature = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+      }
 
       const confirmation = await connection.confirmTransaction(
         { signature, blockhash, lastValidBlockHeight },
@@ -418,11 +686,29 @@ export function JupiterPositions() {
               )
             );
 
-            const signedUnwrap = await activeSignTransaction(unwrapTx);
-            const unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
-              skipPreflight: false,
-              preflightCommitment: "confirmed",
-            });
+            let unwrapSig: string;
+            if (resolvedSendTransaction) {
+              try {
+                unwrapSig = await resolvedSendTransaction(unwrapTx, connection, {
+                  skipPreflight: false,
+                  preflightCommitment: "confirmed",
+                });
+              } catch {
+                if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+                const signedUnwrap = await resolvedSignTransaction(unwrapTx);
+                unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
+                  skipPreflight: false,
+                  preflightCommitment: "confirmed",
+                });
+              }
+            } else {
+              if (!resolvedSignTransaction) throw new Error("Solana signer is not ready");
+              const signedUnwrap = await resolvedSignTransaction(unwrapTx);
+              unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
+                skipPreflight: false,
+                preflightCommitment: "confirmed",
+              });
+            }
             const unwrapConfirmation = await connection.confirmTransaction(
               {
                 signature: unwrapSig,
