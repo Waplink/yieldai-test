@@ -18,6 +18,9 @@ export interface SolanaPortfolio {
   totalValueUsd: number;
 }
 
+type ParsedTokenAccount =
+  Awaited<ReturnType<Connection["getParsedTokenAccountsByOwner"]>>["value"][number];
+
 export class SolanaPortfolioService {
   private static instance: SolanaPortfolioService;
   private connection: Connection;
@@ -88,7 +91,7 @@ export class SolanaPortfolioService {
     const owner = new PublicKey(address);
 
     // Try multiple RPC endpoints if the first one fails
-    let parsedTokenAccounts: Array<{ account: unknown }> | null = null;
+    let parsedTokenAccounts: ParsedTokenAccount[] | null = null;
     let lamports: number | null = null;
 
     let lastError: Error | null = null;
