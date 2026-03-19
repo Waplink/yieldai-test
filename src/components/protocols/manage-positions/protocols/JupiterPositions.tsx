@@ -42,9 +42,13 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
+    const maybeName = (error as { name?: unknown }).name;
     const maybeMessage = (error as { message?: unknown }).message;
     if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
       return maybeMessage;
+    }
+    if (typeof maybeName === "string" && maybeName.trim().length > 0) {
+      return maybeName;
     }
     try {
       return JSON.stringify(error);
@@ -272,16 +276,20 @@ export function JupiterPositions() {
     const runtimeAdapterAddress = toBase58Address(runtimeAdapter?.publicKey);
     const runtimeSignerAddress = toBase58Address(publicKey) || runtimeAdapterAddress || effectiveSignerAddress;
 
-    const runtimeSend =
-      activeSendTransaction ??
-      (typeof runtimeAdapter?.sendTransaction === "function"
+    const adapterSend =
+      typeof runtimeAdapter?.sendTransaction === "function"
         ? runtimeAdapter.sendTransaction.bind(runtimeAdapter)
-        : undefined);
-    const runtimeSign =
-      activeSignTransaction ??
-      (typeof runtimeAdapter?.signTransaction === "function"
+        : undefined;
+    const adapterSign =
+      typeof runtimeAdapter?.signTransaction === "function"
         ? runtimeAdapter.signTransaction.bind(runtimeAdapter)
-        : undefined);
+        : undefined;
+    const runtimeSend = runtimeAdapter?.connected
+      ? (adapterSend ?? activeSendTransaction)
+      : (activeSendTransaction ?? adapterSend);
+    const runtimeSign = runtimeAdapter?.connected
+      ? (adapterSign ?? activeSignTransaction)
+      : (activeSignTransaction ?? adapterSign);
 
     return {
       adapter: runtimeAdapter,
@@ -530,6 +538,14 @@ export function JupiterPositions() {
         toast({
           title: "Signature request already pending",
           description: "Approve or reject the existing wallet request, then try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (normalized.includes("walletnotselectederror") || normalized.includes("wallet not selected")) {
+        toast({
+          title: "Solana wallet reconnecting",
+          description: "Wallet session is not selected after reconnect. Reconnect Solana wallet and try again.",
           variant: "destructive",
         });
         return;
