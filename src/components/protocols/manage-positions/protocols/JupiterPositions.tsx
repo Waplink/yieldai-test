@@ -34,6 +34,7 @@ type JupiterPosition = {
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const USDG_MINT = "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH";
 const JUPITER_PREFER_LEGACY_DEPOSIT_MINTS = new Set([WSOL_MINT, USDG_MINT]);
+const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG"]);
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -102,6 +103,19 @@ function toBase58Address(value: unknown): string {
     }
   }
   return "";
+}
+
+function normalizeMint(value?: string | null): string {
+  return (value ?? "").trim();
+}
+
+function canonicalJupiterSymbol(value?: string | null): string {
+  const normalized = (value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.startsWith("WSOL")) return "WSOL";
+  if (normalized.startsWith("SOL")) return "WSOL";
+  if (normalized.startsWith("USDG")) return "USDG";
+  if (normalized.startsWith("USDS")) return "USDS";
+  return normalized;
 }
 
 function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
@@ -242,7 +256,8 @@ export function JupiterPositions() {
     const amount = decimals > 0 ? rawAmount / Math.pow(10, decimals) : 0;
     const symbol = p?.token?.asset?.uiSymbol || p?.token?.asset?.symbol || "Unknown";
     const mint = p?.token?.asset?.address || "";
-    return { decimals, amount, symbol, mint };
+    const canonicalSymbol = canonicalJupiterSymbol(symbol);
+    return { decimals, amount, symbol, mint, canonicalSymbol };
   }, [selectedPosition]);
 
   const selectedWalletAmount = useMemo(() => {
@@ -465,6 +480,11 @@ export function JupiterPositions() {
       return;
     }
 
+    const normalizedMint = normalizeMint(mint);
+    const preferLegacyInstruction =
+      JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(normalizedMint) ||
+      JUPITER_PREFER_LEGACY_SYMBOLS.has(selectedMeta.canonicalSymbol || "");
+
     try {
       setIsDepositing(true);
 
@@ -472,10 +492,10 @@ export function JupiterPositions() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          asset: mint,
+          asset: normalizedMint || mint,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
-          preferLegacyInstruction: JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(mint),
+          preferLegacyInstruction,
         }),
       });
 
