@@ -125,15 +125,13 @@ async function buildLegacyTransactionFromInstruction(input: {
       isToken2022Mint && ix.programId === ataProgramIdStr
         ? (() => {
             const next = ix.accounts.map((account) => ({ ...account }));
-            if (next.length < 6) return ix.accounts;
+            if (next.length < 4) return ix.accounts;
 
             const owner = next[2]?.pubkey;
             const mint = next[3]?.pubkey;
-            const tokenProgram = next[5]?.pubkey;
 
             // Patch only ATA instructions for this deposit asset mint.
             if (mint !== assetMintStr) return ix.accounts;
-            if (tokenProgram !== tokenProgramStr) return ix.accounts;
 
             try {
               const ownerPubkey = new PublicKey(owner);
@@ -145,7 +143,11 @@ async function buildLegacyTransactionFromInstruction(input: {
                 ASSOCIATED_TOKEN_PROGRAM_ID
               ).toBase58();
               next[1].pubkey = ataAddress;
-              next[5].pubkey = TOKEN_2022_PROGRAM_ID.toBase58();
+              for (let i = 0; i < next.length; i++) {
+                if (next[i].pubkey === tokenProgramStr) {
+                  next[i].pubkey = TOKEN_2022_PROGRAM_ID.toBase58();
+                }
+              }
               return next;
             } catch {
               return ix.accounts;
