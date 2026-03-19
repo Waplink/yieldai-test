@@ -28,6 +28,7 @@ import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { getAptosWalletNameFromStorage, isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
+import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import {
@@ -153,7 +154,7 @@ export function DepositButton({
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
   const walletData = useWalletData();
-  const { connected } = useWallet();
+  const { connected, wallet: aptosWallet } = useWallet();
   const {
     publicKey: solanaPublicKey,
     signTransaction,
@@ -188,8 +189,9 @@ export function DepositButton({
     | undefined;
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
   const adapterAddress = toBase58Address(adapterPublicKey);
+  const derivedSolanaAddress = getSolanaWalletAddress(aptosWallet ?? null) ?? "";
   const effectiveSolanaAddress =
-    toBase58Address(solanaPublicKey) || adapterAddress || hookedSolanaAddress || "";
+    toBase58Address(solanaPublicKey) || adapterAddress || hookedSolanaAddress || derivedSolanaAddress || "";
   const adapterSendTransaction =
     typeof adapterAny?.sendTransaction === "function"
       ? adapterAny.sendTransaction.bind(adapterAny)
@@ -202,7 +204,12 @@ export function DepositButton({
   const activeSignTransaction = signTransaction ?? adapterSignTransaction;
   const hasSolanaSigner = !!activeSendTransaction || !!activeSignTransaction;
   const adapterSeemsReady = !!solanaWallet?.adapter?.connected || (!!adapterAddress && hasSolanaSigner);
-  const hasAnySolanaSession = !!adapterAddress || !!hookedSolanaAddress || !!solanaConnecting || !!solanaWallet?.adapter?.connected;
+  const hasAnySolanaSession =
+    !!adapterAddress ||
+    !!hookedSolanaAddress ||
+    !!derivedSolanaAddress ||
+    !!solanaConnecting ||
+    !!solanaWallet?.adapter?.connected;
   const solanaAdapterIdentity = `${solanaWallet?.adapter?.name || "unknown"}:${effectiveSolanaAddress || "no-address"}:${solanaWallet?.adapter?.connected ? "connected" : "disconnected"}`;
   const prevSolanaAdapterIdentityRef = useRef<string>(solanaAdapterIdentity);
   const jupiterMint = normalizeMint(tokenIn?.address);
@@ -361,10 +368,67 @@ export function DepositButton({
     }
   }, [solanaAdapterIdentity]);
 
+  const resolveSolanaSession = useCallback(() => {
+    const runtimeAdapter = solanaWallet?.adapter as
+      | {
+          connected?: boolean;
+          publicKey?: PublicKey | null;
+          sendTransaction?: (
+            transaction: unknown,
+            connection: Connection,
+            options?: { skipPreflight?: boolean; preflightCommitment?: "processed" | "confirmed" | "finalized" }
+          ) => Promise<string>;
+          signTransaction?: (transaction: unknown) => Promise<{ serialize: () => Uint8Array }>;
+        }
+      | undefined;
+
+    const runtimeAdapterAddress = toBase58Address(runtimeAdapter?.publicKey);
+    const runtimeAddress =
+      toBase58Address(solanaPublicKey) ||
+      runtimeAdapterAddress ||
+      hookedSolanaAddress ||
+      getSolanaWalletAddress(aptosWallet ?? null) ||
+      "";
+
+    const runtimeSend =
+      sendTransaction ??
+      (typeof runtimeAdapter?.sendTransaction === "function"
+        ? runtimeAdapter.sendTransaction.bind(runtimeAdapter)
+        : undefined);
+    const runtimeSign =
+      signTransaction ??
+      (typeof runtimeAdapter?.signTransaction === "function"
+        ? runtimeAdapter.signTransaction.bind(runtimeAdapter)
+        : undefined);
+
+    return {
+      address: runtimeAddress,
+      sendTransaction: runtimeSend,
+      signTransaction: runtimeSign,
+      hasSigner: !!runtimeSend || !!runtimeSign,
+      hasSession:
+        !!runtimeAddress || !!runtimeAdapter?.connected || !!solanaConnecting || !!getSolanaWalletAddress(aptosWallet ?? null),
+      adapterReady: !!runtimeAdapter?.connected || (!!runtimeAdapterAddress && (!!runtimeSend || !!runtimeSign)),
+    };
+  }, [solanaWallet, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
+
+  const waitForReadySolanaSession = useCallback(
+    async (retries = 4, delayMs = 200) => {
+      let session = resolveSolanaSession();
+      for (let i = 0; i < retries && (!session.address || !session.hasSigner); i++) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        session = resolveSolanaSession();
+      }
+      return session;
+    },
+    [resolveSolanaSession]
+  );
+
   const handleClick = async () => {
     if (isJupiterProtocol) {
-      if (!effectiveSolanaAddress || !hasSolanaSigner) {
-        if (hasAnySolanaSession) {
+      const session = await waitForReadySolanaSession();
+      if (!session.address || !session.hasSigner) {
+        if (session.hasSession || hasAnySolanaSession) {
           toast({
             title: "Solana wallet reconnecting",
             description: "Wallet is connected but not ready yet. Try again in a second.",
@@ -378,7 +442,7 @@ export function DepositButton({
         });
         return;
       }
-      if (!adapterSeemsReady) {
+      if (!session.adapterReady && !adapterSeemsReady) {
         toast({
           title: "Solana wallet reconnecting",
           description: "Wallet adapter is not fully ready yet. Please retry.",
@@ -429,8 +493,13 @@ export function DepositButton({
       });
       return;
     }
-    if (!effectiveSolanaAddress || !hasSolanaSigner) {
-      if (hasAnySolanaSession) {
+    const session = await waitForReadySolanaSession();
+    const signerAddress = session.address || effectiveSolanaAddress;
+    const runtimeSendTransaction = session.sendTransaction ?? activeSendTransaction;
+    const runtimeSignTransaction = session.signTransaction ?? activeSignTransaction;
+
+    if (!signerAddress || (!runtimeSendTransaction && !runtimeSignTransaction)) {
+      if (session.hasSession || hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
           description: "Wallet is connected but not ready yet. Please retry.",
@@ -497,7 +566,7 @@ export function DepositButton({
       // SOL uses dedicated 2-step flow:
       // 1) wrap SOL -> WSOL (separate transaction), 2) Jupiter deposit.
       if (jupiterSymbol === "WSOL") {
-        const owner = new PublicKey(effectiveSolanaAddress);
+        const owner = new PublicKey(signerAddress);
         const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
         const {
           blockhash: wrapBlockhash,
@@ -519,16 +588,16 @@ export function DepositButton({
         wrapTx.add(createSyncNativeInstruction(wsolAta));
 
         let wrapSignature: string;
-        if (activeSendTransaction && !isTrustWallet) {
-          wrapSignature = await activeSendTransaction(wrapTx as any, connection, {
+        if (runtimeSendTransaction && !isTrustWallet) {
+          wrapSignature = await runtimeSendTransaction(wrapTx as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         } else {
-          if (!activeSignTransaction) {
+          if (!runtimeSignTransaction) {
             throw new Error("Solana signer is not ready");
           }
-          const signedWrap = await activeSignTransaction(wrapTx as any);
+          const signedWrap = await runtimeSignTransaction(wrapTx as any);
           wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -552,7 +621,7 @@ export function DepositButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: tokenIn.address,
-          signer: effectiveSolanaAddress,
+          signer: signerAddress,
           amount: String(amountBaseUnits),
           preferLegacyInstruction: jupiterSymbol === "WSOL",
         }),
@@ -569,16 +638,16 @@ export function DepositButton({
         : Transaction.from(serialized);
 
       let signature: string;
-      if (activeSendTransaction && !isTrustWallet) {
-        signature = await activeSendTransaction(txForWallet as any, connection, {
+      if (runtimeSendTransaction && !isTrustWallet) {
+        signature = await runtimeSendTransaction(txForWallet as any, connection, {
           skipPreflight: false,
           preflightCommitment: "confirmed",
         });
       } else {
-        if (!activeSignTransaction) {
+        if (!runtimeSignTransaction) {
           throw new Error("Solana signer is not ready");
         }
-        const signed = await activeSignTransaction(txForWallet as any);
+        const signed = await runtimeSignTransaction(txForWallet as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
