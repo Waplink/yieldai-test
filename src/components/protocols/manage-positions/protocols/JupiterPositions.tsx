@@ -506,7 +506,7 @@ export function JupiterPositions() {
         throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
       }
 
-      let signature: string;
+      let signature: string | undefined;
       if (resolvedSendTransaction) {
         try {
           signature = await resolvedSendTransaction(transaction as any, connection, {
@@ -568,6 +568,10 @@ export function JupiterPositions() {
           skipPreflight: false,
           preflightCommitment: "confirmed",
         });
+      }
+
+      if (!signature) {
+        throw new Error("Failed to submit transaction signature");
       }
 
       const confirmation = await connection.confirmTransaction(
@@ -760,7 +764,7 @@ export function JupiterPositions() {
         throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
       }
 
-      let signature: string;
+      let signature: string | undefined;
       if (resolvedSendTransaction) {
         try {
           signature = await resolvedSendTransaction(transaction as any, connection, {
@@ -807,6 +811,10 @@ export function JupiterPositions() {
           skipPreflight: false,
           preflightCommitment: "confirmed",
         });
+      }
+
+      if (!signature) {
+        throw new Error("Failed to submit transaction signature");
       }
 
       const confirmation = await connection.confirmTransaction(
