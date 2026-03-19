@@ -98,6 +98,8 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
   
   // Check if any wallet is connected
   const isAnyWalletConnected = aptosConnected || solanaConnected || !!solanaAddress;
+  const isAptosDerived = aptosConnected && !!wallet && isDerivedAptosWalletReliable(wallet);
+  const aptosDisplayTitle = isAptosDerived ? "Aptos (Derived Wallet)" : "Aptos";
 
   useEffect(() => {
     setMounted(true);
@@ -564,7 +566,7 @@ export function WalletSelector({ externalOpen, onExternalOpenChange, showMobileW
             {/* Aptos Block */}
             <div className="px-3 py-2">
               <p className="text-xs font-medium uppercase text-muted-foreground mb-2">
-                Aptos
+                {aptosDisplayTitle}
               </p>
               {aptosConnected && account?.address ? (
                 <>
