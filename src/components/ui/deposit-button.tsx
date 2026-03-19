@@ -533,6 +533,7 @@ export function DepositButton({
     if (isJupiterDepositInFlightRef.current || isJupiterDepositing) {
       return;
     }
+    setIsJupiterDepositing(true);
 
     if (!tokenIn?.address) {
       toast({
@@ -540,6 +541,7 @@ export function DepositButton({
         description: "Jupiter token address is missing.",
         variant: "destructive",
       });
+      setIsJupiterDepositing(false);
       return;
     }
     const session = await waitForReadySolanaSession();
@@ -592,6 +594,7 @@ export function DepositButton({
           title: "Solana wallet reconnecting",
           description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
         });
+        setIsJupiterDepositing(false);
         return;
       }
       toast({
@@ -599,6 +602,7 @@ export function DepositButton({
         description: "Connect Solana wallet to deposit to Jupiter.",
         variant: "destructive",
       });
+      setIsJupiterDepositing(false);
       return;
     }
     if (!Number.isFinite(amountUi) || amountUi <= 0) {
@@ -607,6 +611,7 @@ export function DepositButton({
         description: "Enter a valid deposit amount.",
         variant: "destructive",
       });
+      setIsJupiterDepositing(false);
       return;
     }
     if (jupiterSymbol === "WSOL") {
@@ -617,6 +622,7 @@ export function DepositButton({
           description: `For SOL deposits, keep about ${SOL_FEE_RESERVE_UI} SOL for network fees. Max now: ${maxSpendableSol.toFixed(6)} SOL.`,
           variant: "destructive",
         });
+        setIsJupiterDepositing(false);
         return;
       }
     }
@@ -626,6 +632,7 @@ export function DepositButton({
         description: `Available: ${jupiterWalletAmount.toFixed(6)} ${jupiterDisplaySymbol || tokenIn.symbol}.`,
         variant: "destructive",
       });
+      setIsJupiterDepositing(false);
       return;
     }
 
@@ -637,6 +644,7 @@ export function DepositButton({
         description: "Increase amount to meet token precision.",
         variant: "destructive",
       });
+      setIsJupiterDepositing(false);
       return;
     }
 
