@@ -24,6 +24,14 @@ type JupiterDepositInstructionResponse = {
   }>;
 };
 
+const ASSOCIATED_TOKEN_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_2022_PROGRAM_ID = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const TOKEN_2022_JUPITER_MINTS = new Set([
+  "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH", // USDG
+  "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA", // USDS
+]);
+
 function isSolanaAddress(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
 }
@@ -104,11 +112,20 @@ async function buildLegacyTransactionFromInstruction(input: {
     recentBlockhash: blockhash,
   });
 
+  const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
+
   for (const ix of instructions) {
+    const patchedAccounts = isToken2022Mint && ix.programId === ASSOCIATED_TOKEN_PROGRAM_ID
+      ? ix.accounts.map((account) => ({
+          ...account,
+          pubkey: account.pubkey === TOKEN_PROGRAM_ID ? TOKEN_2022_PROGRAM_ID : account.pubkey,
+        }))
+      : ix.accounts;
+
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: ix.accounts.map((account) => ({
+        keys: patchedAccounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
