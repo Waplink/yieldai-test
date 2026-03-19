@@ -515,23 +515,38 @@ export function JupiterPositions() {
           });
         } catch (sendError) {
           if (isWalletNotSelected(sendError)) {
-            await recoverSolanaWalletSelection();
-            const retried = await waitForReadySolanaSession(10, 250);
-            const retrySend = retried.sendTransaction ?? activeSendTransaction;
-            const retrySign = retried.signTransaction ?? activeSignTransaction;
-            if (retrySend) {
-              signature = await retrySend(transaction as any, connection, {
-                skipPreflight: false,
-                preflightCommitment: "confirmed",
-              });
-            } else if (retrySign) {
-              const retrySigned = await retrySign(transaction as any);
-              signature = await connection.sendRawTransaction(retrySigned.serialize(), {
-                skipPreflight: false,
-                preflightCommitment: "confirmed",
-              });
-            } else {
-              throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+            let recovered = false;
+            for (let attempt = 0; attempt < 2 && !recovered; attempt++) {
+              await recoverSolanaWalletSelection();
+              const retried = await waitForReadySolanaSession(20, 250);
+              const retrySend = retried.sendTransaction ?? activeSendTransaction;
+              const retrySign = retried.signTransaction ?? activeSignTransaction;
+              try {
+                if (retrySend) {
+                  signature = await retrySend(transaction as any, connection, {
+                    skipPreflight: false,
+                    preflightCommitment: "confirmed",
+                  });
+                  recovered = true;
+                  break;
+                }
+                if (retrySign) {
+                  const retrySigned = await retrySign(transaction as any);
+                  signature = await connection.sendRawTransaction(retrySigned.serialize(), {
+                    skipPreflight: false,
+                    preflightCommitment: "confirmed",
+                  });
+                  recovered = true;
+                  break;
+                }
+              } catch (retryError) {
+                if (!isWalletNotSelected(retryError)) {
+                  throw retryError instanceof Error ? retryError : new Error(getErrorMessage(retryError));
+                }
+              }
+            }
+            if (!recovered) {
+              throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
             }
           } else {
           if (!resolvedSignTransaction) {
