@@ -116,22 +116,6 @@ async function buildLegacyTransactionFromInstruction(input: {
   });
 
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
-  const mintPk = new PublicKey(input.asset);
-  const ownerPk = new PublicKey(input.signer);
-  const legacyAta = getAssociatedTokenAddressSync(
-    mintPk,
-    ownerPk,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID
-  ).toBase58();
-  const token2022Ata = getAssociatedTokenAddressSync(
-    mintPk,
-    ownerPk,
-    false,
-    TOKEN_2022_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID
-  ).toBase58();
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
   const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
@@ -143,10 +127,25 @@ async function buildLegacyTransactionFromInstruction(input: {
             if (account.pubkey === tokenProgramStr) {
               return { ...account, pubkey: token2022ProgramStr };
             }
-            if (account.pubkey === legacyAta) {
-              return { ...account, pubkey: token2022Ata };
-            }
             return account;
+          }).map((account, index, arr) => {
+            // ATA create ix accounts:
+            // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
+            if (index !== 1 || arr.length < 6) return account;
+            try {
+              const owner = new PublicKey(arr[2].pubkey);
+              const mint = new PublicKey(arr[3].pubkey);
+              const recomputedAta = getAssociatedTokenAddressSync(
+                mint,
+                owner,
+                false,
+                TOKEN_2022_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              ).toBase58();
+              return { ...account, pubkey: recomputedAta };
+            } catch {
+              return account;
+            }
           })
         : ix.accounts;
 
