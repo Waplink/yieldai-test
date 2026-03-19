@@ -174,15 +174,34 @@ export function DepositButton({
   const jupiterSymbol = canonicalJupiterSymbol(tokenIn?.symbol);
   const jupiterDisplaySymbol = jupiterSymbol === "WSOL" ? "SOL" : (tokenIn?.symbol || "");
   const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
+  const adapterAny = solanaWallet?.adapter as
+    | {
+        connected?: boolean;
+        sendTransaction?: (
+          transaction: unknown,
+          connection: Connection,
+          options?: { skipPreflight?: boolean; preflightCommitment?: "processed" | "confirmed" | "finalized" }
+        ) => Promise<string>;
+        signTransaction?: (transaction: unknown) => Promise<{ serialize: () => Uint8Array }>;
+      }
+    | undefined;
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
   const adapterAddress = toBase58Address(adapterPublicKey);
   const effectiveSolanaAddress =
     toBase58Address(solanaPublicKey) || adapterAddress || hookedSolanaAddress || "";
-  const hasAdapterSigner =
-    typeof (solanaWallet?.adapter as { sendTransaction?: unknown } | undefined)?.sendTransaction === "function" ||
-    typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function";
-  const hasSolanaSigner = !!sendTransaction || !!signTransaction || hasAdapterSigner;
+  const adapterSendTransaction =
+    typeof adapterAny?.sendTransaction === "function"
+      ? adapterAny.sendTransaction.bind(adapterAny)
+      : undefined;
+  const adapterSignTransaction =
+    typeof adapterAny?.signTransaction === "function"
+      ? adapterAny.signTransaction.bind(adapterAny)
+      : undefined;
+  const activeSendTransaction = sendTransaction ?? adapterSendTransaction;
+  const activeSignTransaction = signTransaction ?? adapterSignTransaction;
+  const hasSolanaSigner = !!activeSendTransaction || !!activeSignTransaction;
   const adapterSeemsReady = !!solanaWallet?.adapter?.connected || (!!adapterAddress && hasSolanaSigner);
+  const hasAnySolanaSession = !!adapterAddress || !!hookedSolanaAddress || !!solanaConnecting || !!solanaWallet?.adapter?.connected;
   const solanaAdapterIdentity = `${solanaWallet?.adapter?.name || "unknown"}:${effectiveSolanaAddress || "no-address"}:${solanaWallet?.adapter?.connected ? "connected" : "disconnected"}`;
   const prevSolanaAdapterIdentityRef = useRef<string>(solanaAdapterIdentity);
   const jupiterMint = normalizeMint(tokenIn?.address);
@@ -344,11 +363,7 @@ export function DepositButton({
   const handleClick = async () => {
     if (isJupiterProtocol) {
       if (!effectiveSolanaAddress || !hasSolanaSigner) {
-        if (solanaConnecting) {
-          setIsJupiterDialogOpen(true);
-          return;
-        }
-        if (solanaWallet?.adapter?.connected) {
+        if (hasAnySolanaSession) {
           toast({
             title: "Solana wallet reconnecting",
             description: "Wallet is connected but not ready yet. Try again in a second.",
@@ -414,7 +429,7 @@ export function DepositButton({
       return;
     }
     if (!effectiveSolanaAddress || !hasSolanaSigner) {
-      if (solanaWallet?.adapter?.connected) {
+      if (hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
           description: "Wallet is connected but not ready yet. Please retry.",
@@ -503,13 +518,16 @@ export function DepositButton({
         wrapTx.add(createSyncNativeInstruction(wsolAta));
 
         let wrapSignature: string;
-        if (sendTransaction && !isTrustWallet) {
-          wrapSignature = await sendTransaction(wrapTx as any, connection, {
+        if (activeSendTransaction && !isTrustWallet) {
+          wrapSignature = await activeSendTransaction(wrapTx as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         } else {
-          const signedWrap = await signTransaction!(wrapTx as any);
+          if (!activeSignTransaction) {
+            throw new Error("Solana signer is not ready");
+          }
+          const signedWrap = await activeSignTransaction(wrapTx as any);
           wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -550,13 +568,16 @@ export function DepositButton({
         : Transaction.from(serialized);
 
       let signature: string;
-      if (sendTransaction && !isTrustWallet) {
-        signature = await sendTransaction(txForWallet as any, connection, {
+      if (activeSendTransaction && !isTrustWallet) {
+        signature = await activeSendTransaction(txForWallet as any, connection, {
           skipPreflight: false,
           preflightCommitment: "confirmed",
         });
       } else {
-        const signed = await signTransaction!(txForWallet as any);
+        if (!activeSignTransaction) {
+          throw new Error("Solana signer is not ready");
+        }
+        const signed = await activeSignTransaction(txForWallet as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
