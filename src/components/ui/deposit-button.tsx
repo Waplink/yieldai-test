@@ -429,7 +429,7 @@ export function DepositButton({
   }, [solanaWallet, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
 
   const waitForReadySolanaSession = useCallback(
-    async (retries = 10, delayMs = 300) => {
+    async (retries = 20, delayMs = 250) => {
       let session = resolveSolanaSession();
       for (let i = 0; i < retries && (!session.signerAddress || !session.hasSigner); i++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -442,7 +442,7 @@ export function DepositButton({
 
   const handleClick = async () => {
     if (isJupiterProtocol) {
-      const session = await waitForReadySolanaSession();
+      const session = resolveSolanaSession();
       if (!session.signerAddress || !session.hasSigner) {
         if (session.hasSession || hasAnySolanaSession || !!effectiveSolanaAddress) {
           // Allow opening modal while wallet APIs are still warming up after reconnect.
@@ -509,7 +509,7 @@ export function DepositButton({
       if (session.hasSession || hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
-          description: "Wallet is connected but not ready yet. Please retry.",
+          description: "Wallet API is still syncing after reconnect. Try again in 1-2 seconds.",
         });
         return;
       }
