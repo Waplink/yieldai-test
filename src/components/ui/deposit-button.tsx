@@ -383,12 +383,16 @@ export function DepositButton({
   // This prevents stale signer/in-flight state after switching wallets (Trust <-> Phantom).
   useEffect(() => {
     if (prevSolanaAdapterIdentityRef.current !== solanaAdapterIdentity) {
-      isJupiterDepositInFlightRef.current = false;
-      setIsJupiterDepositing(false);
+      const isDepositFlowBusy = isJupiterDepositing || isJupiterDepositInFlightRef.current;
+      // Do not interrupt active "reconnect -> submit" flow to avoid button flicker.
+      if (!isDepositFlowBusy) {
+        isJupiterDepositInFlightRef.current = false;
+        setIsJupiterDepositing(false);
+      }
       attemptedSolanaReconnectRef.current = false;
       prevSolanaAdapterIdentityRef.current = solanaAdapterIdentity;
     }
-  }, [solanaAdapterIdentity]);
+  }, [solanaAdapterIdentity, isJupiterDepositing]);
 
   const resolveSolanaSession = useCallback(() => {
     const connectedAdapterFromList = solanaWallets.find((w) => w?.adapter?.connected)?.adapter;
