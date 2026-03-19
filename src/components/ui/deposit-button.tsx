@@ -180,6 +180,8 @@ export function DepositButton({
     connecting: solanaConnecting,
     wallet: solanaWallet,
     wallets: solanaWallets,
+    select: selectSolanaWallet,
+    connect: connectSolanaWallet,
   } = useSolanaWallet();
   const {
     address: hookedSolanaAddress,
@@ -445,6 +447,41 @@ export function DepositButton({
     [resolveSolanaSession]
   );
 
+  const recoverSolanaWalletSelection = useCallback(async () => {
+    const preferredName =
+      (solanaWallet?.adapter?.name as string | undefined) ||
+      (solanaWallets.find((w) => w?.adapter?.connected)?.adapter?.name as string | undefined) ||
+      (() => {
+        try {
+          const raw = window.localStorage.getItem("walletName");
+          if (!raw) return undefined;
+          const parsed = JSON.parse(raw);
+          return typeof parsed === "string" ? parsed : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+
+    if (!preferredName) return;
+
+    const exists = solanaWallets.some((w) => w?.adapter?.name === preferredName);
+    if (exists && typeof selectSolanaWallet === "function") {
+      try {
+        selectSolanaWallet(preferredName as any);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (typeof connectSolanaWallet === "function") {
+      try {
+        await connectSolanaWallet();
+      } catch {
+        // ignore
+      }
+    }
+  }, [solanaWallet, solanaWallets, selectSolanaWallet, connectSolanaWallet]);
+
   const handleClick = async () => {
     if (isJupiterProtocol) {
       const session = resolveSolanaSession();
@@ -538,10 +575,22 @@ export function DepositButton({
     }
 
     if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+      await recoverSolanaWalletSelection();
+      const retriedAfterSelect = await waitForReadySolanaSession(10, 250);
+      resolvedSignerAddress =
+        retriedAfterSelect.signerAddress ||
+        toBase58Address(solanaPublicKey) ||
+        toBase58Address(solanaWallet?.adapter?.publicKey) ||
+        "";
+      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? activeSendTransaction;
+      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
+    }
+
+    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
       if (session.hasSession || hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
-          description: "Wallet API is unavailable in current session. Reconnect Solana wallet and try again.",
+          description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
         });
         return;
       }
