@@ -117,8 +117,8 @@ async function buildLegacyTransactionFromInstruction(input: {
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
-  const signerPubkey = new PublicKey(input.signer);
   const assetMintPubkey = new PublicKey(input.asset);
+  const assetMintStr = assetMintPubkey.toBase58();
 
   for (const ix of instructions) {
     const patchedAccounts =
@@ -127,24 +127,20 @@ async function buildLegacyTransactionFromInstruction(input: {
             const next = ix.accounts.map((account) => ({ ...account }));
             if (next.length < 6) return ix.accounts;
 
-            const payer = next[0]?.pubkey;
             const owner = next[2]?.pubkey;
             const mint = next[3]?.pubkey;
             const tokenProgram = next[5]?.pubkey;
-            const isUserAtaIx =
-              payer === signerPubkey.toBase58() &&
-              owner === signerPubkey.toBase58() &&
-              mint === assetMintPubkey.toBase58();
 
-            // Patch only user's ATA instruction. Leave all others untouched.
-            if (!isUserAtaIx) return ix.accounts;
+            // Patch only ATA instructions for this deposit asset mint.
+            if (mint !== assetMintStr) return ix.accounts;
             if (tokenProgram !== tokenProgramStr) return ix.accounts;
 
             try {
+              const ownerPubkey = new PublicKey(owner);
               const ataAddress = getAssociatedTokenAddressSync(
                 assetMintPubkey,
-                signerPubkey,
-                false,
+                ownerPubkey,
+                true,
                 TOKEN_2022_PROGRAM_ID,
                 ASSOCIATED_TOKEN_PROGRAM_ID
               ).toBase58();
