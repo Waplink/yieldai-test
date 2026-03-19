@@ -32,6 +32,8 @@ type JupiterPosition = {
 };
 
 const WSOL_MINT = "So11111111111111111111111111111111111111112";
+const USDG_MINT = "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH";
+const JUPITER_PREFER_LEGACY_DEPOSIT_MINTS = new Set([WSOL_MINT, USDG_MINT]);
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -409,11 +411,20 @@ export function JupiterPositions() {
       resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
     }
 
-    if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
+    // Continue when we have an address but signer APIs are still warming up:
+    // submit path has an extra signer re-resolve and WalletNotSelected retry.
+    if (!resolvedSignerAddress) {
+      const finalRetry = await waitForReadySolanaSession(12, 250);
+      resolvedSignerAddress = finalRetry.signerAddress || effectiveSignerAddress;
+      resolvedSendTransaction = finalRetry.sendTransaction ?? resolvedSendTransaction ?? activeSendTransaction;
+      resolvedSignTransaction = finalRetry.signTransaction ?? resolvedSignTransaction ?? activeSignTransaction;
+    }
+
+    if (!resolvedSignerAddress) {
       if (session.hasSession || hasAnySolanaSession) {
         toast({
           title: "Solana wallet reconnecting",
-          description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
+          description: "Wallet address is unavailable after reconnect. Reconnect Solana wallet and try again.",
         });
         return;
       }
@@ -464,6 +475,7 @@ export function JupiterPositions() {
           asset: mint,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
+          preferLegacyInstruction: JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(mint),
         }),
       });
 
