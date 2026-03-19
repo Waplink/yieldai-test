@@ -67,7 +67,7 @@ function sortByValueDesc(items: JupiterPosition[]): JupiterPosition[] {
 
 export function JupiterPositions() {
   const { address: solanaAddress, tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
-  const { publicKey, signTransaction } = useSolanaWallet();
+  const { publicKey, signTransaction, wallet: solanaWallet } = useSolanaWallet();
   const { toast } = useToast();
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,6 +77,15 @@ export function JupiterPositions() {
   const [isDepositing, setIsDepositing] = useState(false);
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
+  const effectivePublicKey = publicKey ?? adapterPublicKey ?? (solanaAddress ? new PublicKey(solanaAddress) : null);
+  const adapterSignTransaction =
+    typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function"
+      ? ((solanaWallet?.adapter as { signTransaction: (transaction: Transaction) => Promise<Transaction> }).signTransaction.bind(
+          solanaWallet?.adapter
+        ) as (transaction: Transaction) => Promise<Transaction>)
+      : undefined;
+  const activeSignTransaction = signTransaction ?? adapterSignTransaction;
   const rpcEndpoint = useMemo(() => {
     return (
       process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
@@ -183,7 +192,7 @@ export function JupiterPositions() {
 
   const handleDeposit = async (amountUi: number) => {
     if (!selectedPosition) return;
-    if (!publicKey || !signTransaction) {
+    if (!effectivePublicKey || !activeSignTransaction) {
       toast({
         title: "Wallet not connected",
         description: "Connect Solana wallet to deposit to Jupiter.",
@@ -229,7 +238,7 @@ export function JupiterPositions() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: mint,
-          signer: publicKey.toString(),
+          signer: effectivePublicKey.toString(),
           amount: String(amountBaseUnits),
         }),
       });
@@ -246,9 +255,9 @@ export function JupiterPositions() {
       const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
       const transaction = Transaction.from(serialized);
       transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
+      transaction.feePayer = effectivePublicKey;
 
-      const signed = await signTransaction(transaction);
+      const signed = await activeSignTransaction(transaction);
       const signature = await connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
         preflightCommitment: "confirmed",
@@ -291,7 +300,7 @@ export function JupiterPositions() {
 
   const handleWithdraw = async (amountUi: number) => {
     if (!selectedPosition) return;
-    if (!publicKey || !signTransaction) {
+    if (!effectivePublicKey || !activeSignTransaction) {
       toast({
         title: "Wallet not connected",
         description: "Connect Solana wallet to withdraw from Jupiter.",
@@ -346,7 +355,7 @@ export function JupiterPositions() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset: mint,
-          signer: publicKey.toString(),
+          signer: effectivePublicKey.toString(),
           amount: String(amountBaseUnits),
         }),
       });
@@ -367,9 +376,9 @@ export function JupiterPositions() {
       const serialized = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
       const transaction = Transaction.from(serialized);
       transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
+      transaction.feePayer = effectivePublicKey;
 
-      const signed = await signTransaction(transaction);
+      const signed = await activeSignTransaction(transaction);
       const signature = await connection.sendRawTransaction(signed.serialize(), {
         skipPreflight: false,
         preflightCommitment: "confirmed",
@@ -390,7 +399,7 @@ export function JupiterPositions() {
       // For SOL withdraw, Jupiter returns WSOL. Unwrap WSOL back to SOL by closing WSOL ATA.
       if (mint === WSOL_MINT) {
         try {
-          const owner = new PublicKey(publicKey.toString());
+          const owner = new PublicKey(effectivePublicKey.toString());
           const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
           const wsolBalance = await connection.getTokenAccountBalance(wsolAta).catch(() => null);
           const rawAmount = Number(wsolBalance?.value?.amount || 0);
@@ -409,7 +418,7 @@ export function JupiterPositions() {
               )
             );
 
-            const signedUnwrap = await signTransaction(unwrapTx);
+            const signedUnwrap = await activeSignTransaction(unwrapTx);
             const unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
               skipPreflight: false,
               preflightCommitment: "confirmed",
