@@ -429,7 +429,7 @@ export function DepositButton({
   }, [solanaWallet, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
 
   const waitForReadySolanaSession = useCallback(
-    async (retries = 4, delayMs = 200) => {
+    async (retries = 10, delayMs = 300) => {
       let session = resolveSolanaSession();
       for (let i = 0; i < retries && (!session.signerAddress || !session.hasSigner); i++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -444,24 +444,15 @@ export function DepositButton({
     if (isJupiterProtocol) {
       const session = await waitForReadySolanaSession();
       if (!session.signerAddress || !session.hasSigner) {
-        if (session.hasSession || hasAnySolanaSession) {
-          toast({
-            title: "Solana wallet reconnecting",
-            description: "Wallet is connected but not ready yet. Try again in a second.",
-          });
+        if (session.hasSession || hasAnySolanaSession || !!effectiveSolanaAddress) {
+          // Allow opening modal while wallet APIs are still warming up after reconnect.
+          setIsJupiterDialogOpen(true);
           return;
         }
         toast({
           title: "Solana wallet required",
           description: "Connect Solana wallet to deposit to Jupiter.",
           variant: "destructive",
-        });
-        return;
-      }
-      if (!session.adapterReady && !adapterSeemsReady) {
-        toast({
-          title: "Solana wallet reconnecting",
-          description: "Wallet adapter is not fully ready yet. Please retry.",
         });
         return;
       }
