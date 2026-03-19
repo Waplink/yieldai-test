@@ -32,7 +32,6 @@ type JupiterDepositInstructionResponse = {
 
 const TOKEN_2022_JUPITER_MINTS = new Set([
   "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH", // USDG
-  "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA", // USDS
 ]);
 
 function isSolanaAddress(value: string): boolean {

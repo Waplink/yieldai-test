@@ -84,7 +84,7 @@ const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
   USDG: "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
   USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
 };
-const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG", "USDS"]);
+const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG"]);
 const SOL_FEE_RESERVE_UI = 0.003;
 
 function normalizeMint(value?: string | null): string {
