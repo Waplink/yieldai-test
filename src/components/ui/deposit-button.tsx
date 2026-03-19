@@ -635,7 +635,7 @@ export function DepositButton({
     if (amountUi > jupiterWalletAmount + 1e-12) {
       toast({
         title: "Insufficient balance",
-        description: `Available: ${jupiterWalletAmount.toFixed(6)} ${jupiterDisplaySymbol || tokenIn.symbol}.`,
+        description: `Available: ${jupiterWalletAmount.toFixed(6)} ${jupiterDisplaySymbol || tokenIn?.symbol || "token"}.`,
         variant: "destructive",
       });
       setIsJupiterDepositing(false);
