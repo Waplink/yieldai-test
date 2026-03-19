@@ -540,7 +540,8 @@ export function DepositButton({
     }
     setIsJupiterDepositing(true);
 
-    if (!tokenIn?.address) {
+    const depositAssetMint = jupiterMint || jupiterMintBySymbol || normalizeMint(tokenIn?.address);
+    if (!depositAssetMint) {
       toast({
         title: "Token error",
         description: "Jupiter token address is missing.",
@@ -745,7 +746,7 @@ export function DepositButton({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          asset: tokenIn.address,
+          asset: depositAssetMint,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
           preferLegacyInstruction: JUPITER_PREFER_LEGACY_SYMBOLS.has(jupiterSymbol),
