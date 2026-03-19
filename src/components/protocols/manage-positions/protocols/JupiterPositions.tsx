@@ -546,7 +546,26 @@ export function JupiterPositions() {
               }
             }
             if (!recovered) {
-              throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
+              // Final delayed retry inside the same click to avoid forced second click UX.
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              await recoverSolanaWalletSelection();
+              const finalRetry = await waitForReadySolanaSession(20, 250);
+              const finalSend = finalRetry.sendTransaction ?? activeSendTransaction;
+              const finalSign = finalRetry.signTransaction ?? activeSignTransaction;
+              if (finalSend) {
+                signature = await finalSend(transaction as any, connection, {
+                  skipPreflight: false,
+                  preflightCommitment: "confirmed",
+                });
+              } else if (finalSign) {
+                const finalSigned = await finalSign(transaction as any);
+                signature = await connection.sendRawTransaction(finalSigned.serialize(), {
+                  skipPreflight: false,
+                  preflightCommitment: "confirmed",
+                });
+              } else {
+                throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
+              }
             }
           } else {
           if (!resolvedSignTransaction) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -117,53 +118,69 @@ async function buildLegacyTransactionFromInstruction(input: {
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
-  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
+  const signerPubkey = new PublicKey(input.signer);
+  const assetMintPubkey = new PublicKey(input.asset);
 
   for (const ix of instructions) {
-    const patchedAccounts = (() => {
+    const replacementAtaIx = (() => {
       if (!isToken2022Mint || ix.programId !== ataProgramIdStr) {
-        return ix.accounts;
+        return null;
       }
 
-      // ATA create ix accounts:
-      // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-      if (!Array.isArray(ix.accounts) || ix.accounts.length < 6) {
-        return ix.accounts;
+      // Replace only the user's ATA create instruction and leave other ATA instructions intact.
+      // Expected shape for user ATA create:
+      // 0 payer(=signer), 1 ata, 2 owner(=signer), 3 mint(=asset), 4 system, 5 token program
+      if (!Array.isArray(ix.accounts) || ix.accounts.length < 4) {
+        return null;
       }
-
-      const next = ix.accounts.map((account) => ({ ...account }));
       try {
-        const owner = new PublicKey(next[2].pubkey);
-        const mint = new PublicKey(next[3].pubkey);
-        const providedAta = next[1].pubkey;
-        const providedTokenProgram = next[5].pubkey;
+        const payer = ix.accounts[0]?.pubkey;
+        const owner = ix.accounts[2]?.pubkey;
+        const mint = ix.accounts[3]?.pubkey;
+        const isUserAtaIx =
+          payer === signerPubkey.toBase58() &&
+          owner === signerPubkey.toBase58() &&
+          mint === assetMintPubkey.toBase58();
 
-        const legacyAta = getAssociatedTokenAddressSync(
-          mint,
-          owner,
-          false,
-          TOKEN_PROGRAM_ID,
-          ASSOCIATED_TOKEN_PROGRAM_ID
-        ).toBase58();
-        const token2022Ata = getAssociatedTokenAddressSync(
-          mint,
-          owner,
+        if (!isUserAtaIx) {
+          return null;
+        }
+
+        const ataAddress = getAssociatedTokenAddressSync(
+          assetMintPubkey,
+          signerPubkey,
           false,
           TOKEN_2022_PROGRAM_ID,
           ASSOCIATED_TOKEN_PROGRAM_ID
-        ).toBase58();
+        );
 
-        const needsLegacyTo2022Patch =
-          providedAta === legacyAta || providedTokenProgram === tokenProgramStr;
-        if (needsLegacyTo2022Patch) {
-          next[1].pubkey = token2022Ata;
-          next[5].pubkey = token2022ProgramStr;
-        }
+        return createAssociatedTokenAccountIdempotentInstruction(
+          signerPubkey,
+          ataAddress,
+          signerPubkey,
+          assetMintPubkey,
+          TOKEN_2022_PROGRAM_ID,
+          ASSOCIATED_TOKEN_PROGRAM_ID
+        );
       } catch {
-        return ix.accounts;
+        return null;
       }
-      return next;
     })();
+
+    if (replacementAtaIx) {
+      transaction.add(replacementAtaIx);
+      continue;
+    }
+
+    const patchedAccounts =
+      isToken2022Mint && ix.programId === ataProgramIdStr
+        ? ix.accounts.map((account) => {
+            if (account.pubkey === tokenProgramStr) {
+              return { ...account, pubkey: TOKEN_2022_PROGRAM_ID.toBase58() };
+            }
+            return account;
+          })
+        : ix.accounts;
 
     transaction.add(
       new TransactionInstruction({
