@@ -39,7 +39,13 @@ function toNumber(value: unknown, fallback = 0): number {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    const message = (error.message || "").trim();
+    if (message.length > 0) return message;
+    const name = (error.name || "").trim();
+    if (name.length > 0) return name;
+    return "Unknown error";
+  }
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const maybeName = (error as { name?: unknown }).name;
@@ -57,6 +63,14 @@ function getErrorMessage(error: unknown): string {
     }
   }
   return "Unknown error";
+}
+
+function isWalletNotSelected(error: unknown): boolean {
+  if (!error) return false;
+  const asObj = error as { name?: unknown; message?: unknown };
+  const name = typeof asObj.name === "string" ? asObj.name.toLowerCase() : "";
+  const message = typeof asObj.message === "string" ? asObj.message.toLowerCase() : "";
+  return name.includes("walletnotselected") || message.includes("walletnotselected") || message.includes("wallet not selected");
 }
 
 function decodeBase64Tx(base64Tx: string): Uint8Array {
@@ -488,6 +502,26 @@ export function JupiterPositions() {
             preflightCommitment: "confirmed",
           });
         } catch (sendError) {
+          if (isWalletNotSelected(sendError)) {
+            await recoverSolanaWalletSelection();
+            const retried = await waitForReadySolanaSession(10, 250);
+            const retrySend = retried.sendTransaction ?? activeSendTransaction;
+            const retrySign = retried.signTransaction ?? activeSignTransaction;
+            if (retrySend) {
+              signature = await retrySend(transaction as any, connection, {
+                skipPreflight: false,
+                preflightCommitment: "confirmed",
+              });
+            } else if (retrySign) {
+              const retrySigned = await retrySign(transaction as any);
+              signature = await connection.sendRawTransaction(retrySigned.serialize(), {
+                skipPreflight: false,
+                preflightCommitment: "confirmed",
+              });
+            } else {
+              throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+            }
+          } else {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
@@ -496,6 +530,7 @@ export function JupiterPositions() {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
+          }
         }
       } else {
         if (!resolvedSignTransaction) {
@@ -706,6 +741,26 @@ export function JupiterPositions() {
             preflightCommitment: "confirmed",
           });
         } catch (sendError) {
+          if (isWalletNotSelected(sendError)) {
+            await recoverSolanaWalletSelection();
+            const retried = await waitForReadySolanaSession(10, 250);
+            const retrySend = retried.sendTransaction ?? activeSendTransaction;
+            const retrySign = retried.signTransaction ?? activeSignTransaction;
+            if (retrySend) {
+              signature = await retrySend(transaction as any, connection, {
+                skipPreflight: false,
+                preflightCommitment: "confirmed",
+              });
+            } else if (retrySign) {
+              const retrySigned = await retrySign(transaction as any);
+              signature = await connection.sendRawTransaction(retrySigned.serialize(), {
+                skipPreflight: false,
+                preflightCommitment: "confirmed",
+              });
+            } else {
+              throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+            }
+          } else {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
@@ -714,6 +769,7 @@ export function JupiterPositions() {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
+          }
         }
       } else {
         if (!resolvedSignTransaction) {
