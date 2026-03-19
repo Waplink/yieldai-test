@@ -319,7 +319,7 @@ export function JupiterPositions() {
     }
 
     const { mint, symbol, amount: suppliedAmount, decimals } = selectedMeta;
-    if (amountUi > suppliedAmount) {
+    if (amountUi > suppliedAmount + 1e-12) {
       toast({
         title: "Amount too high",
         description: `Withdraw amount exceeds supplied balance (${formatNumber(suppliedAmount, 6)} ${symbol}).`,
