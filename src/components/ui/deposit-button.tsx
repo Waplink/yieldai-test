@@ -642,7 +642,7 @@ export function DepositButton({
       return;
     }
 
-    const decimals = tokenIn.decimals || 0;
+    const decimals = tokenIn?.decimals ?? 0;
     const amountBaseUnits = Math.floor(amountUi * Math.pow(10, decimals));
     if (!Number.isFinite(amountBaseUnits) || amountBaseUnits <= 0) {
       toast({
@@ -814,7 +814,7 @@ export function DepositButton({
       }
       toast({
         title: "Deposit submitted",
-        description: `Deposited ${amountUi} ${tokenIn.symbol}.`,
+        description: `Deposited ${amountUi} ${tokenIn?.symbol || jupiterDisplaySymbol || "token"}.`,
         action: (
           <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
             View on Solscan
