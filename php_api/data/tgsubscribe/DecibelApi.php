@@ -191,8 +191,8 @@ class DecibelApi
 
 	/**
 	 * getFundig($data=[])
-	 * Выборка funding/price данных за последние 24 часа.
-	 * Optional: market_addr, table, limit
+	 * Выборка funding/price данных за период.
+	 * Optional: market_addr, table, limit, period(day|week|month)
 	 */
 	public function getFundig($data=[])
 	{
@@ -205,12 +205,39 @@ class DecibelApi
 			];
 		}
 
-		$fromUnixMs = (time() - 86400) * 1000;
-		$limit = !empty($data['limit']) ? (int)$data['limit'] : 5000;
-		$weightedAverage = false;
-		if (isset($data['weighted_average'])) {
-			$weightedAverage = in_array(strtolower((string)$data['weighted_average']), ['1', 'true', 'yes', 'on'], true);
+		$periodInput = null;
+		if (isset($data['period'])) {
+			$periodInput = $data['period'];
+		} elseif (isset($_GET['period'])) {
+			// Backward-compatible fallback for callers that pass params via query.
+			$periodInput = $_GET['period'];
 		}
+
+		$periodRaw = strtolower(trim((string)($periodInput !== null ? $periodInput : 'day')));
+		$periodSecondsMap = [
+			'day' => 86400,
+			'week' => 7 * 86400,
+			'month' => 30 * 86400,
+		];
+		$periodSeconds = isset($periodSecondsMap[$periodRaw]) ? $periodSecondsMap[$periodRaw] : $periodSecondsMap['day'];
+
+		$fromUnixMs = (time() - $periodSeconds) * 1000;
+		$limit = !empty($data['limit']) ? (int)$data['limit'] : 5000;
+		$weightedAverageInput = null;
+		if (array_key_exists('weighted_average', $data)) {
+			$weightedAverageInput = $data['weighted_average'];
+		} elseif (array_key_exists('weightedAverage', $data)) {
+			$weightedAverageInput = $data['weightedAverage'];
+		} elseif (isset($_GET['weighted_average'])) {
+			// Backward-compatible fallback for callers that pass params via query.
+			$weightedAverageInput = $_GET['weighted_average'];
+		}
+
+		$weightedAverage = in_array(
+			strtolower(trim((string)$weightedAverageInput)),
+			['1', 'true', 'yes', 'on'],
+			true
+		);
 		if ($limit <= 0) {
 			$limit = 5000;
 		}
