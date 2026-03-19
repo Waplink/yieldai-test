@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { createCloseAccountInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } from "@solana/spl-token";
 import { useToast } from "@/components/ui/use-toast";
 import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
@@ -26,6 +27,8 @@ type JupiterPosition = {
   };
   underlyingAssets?: string;
 };
+
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -376,6 +379,50 @@ export function JupiterPositions() {
           err: confirmation.value.err,
         });
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      // For SOL withdraw, Jupiter returns WSOL. Unwrap WSOL back to SOL by closing WSOL ATA.
+      if (mint === WSOL_MINT) {
+        try {
+          const owner = new PublicKey(publicKey.toString());
+          const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
+          const wsolBalance = await connection.getTokenAccountBalance(wsolAta).catch(() => null);
+          const rawAmount = Number(wsolBalance?.value?.amount || 0);
+
+          if (Number.isFinite(rawAmount) && rawAmount > 0) {
+            const { blockhash: unwrapBlockhash, lastValidBlockHeight: unwrapLastValidBlockHeight } =
+              await connection.getLatestBlockhash("confirmed");
+            const unwrapTx = new Transaction();
+            unwrapTx.feePayer = owner;
+            unwrapTx.recentBlockhash = unwrapBlockhash;
+            unwrapTx.add(
+              createCloseAccountInstruction(
+                wsolAta,
+                owner, // destination SOL wallet
+                owner, // close authority
+              )
+            );
+
+            const signedUnwrap = await signTransaction(unwrapTx);
+            const unwrapSig = await connection.sendRawTransaction(signedUnwrap.serialize(), {
+              skipPreflight: false,
+              preflightCommitment: "confirmed",
+            });
+            const unwrapConfirmation = await connection.confirmTransaction(
+              {
+                signature: unwrapSig,
+                blockhash: unwrapBlockhash,
+                lastValidBlockHeight: unwrapLastValidBlockHeight,
+              },
+              "confirmed"
+            );
+            if (unwrapConfirmation.value.err) {
+              console.warn("[Jupiter][Withdraw] WSOL unwrap failed", unwrapConfirmation.value.err);
+            }
+          }
+        } catch (unwrapError) {
+          console.warn("[Jupiter][Withdraw] WSOL unwrap step failed", unwrapError);
+        }
       }
 
       toast({
