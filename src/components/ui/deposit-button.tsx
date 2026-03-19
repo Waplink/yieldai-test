@@ -27,6 +27,7 @@ import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
+import { isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import {
@@ -719,6 +720,7 @@ interface ConnectWalletDialogProps {
 
 function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
   const { wallets = [], notDetectedWallets = [], wallet: selectedWallet, connected } = useWallet();
+  const isSelectedDerived = connected && isDerivedAptosWalletReliable(selectedWallet as { name?: string } | null);
 
   const { aptosConnectWallets, availableWallets, installableWallets } =
     groupAndSortWallets(
@@ -781,6 +783,7 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
             wallet={wallet}
             onConnect={close}
             isConnected={connected && selectedWallet?.name === wallet.name}
+            isDerivedSelected={isSelectedDerived}
           />
         ))}
         {!!installableWallets.length && (
@@ -797,6 +800,7 @@ function ConnectWalletDialog({ close }: ConnectWalletDialogProps) {
                   wallet={wallet}
                   onConnect={close}
                   isConnected={connected && selectedWallet?.name === wallet.name}
+                  isDerivedSelected={isSelectedDerived}
                 />
               ))}
             </CollapsibleContent>
@@ -811,6 +815,7 @@ interface WalletRowProps {
   wallet: AdapterWallet | AdapterNotDetectedWallet;
   onConnect?: () => void;
   isConnected?: boolean;
+  isDerivedSelected?: boolean;
 }
 
 function isDerivedAptosWalletName(name?: string): boolean {
@@ -819,8 +824,17 @@ function isDerivedAptosWalletName(name?: string): boolean {
   return normalized.includes("derived wallet") || normalized.endsWith(" (solana)");
 }
 
-function WalletRow({ wallet, onConnect, isConnected = false }: WalletRowProps) {
+function getWalletLabel(walletName: string, isConnected: boolean, isDerivedSelected: boolean): string {
+  const normalized = walletName.trim().toLowerCase();
+  if (normalized === "aptos") {
+    return isConnected && isDerivedSelected ? "APTOS (Derived Wallet)" : "APTOS";
+  }
+  return walletName;
+}
+
+function WalletRow({ wallet, onConnect, isConnected = false, isDerivedSelected = false }: WalletRowProps) {
   const isDerived = isDerivedAptosWalletName(wallet.name);
+  const walletLabel = getWalletLabel(wallet.name, isConnected, isDerivedSelected);
   return (
     <WalletItem
       wallet={wallet}
@@ -829,7 +843,7 @@ function WalletRow({ wallet, onConnect, isConnected = false }: WalletRowProps) {
     >
       <div className="flex items-center gap-4">
         <WalletItem.Icon className="h-6 w-6" />
-        <WalletItem.Name className="text-base font-normal" />
+        <span className="text-base font-normal">{walletLabel}</span>
       </div>
       {isInstallRequired(wallet) ? (
         <Button size="sm" variant="ghost" asChild>
