@@ -179,6 +179,7 @@ export function DepositButton({
     sendTransaction,
     connecting: solanaConnecting,
     wallet: solanaWallet,
+    wallets: solanaWallets,
   } = useSolanaWallet();
   const {
     address: hookedSolanaAddress,
@@ -388,7 +389,8 @@ export function DepositButton({
   }, [solanaAdapterIdentity]);
 
   const resolveSolanaSession = useCallback(() => {
-    const runtimeAdapter = solanaWallet?.adapter as
+    const connectedAdapterFromList = solanaWallets.find((w) => w?.adapter?.connected)?.adapter;
+    const runtimeAdapter = (solanaWallet?.adapter || connectedAdapterFromList) as
       | {
           connected?: boolean;
           publicKey?: PublicKey | null;
@@ -416,6 +418,7 @@ export function DepositButton({
         : undefined);
 
     return {
+      adapter: runtimeAdapter,
       signerAddress: runtimeSignerAddress,
       sendTransaction: runtimeSend,
       signTransaction: runtimeSign,
@@ -428,7 +431,7 @@ export function DepositButton({
         !!getSolanaWalletAddress(aptosWallet ?? null),
       adapterReady: !!runtimeAdapter?.connected || (!!runtimeAdapterAddress && (!!runtimeSend || !!runtimeSign)),
     };
-  }, [solanaWallet, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
+  }, [solanaWallet, solanaWallets, solanaPublicKey, hookedSolanaAddress, aptosWallet, sendTransaction, signTransaction, solanaConnecting]);
 
   const waitForReadySolanaSession = useCallback(
     async (retries = 20, delayMs = 250) => {
@@ -511,7 +514,9 @@ export function DepositButton({
     let resolvedSignTransaction = runtimeSignTransaction;
 
     if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
-      const adapter = solanaWallet?.adapter as { connect?: () => Promise<void> } | undefined;
+      const adapter = (session.adapter ||
+        solanaWallet?.adapter ||
+        solanaWallets.find((w) => w?.adapter?.connected)?.adapter) as { connect?: () => Promise<void> } | undefined;
       if (adapter && typeof adapter.connect === "function" && !attemptedSolanaReconnectRef.current) {
         attemptedSolanaReconnectRef.current = true;
         try {
@@ -522,7 +527,11 @@ export function DepositButton({
         }
         const retried = await waitForReadySolanaSession(8, 250);
         resolvedSignerAddress =
-          retried.signerAddress || toBase58Address(solanaPublicKey) || toBase58Address(solanaWallet?.adapter?.publicKey) || "";
+          retried.signerAddress ||
+          toBase58Address(solanaPublicKey) ||
+          toBase58Address((session.adapter as { publicKey?: PublicKey | null } | undefined)?.publicKey) ||
+          toBase58Address(solanaWallet?.adapter?.publicKey) ||
+          "";
         resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
         resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
       }
