@@ -29,13 +29,13 @@ export const YIELD_AI_VAULT_ENTRYPOINTS = {
 // Thresholds:
 // - APT has 8 decimals
 // - USDC has 6 decimals
-export const APT_CLAIM_THRESHOLD_OCTAS = 10_000_000n; // 0.1 APT
-export const USDC_DEPOSIT_THRESHOLD_BASE_UNITS = 100_000n; // 0.1 USDC
+export const APT_CLAIM_THRESHOLD_OCTAS = BigInt("10000000"); // 0.1 APT
+export const USDC_DEPOSIT_THRESHOLD_BASE_UNITS = BigInt("100000"); // 0.1 USDC
 
 /** APT kept on safe after swap: 0 = swap full balance above claim/swap thresholds. */
-export const APT_SWAP_RESERVE_OCTAS = 0n;
+export const APT_SWAP_RESERVE_OCTAS = BigInt(0);
 /** USDC left on safe after deposit: 0 = deposit full detected balance (subject to vault policy caps). */
-export const USDC_DEPOSIT_RESERVE_BASE_UNITS = 0n;
+export const USDC_DEPOSIT_RESERVE_BASE_UNITS = BigInt(0);
 
 // Claim parameters:
 export const APT_REWARD_ID = "APT-1";
@@ -44,10 +44,10 @@ export const APT_FARMING_IDENTIFIER =
   "0x22dbe22abf689d8a0f751cab7a32fe5570c49b53fcccd4e5d709b269efda554a-1";
 
 // Swap parameters (APT -> USDC FA):
-export const SWAP_FEE_TIER = 1n; // 0.05%
-export const SWAP_AMOUNT_OUT_MIN = 0n;
-export const SWAP_SQRT_PRICE_LIMIT = 4295048017n;
-export const SWAP_DEADLINE_SECONDS = 600n;
+export const SWAP_FEE_TIER = BigInt(1); // 0.05%
+export const SWAP_AMOUNT_OUT_MIN = BigInt(0);
+export const SWAP_SQRT_PRICE_LIMIT = BigInt("4295048017");
+export const SWAP_DEADLINE_SECONDS = BigInt(600);
 
 /** USDC FA metadata object address (mainnet). Used as second argument to vault::deposit. */
 export const USDC_FA_METADATA_MAINNET =
