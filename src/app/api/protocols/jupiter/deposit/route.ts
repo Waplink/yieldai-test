@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -119,6 +120,55 @@ async function buildLegacyTransactionFromInstruction(input: {
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
   const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
   for (const ix of instructions) {
+    if (isToken2022Mint && ix.programId === ataProgramIdStr && Array.isArray(ix.accounts) && ix.accounts.length >= 6) {
+      // Replace ATA create instruction deterministically for Token-2022.
+      // Account layout expected by ATA program:
+      // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
+      const payerStr = ix.accounts[0]?.pubkey;
+      const ownerStr = ix.accounts[2]?.pubkey;
+      const mintStr = ix.accounts[3]?.pubkey;
+      if (payerStr && ownerStr && mintStr) {
+        try {
+          const payer = new PublicKey(payerStr);
+          const owner = new PublicKey(ownerStr);
+          const mint = new PublicKey(mintStr);
+          const isAssetAtaIx = mint.toBase58() === input.asset;
+          if (isAssetAtaIx) {
+            let ata = getAssociatedTokenAddressSync(
+              mint,
+              owner,
+              false,
+              TOKEN_2022_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID
+            );
+            if (ata.toBase58() !== ix.accounts[1]?.pubkey) {
+              ata = getAssociatedTokenAddressSync(
+                mint,
+                owner,
+                true,
+                TOKEN_2022_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              );
+            }
+
+            transaction.add(
+              createAssociatedTokenAccountIdempotentInstruction(
+                payer,
+                ata,
+                owner,
+                mint,
+                TOKEN_2022_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              )
+            );
+            continue;
+          }
+        } catch {
+          // fall back to generic patch logic below
+        }
+      }
+    }
+
     const patchedAccounts =
       isToken2022Mint && ix.programId === ataProgramIdStr
         ? (() => {
