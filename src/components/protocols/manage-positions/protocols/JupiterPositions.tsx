@@ -7,8 +7,14 @@ import { Button } from "@/components/ui/button";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
-import { createCloseAccountInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } from "@solana/spl-token";
+import { Connection, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  createCloseAccountInstruction,
+  createSyncNativeInstruction,
+  getAssociatedTokenAddressSync,
+  NATIVE_MINT,
+} from "@solana/spl-token";
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
@@ -35,6 +41,7 @@ const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const USDG_MINT = "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH";
 const JUPITER_PREFER_LEGACY_DEPOSIT_MINTS = new Set([WSOL_MINT, USDG_MINT]);
 const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG"]);
+const SOL_FEE_RESERVE_UI = 0.003;
 const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
   WSOL: WSOL_MINT,
   USDG: USDG_MINT,
@@ -185,6 +192,7 @@ export function JupiterPositions() {
       : undefined;
   const activeSignTransaction = signTransaction ?? adapterSignTransaction;
   const activeSendTransaction = sendTransaction ?? adapterSendTransaction;
+  const isTrustWallet = (solanaWallet?.adapter?.name || "").toLowerCase().includes("trust");
   const hasAnySolanaSession =
     !!effectiveSignerAddress ||
     !!solanaAddress ||
@@ -497,8 +505,90 @@ export function JupiterPositions() {
     const preferLegacyInstruction =
       JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(canonicalMint) ||
       JUPITER_PREFER_LEGACY_SYMBOLS.has(selectedMeta.canonicalSymbol || "");
+    const isWsolDeposit = canonicalMint === WSOL_MINT || selectedMeta.canonicalSymbol === "WSOL";
 
     try {
+      const connection = new Connection(rpcEndpoint, "confirmed");
+      if (isWsolDeposit) {
+        const maxSpendableSol = Math.max(0, selectedWalletAmount - SOL_FEE_RESERVE_UI);
+        if (amountUi > maxSpendableSol + 1e-12) {
+          toast({
+            title: "Leave SOL for fees",
+            description: `For SOL deposits, keep about ${SOL_FEE_RESERVE_UI} SOL for network fees. Max now: ${maxSpendableSol.toFixed(6)} SOL.`,
+            variant: "destructive",
+          });
+          setIsDepositing(false);
+          return;
+        }
+
+        const owner = new PublicKey(resolvedSignerAddress);
+        const wsolAta = getAssociatedTokenAddressSync(NATIVE_MINT, owner, false);
+        const { blockhash: wrapBlockhash, lastValidBlockHeight: wrapLastValidBlockHeight } =
+          await connection.getLatestBlockhash("confirmed");
+        const wrapTx = new Transaction();
+        wrapTx.feePayer = owner;
+        wrapTx.recentBlockhash = wrapBlockhash;
+        wrapTx.add(createAssociatedTokenAccountIdempotentInstruction(owner, wsolAta, owner, NATIVE_MINT));
+        wrapTx.add(
+          SystemProgram.transfer({
+            fromPubkey: owner,
+            toPubkey: wsolAta,
+            lamports: amountBaseUnits,
+          })
+        );
+        wrapTx.add(createSyncNativeInstruction(wsolAta));
+
+        let wrapSignature: string;
+        if (resolvedSendTransaction && !isTrustWallet) {
+          try {
+            wrapSignature = await resolvedSendTransaction(wrapTx as any, connection, {
+              skipPreflight: false,
+              preflightCommitment: "confirmed",
+            });
+          } catch (sendError) {
+            if (!resolvedSignTransaction) {
+              throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
+            }
+            const signedWrap = await resolvedSignTransaction(wrapTx as any);
+            wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
+              skipPreflight: false,
+              preflightCommitment: "confirmed",
+            });
+          }
+        } else {
+          if (!resolvedSignTransaction) {
+            throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+          }
+          try {
+            const signedWrap = await resolvedSignTransaction(wrapTx as any);
+            wrapSignature = await connection.sendRawTransaction(signedWrap.serialize(), {
+              skipPreflight: false,
+              preflightCommitment: "confirmed",
+            });
+          } catch (signError) {
+            if (!resolvedSendTransaction) {
+              throw signError instanceof Error ? signError : new Error(getErrorMessage(signError));
+            }
+            wrapSignature = await resolvedSendTransaction(wrapTx as any, connection, {
+              skipPreflight: false,
+              preflightCommitment: "confirmed",
+            });
+          }
+        }
+
+        const wrapConfirmation = await connection.confirmTransaction(
+          {
+            signature: wrapSignature,
+            blockhash: wrapBlockhash,
+            lastValidBlockHeight: wrapLastValidBlockHeight,
+          },
+          "confirmed"
+        );
+        if (wrapConfirmation.value.err) {
+          throw new Error(`SOL wrap failed: ${JSON.stringify(wrapConfirmation.value.err)}`);
+        }
+      }
+
       const txResp = await fetch("/api/protocols/jupiter/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -514,8 +604,6 @@ export function JupiterPositions() {
       if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
         throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
       }
-
-      const connection = new Connection(rpcEndpoint, "confirmed");
 
       const serialized = decodeBase64Tx(txData.data.transaction);
       let txForWallet: Transaction | VersionedTransaction = isVersionedTransactionBytes(serialized)
