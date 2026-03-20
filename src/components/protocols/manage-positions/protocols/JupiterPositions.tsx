@@ -512,18 +512,12 @@ export function JupiterPositions() {
       }
 
       const connection = new Connection(rpcEndpoint, "confirmed");
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
       const serialized = decodeBase64Tx(txData.data.transaction);
       let txForWallet: Transaction | VersionedTransaction = isVersionedTransactionBytes(serialized)
         ? VersionedTransaction.deserialize(serialized)
         : Transaction.from(serialized);
       let activeSignerAddressForTx = resolvedSignerAddress;
-      let effectivePublicKey = new PublicKey(activeSignerAddressForTx);
-      if (!(txForWallet instanceof VersionedTransaction)) {
-        txForWallet.recentBlockhash = blockhash;
-        txForWallet.feePayer = effectivePublicKey;
-      }
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
         const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
@@ -570,11 +564,6 @@ export function JupiterPositions() {
                   ? VersionedTransaction.deserialize(retrySerialized)
                   : Transaction.from(retrySerialized);
                 activeSignerAddressForTx = retrySignerAddress;
-                effectivePublicKey = new PublicKey(activeSignerAddressForTx);
-                if (!(txForWallet instanceof VersionedTransaction)) {
-                  txForWallet.recentBlockhash = blockhash;
-                  txForWallet.feePayer = effectivePublicKey;
-                }
               }
               try {
                 if (retrySend) {
@@ -628,11 +617,6 @@ export function JupiterPositions() {
                   ? VersionedTransaction.deserialize(finalSerialized)
                   : Transaction.from(finalSerialized);
                 activeSignerAddressForTx = finalSignerAddress;
-                effectivePublicKey = new PublicKey(activeSignerAddressForTx);
-                if (!(txForWallet instanceof VersionedTransaction)) {
-                  txForWallet.recentBlockhash = blockhash;
-                  txForWallet.feePayer = effectivePublicKey;
-                }
               }
               if (finalSend) {
                 signature = await finalSend(txForWallet as any, connection, {
@@ -675,10 +659,7 @@ export function JupiterPositions() {
         throw new Error("Failed to submit transaction signature");
       }
 
-      const confirmation = await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        "confirmed"
-      );
+      const confirmation = await connection.confirmTransaction(signature, "confirmed");
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
