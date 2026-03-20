@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -118,58 +117,53 @@ async function buildLegacyTransactionFromInstruction(input: {
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
+  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
   for (const ix of instructions) {
-    if (isToken2022Mint && ix.programId === ataProgramIdStr && Array.isArray(ix.accounts) && ix.accounts.length >= 4) {
-      try {
-        // ATA create ix accounts:
-        // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-        const payer = new PublicKey(ix.accounts[0].pubkey);
-        const owner = new PublicKey(ix.accounts[2].pubkey);
-        const mint = new PublicKey(ix.accounts[3].pubkey);
-        if (mint.toBase58() === input.asset) {
-          let ata = getAssociatedTokenAddressSync(
-            mint,
-            owner,
-            false,
-            TOKEN_2022_PROGRAM_ID,
-            ASSOCIATED_TOKEN_PROGRAM_ID
-          );
-          try {
-            const expectedAta = ix.accounts[1]?.pubkey;
-            if (expectedAta && ata.toBase58() !== expectedAta) {
-              ata = getAssociatedTokenAddressSync(
-                mint,
-                owner,
-                true,
-                TOKEN_2022_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              );
-            }
-          } catch {
-            // keep default derived ATA
-          }
-
-          transaction.add(
-            createAssociatedTokenAccountIdempotentInstruction(
-              payer,
-              ata,
-              owner,
-              mint,
-              TOKEN_2022_PROGRAM_ID,
-              ASSOCIATED_TOKEN_PROGRAM_ID
-            )
-          );
-          continue;
-        }
-      } catch {
-        // fallback to raw instruction below
-      }
-    }
+    const patchedAccounts =
+      isToken2022Mint && ix.programId === ataProgramIdStr
+        ? ix.accounts
+            .map((account) => {
+              if (account.pubkey === tokenProgramStr) {
+                return { ...account, pubkey: token2022ProgramStr };
+              }
+              return account;
+            })
+            .map((account, index, arr) => {
+              // ATA create ix accounts:
+              // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
+              if (index !== 1 || arr.length < 6) return account;
+              try {
+                const owner = new PublicKey(arr[2].pubkey);
+                const mint = new PublicKey(arr[3].pubkey);
+                let recomputedAta: string;
+                try {
+                  recomputedAta = getAssociatedTokenAddressSync(
+                    mint,
+                    owner,
+                    false,
+                    TOKEN_2022_PROGRAM_ID,
+                    ASSOCIATED_TOKEN_PROGRAM_ID
+                  ).toBase58();
+                } catch {
+                  recomputedAta = getAssociatedTokenAddressSync(
+                    mint,
+                    owner,
+                    true,
+                    TOKEN_2022_PROGRAM_ID,
+                    ASSOCIATED_TOKEN_PROGRAM_ID
+                  ).toBase58();
+                }
+                return { ...account, pubkey: recomputedAta };
+              } catch {
+                return account;
+              }
+            })
+        : ix.accounts;
 
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: ix.accounts.map((account) => ({
+        keys: patchedAccounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
