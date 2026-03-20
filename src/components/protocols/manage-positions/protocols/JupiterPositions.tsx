@@ -697,19 +697,19 @@ export function JupiterPositions() {
         } catch (reconnectError) {
           console.warn("[Jupiter][Withdraw] adapter reconnect failed", reconnectError);
         }
-        const retried = await waitForReadySolanaSession(8, 250);
+        const retried = await waitForReadySolanaSession(8, 150);
         resolvedSignerAddress = retried.signerAddress || effectiveSignerAddress;
-        resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
-        resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+        resolvedSendTransaction = retried.sendTransaction ?? resolvedSendTransaction;
+        resolvedSignTransaction = retried.signTransaction ?? resolvedSignTransaction;
       }
     }
 
     if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
       await recoverSolanaWalletSelection();
-      const retriedAfterSelect = await waitForReadySolanaSession(10, 250);
+      const retriedAfterSelect = await waitForReadySolanaSession(10, 150);
       resolvedSignerAddress = retriedAfterSelect.signerAddress || effectiveSignerAddress;
-      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? activeSendTransaction;
-      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
+      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? resolvedSendTransaction;
+      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? resolvedSignTransaction;
     }
 
     if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
@@ -806,46 +806,84 @@ export function JupiterPositions() {
       }
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
-        const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
-        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? activeSendTransaction;
-        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? activeSignTransaction;
+        const retriedBeforeSend = await waitForReadySolanaSession(6, 150);
+        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? resolvedSendTransaction;
+        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? resolvedSignTransaction;
       }
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
         throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
       }
 
       let signature: string | undefined;
+      let txForWallet: Transaction | VersionedTransaction = transaction;
+      let activeSignerAddressForTx = resolvedSignerAddress;
       if (resolvedSendTransaction) {
         try {
-          signature = await resolvedSendTransaction(transaction as any, connection, {
+          signature = await resolvedSendTransaction(txForWallet as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
         } catch (sendError) {
           if (isWalletNotSelected(sendError)) {
-            await recoverSolanaWalletSelection();
-            const retried = await waitForReadySolanaSession(10, 250);
-            const retrySend = retried.sendTransaction ?? activeSendTransaction;
-            const retrySign = retried.signTransaction ?? activeSignTransaction;
-            if (retrySend) {
-              signature = await retrySend(transaction as any, connection, {
-                skipPreflight: false,
-                preflightCommitment: "confirmed",
-              });
-            } else if (retrySign) {
-              const retrySigned = await retrySign(transaction as any);
-              signature = await connection.sendRawTransaction(retrySigned.serialize(), {
-                skipPreflight: false,
-                preflightCommitment: "confirmed",
-              });
-            } else {
-              throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
+            let recovered = false;
+            for (let attempt = 0; attempt < 2 && !recovered; attempt++) {
+              await recoverSolanaWalletSelection();
+              const retried = await waitForReadySolanaSession(10, 150);
+              const retrySend = retried.sendTransaction;
+              const retrySign = retried.signTransaction;
+              const retrySignerAddress = retried.signerAddress || activeSignerAddressForTx;
+              if (retrySignerAddress && retrySignerAddress !== activeSignerAddressForTx) {
+                const retryTxResp = await fetch("/api/protocols/jupiter/withdraw", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    asset: mint,
+                    signer: retrySignerAddress,
+                    amount: String(amountBaseUnits),
+                  }),
+                });
+                const retryTxData = await retryTxResp.json().catch(() => null);
+                if (!retryTxResp.ok || !retryTxData?.success || !retryTxData?.data?.transaction) {
+                  throw new Error(retryTxData?.error || `Withdraw prepare failed: ${retryTxResp.status}`);
+                }
+                const retrySerialized = decodeBase64Tx(retryTxData.data.transaction);
+                txForWallet = isVersionedTransactionBytes(retrySerialized)
+                  ? VersionedTransaction.deserialize(retrySerialized)
+                  : Transaction.from(retrySerialized);
+                activeSignerAddressForTx = retrySignerAddress;
+              }
+              try {
+                if (retrySend) {
+                  signature = await retrySend(txForWallet as any, connection, {
+                    skipPreflight: false,
+                    preflightCommitment: "confirmed",
+                  });
+                  recovered = true;
+                  break;
+                }
+                if (retrySign) {
+                  const retrySigned = await retrySign(txForWallet as any);
+                  signature = await connection.sendRawTransaction(retrySigned.serialize(), {
+                    skipPreflight: false,
+                    preflightCommitment: "confirmed",
+                  });
+                  recovered = true;
+                  break;
+                }
+              } catch (retryError) {
+                if (!isWalletNotSelected(retryError)) {
+                  throw retryError instanceof Error ? retryError : new Error(getErrorMessage(retryError));
+                }
+              }
+            }
+            if (!recovered) {
+              throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
             }
           } else {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
-          const signed = await resolvedSignTransaction(transaction as any);
+          const signed = await resolvedSignTransaction(txForWallet as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -856,7 +894,7 @@ export function JupiterPositions() {
         if (!resolvedSignTransaction) {
           throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
         }
-        const signed = await resolvedSignTransaction(transaction as any);
+        const signed = await resolvedSignTransaction(txForWallet as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
