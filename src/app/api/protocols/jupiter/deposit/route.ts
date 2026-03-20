@@ -118,32 +118,24 @@ async function buildLegacyTransactionFromInstruction(input: {
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
   const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
-  const signerStr = input.signer;
-  const assetStr = input.asset;
-
   for (const ix of instructions) {
     const patchedAccounts =
       isToken2022Mint && ix.programId === ataProgramIdStr
         ? (() => {
-            // ATA create ix accounts:
-            // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-            if (!Array.isArray(ix.accounts) || ix.accounts.length < 6) {
-              return ix.accounts;
-            }
-
-            const ownerStr = ix.accounts[2]?.pubkey;
-            const mintStr = ix.accounts[3]?.pubkey;
-            const isAssetAtaCreate = mintStr === assetStr;
-            if (!isAssetAtaCreate) {
-              // Do not patch ATA instructions for other mints.
-              return ix.accounts;
-            }
-
-            return ix.accounts.map((account, index) => {
-              try {
-                if (index === 1) {
-                  const owner = new PublicKey(ownerStr);
-                  const mint = new PublicKey(mintStr);
+            return ix.accounts
+              .map((account) => {
+                if (account.pubkey === tokenProgramStr) {
+                  return { ...account, pubkey: token2022ProgramStr };
+                }
+                return account;
+              })
+              .map((account, index, arr) => {
+                // ATA create ix accounts:
+                // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
+                if (index !== 1 || arr.length < 6) return account;
+                try {
+                  const owner = new PublicKey(arr[2].pubkey);
+                  const mint = new PublicKey(arr[3].pubkey);
                   let recomputedAta: string;
                   try {
                     recomputedAta = getAssociatedTokenAddressSync(
@@ -163,15 +155,10 @@ async function buildLegacyTransactionFromInstruction(input: {
                     ).toBase58();
                   }
                   return { ...account, pubkey: recomputedAta };
+                } catch {
+                  return account;
                 }
-                if (account.pubkey === tokenProgramStr) {
-                  return { ...account, pubkey: token2022ProgramStr };
-                }
-                return account;
-              } catch {
-                return account;
-              }
-            });
+              });
           })()
         : ix.accounts;
 
