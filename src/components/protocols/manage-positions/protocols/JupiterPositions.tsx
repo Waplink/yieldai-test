@@ -829,6 +829,13 @@ export function JupiterPositions() {
     }
 
     const { mint, symbol, amount: suppliedAmount, decimals } = selectedMeta;
+    const normalizedWithdrawMint = normalizeMint(mint);
+    const canonicalWithdrawMint =
+      JUPITER_MINT_BY_SYMBOL[selectedMeta.canonicalSymbol || ""] || normalizedWithdrawMint;
+    const preferLegacyWithdrawInstruction =
+      JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(canonicalWithdrawMint) ||
+      JUPITER_PREFER_LEGACY_SYMBOLS.has(selectedMeta.canonicalSymbol || "");
+
     if (amountUi > suppliedAmount + 1e-12) {
       toast({
         title: "Amount too high",
@@ -868,6 +875,7 @@ export function JupiterPositions() {
           asset: mint,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
+          preferLegacyInstruction: preferLegacyWithdrawInstruction,
         }),
       });
 
@@ -928,6 +936,7 @@ export function JupiterPositions() {
                     asset: mint,
                     signer: retrySignerAddress,
                     amount: String(amountBaseUnits),
+                    preferLegacyInstruction: preferLegacyWithdrawInstruction,
                   }),
                 });
                 const retryTxData = await retryTxResp.json().catch(() => null);
