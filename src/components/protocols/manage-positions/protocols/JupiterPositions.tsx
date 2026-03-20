@@ -514,13 +514,14 @@ export function JupiterPositions() {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
       const serialized = decodeBase64Tx(txData.data.transaction);
-      const transaction = isVersionedTransactionBytes(serialized)
+      let txForWallet: Transaction | VersionedTransaction = isVersionedTransactionBytes(serialized)
         ? VersionedTransaction.deserialize(serialized)
         : Transaction.from(serialized);
-      const effectivePublicKey = new PublicKey(resolvedSignerAddress);
-      if (!(transaction instanceof VersionedTransaction)) {
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer = effectivePublicKey;
+      let activeSignerAddressForTx = resolvedSignerAddress;
+      let effectivePublicKey = new PublicKey(activeSignerAddressForTx);
+      if (!(txForWallet instanceof VersionedTransaction)) {
+        txForWallet.recentBlockhash = blockhash;
+        txForWallet.feePayer = effectivePublicKey;
       }
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
@@ -535,7 +536,7 @@ export function JupiterPositions() {
       let signature: string | undefined;
       if (resolvedSendTransaction) {
         try {
-          signature = await resolvedSendTransaction(transaction as any, connection, {
+          signature = await resolvedSendTransaction(txForWallet as any, connection, {
             skipPreflight: false,
             preflightCommitment: "confirmed",
           });
@@ -547,9 +548,36 @@ export function JupiterPositions() {
               const retried = await waitForReadySolanaSession(20, 250);
               const retrySend = retried.sendTransaction ?? activeSendTransaction;
               const retrySign = retried.signTransaction ?? activeSignTransaction;
+              const retrySignerAddress = retried.signerAddress || activeSignerAddressForTx;
+              if (retrySignerAddress && retrySignerAddress !== activeSignerAddressForTx) {
+                const retryTxResp = await fetch("/api/protocols/jupiter/deposit", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    asset: canonicalMint || normalizedMint || mint,
+                    signer: retrySignerAddress,
+                    amount: String(amountBaseUnits),
+                    preferLegacyInstruction,
+                  }),
+                });
+                const retryTxData = await retryTxResp.json().catch(() => null);
+                if (!retryTxResp.ok || !retryTxData?.success || !retryTxData?.data?.transaction) {
+                  throw new Error(retryTxData?.error || `Deposit prepare failed: ${retryTxResp.status}`);
+                }
+                const retrySerialized = decodeBase64Tx(retryTxData.data.transaction);
+                txForWallet = isVersionedTransactionBytes(retrySerialized)
+                  ? VersionedTransaction.deserialize(retrySerialized)
+                  : Transaction.from(retrySerialized);
+                activeSignerAddressForTx = retrySignerAddress;
+                effectivePublicKey = new PublicKey(activeSignerAddressForTx);
+                if (!(txForWallet instanceof VersionedTransaction)) {
+                  txForWallet.recentBlockhash = blockhash;
+                  txForWallet.feePayer = effectivePublicKey;
+                }
+              }
               try {
                 if (retrySend) {
-                  signature = await retrySend(transaction as any, connection, {
+                  signature = await retrySend(txForWallet as any, connection, {
                     skipPreflight: false,
                     preflightCommitment: "confirmed",
                   });
@@ -557,7 +585,7 @@ export function JupiterPositions() {
                   break;
                 }
                 if (retrySign) {
-                  const retrySigned = await retrySign(transaction as any);
+                  const retrySigned = await retrySign(txForWallet as any);
                   signature = await connection.sendRawTransaction(retrySigned.serialize(), {
                     skipPreflight: false,
                     preflightCommitment: "confirmed",
@@ -578,13 +606,40 @@ export function JupiterPositions() {
               const finalRetry = await waitForReadySolanaSession(20, 250);
               const finalSend = finalRetry.sendTransaction ?? activeSendTransaction;
               const finalSign = finalRetry.signTransaction ?? activeSignTransaction;
+              const finalSignerAddress = finalRetry.signerAddress || activeSignerAddressForTx;
+              if (finalSignerAddress && finalSignerAddress !== activeSignerAddressForTx) {
+                const finalTxResp = await fetch("/api/protocols/jupiter/deposit", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    asset: canonicalMint || normalizedMint || mint,
+                    signer: finalSignerAddress,
+                    amount: String(amountBaseUnits),
+                    preferLegacyInstruction,
+                  }),
+                });
+                const finalTxData = await finalTxResp.json().catch(() => null);
+                if (!finalTxResp.ok || !finalTxData?.success || !finalTxData?.data?.transaction) {
+                  throw new Error(finalTxData?.error || `Deposit prepare failed: ${finalTxResp.status}`);
+                }
+                const finalSerialized = decodeBase64Tx(finalTxData.data.transaction);
+                txForWallet = isVersionedTransactionBytes(finalSerialized)
+                  ? VersionedTransaction.deserialize(finalSerialized)
+                  : Transaction.from(finalSerialized);
+                activeSignerAddressForTx = finalSignerAddress;
+                effectivePublicKey = new PublicKey(activeSignerAddressForTx);
+                if (!(txForWallet instanceof VersionedTransaction)) {
+                  txForWallet.recentBlockhash = blockhash;
+                  txForWallet.feePayer = effectivePublicKey;
+                }
+              }
               if (finalSend) {
-                signature = await finalSend(transaction as any, connection, {
+                signature = await finalSend(txForWallet as any, connection, {
                   skipPreflight: false,
                   preflightCommitment: "confirmed",
                 });
               } else if (finalSign) {
-                const finalSigned = await finalSign(transaction as any);
+                const finalSigned = await finalSign(txForWallet as any);
                 signature = await connection.sendRawTransaction(finalSigned.serialize(), {
                   skipPreflight: false,
                   preflightCommitment: "confirmed",
@@ -597,7 +652,7 @@ export function JupiterPositions() {
           if (!resolvedSignTransaction) {
             throw sendError instanceof Error ? sendError : new Error(getErrorMessage(sendError));
           }
-          const signed = await resolvedSignTransaction(transaction as any);
+          const signed = await resolvedSignTransaction(txForWallet as any);
           signature = await connection.sendRawTransaction(signed.serialize(), {
             skipPreflight: false,
             preflightCommitment: "confirmed",
@@ -608,7 +663,7 @@ export function JupiterPositions() {
         if (!resolvedSignTransaction) {
           throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
         }
-        const signed = await resolvedSignTransaction(transaction as any);
+        const signed = await resolvedSignTransaction(txForWallet as any);
         signature = await connection.sendRawTransaction(signed.serialize(), {
           skipPreflight: false,
           preflightCommitment: "confirmed",
