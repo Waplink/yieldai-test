@@ -27,6 +27,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { ProtocolSocialLinks } from "@/components/ui/protocol-social-links";
 import { AirdropInfoTooltip } from "@/components/ui/airdrop-info-tooltip";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import { ProtocolClosureNotice } from "@/components/ui/protocol-closure-notice";
 
 interface ManagePositionsProps {
   protocol: Protocol;

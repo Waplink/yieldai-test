@@ -119,6 +119,21 @@ export async function GET(request: NextRequest) {
 
         if (asset) {
           console.log('[Token Info API] Found in Echelon:', asset.symbol);
+          // Echelon returns `icon` either as an absolute URL (https://...) or as a path (e.g. /assets/icons/...)
+          // We must not blindly prefix `https://app.echelon.market` for absolute URLs.
+          const icon: unknown = asset.icon;
+          let logoUrl: string | null = null;
+          if (typeof icon === 'string' && icon.trim().length > 0) {
+            if (icon.startsWith('http://') || icon.startsWith('https://')) {
+              logoUrl = icon;
+            } else if (icon.startsWith('//')) {
+              logoUrl = `https:${icon}`;
+            } else if (icon.startsWith('/')) {
+              logoUrl = `https://app.echelon.market${icon}`;
+            } else {
+              logoUrl = `https://app.echelon.market/${icon}`;
+            }
+          }
           return NextResponse.json({
             success: true,
             data: {
@@ -127,7 +142,7 @@ export async function GET(request: NextRequest) {
               name: asset.name,
               decimals: asset.decimals || 8,
               price: asset.price || null,
-              logoUrl: asset.icon ? `https://app.echelon.market${asset.icon}` : null,
+              logoUrl,
               source: 'echelon',
               // Additional Echelon-specific data
               market: asset.market,

@@ -94,23 +94,30 @@ export function DepositModal({
   };
   
   // Находим текущий токен в кошельке по адресу
-  const currentToken = tokens?.find(t => {
-    const tokenInfo = getTokenInfo(t.address);
-    if (!tokenInfo) return false;
-    
-    // Normalize addresses for comparison
+  const currentToken = useMemo(() => {
     const normalizeAddress = (addr: string) => {
       if (!addr || !addr.startsWith('0x')) return addr;
       return '0x' + addr.slice(2).replace(/^0+/, '') || '0x0';
     };
-    
+
     const normalizedTokenInAddress = normalizeAddress(tokenIn.address);
-    const normalizedTokenInfoAddress = normalizeAddress(tokenInfo.tokenAddress || '');
-    const normalizedFaAddress = normalizeAddress(tokenInfo.faAddress || '');
-    
-    return normalizedTokenInfoAddress === normalizedTokenInAddress || 
-           normalizedFaAddress === normalizedTokenInAddress;
-  });
+
+    // 1) Fast path: match by address directly (works even if tokenList doesn't contain the token)
+    const directMatch = tokens?.find(t => normalizeAddress(t.address) === normalizedTokenInAddress);
+    if (directMatch) return directMatch;
+
+    // 2) Fallback: match via tokenList tokenAddress/faAddress mapping
+    return tokens?.find(t => {
+      const tokenInfo = getTokenInfo(t.address);
+      if (!tokenInfo) return false;
+
+      const normalizedTokenInfoAddress = normalizeAddress(tokenInfo.tokenAddress || '');
+      const normalizedFaAddress = normalizeAddress(tokenInfo.faAddress || '');
+
+      return normalizedTokenInfoAddress === normalizedTokenInAddress ||
+        normalizedFaAddress === normalizedTokenInAddress;
+    });
+  }, [tokens, tokenIn.address]);
   
   // Используем реальный баланс из кошелька
   const walletBalance = currentToken ? BigInt(currentToken.amount) : BigInt(0);
@@ -276,12 +283,13 @@ export function DepositModal({
                 } else if (protocol.key === 'auro' && !poolAddress) {
                   throw new Error('Auro Finance requires pool address for deposit');
       } else {
-        // Existing deposit logic for other protocols
+        // Existing deposit logic for other protocols (Echelon: pass marketAddress for managed positions)
         console.log('DepositModal: Using standard deposit logic for protocol:', protocol.key);
         await deposit(
           protocol.key,
           tokenIn.address,
-          amount
+          amount,
+          protocol.key === 'echelon' && poolAddress ? { marketAddress: poolAddress } : undefined
         );
       }
       

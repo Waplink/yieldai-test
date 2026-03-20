@@ -12,6 +12,7 @@ import tokenList from "@/lib/data/tokenList.json";
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { PanoraPricesService } from "@/lib/services/panora/prices";
 import { createDualAddressPriceMap } from "@/lib/utils/addressNormalization";
+import { ProtocolClosureNotice } from "@/components/ui/protocol-closure-notice";
 
 interface PositionsListProps {
   address?: string;
@@ -390,6 +391,7 @@ export function PositionsList({ address, onPositionsValueChange, refreshKey, onP
               />
             </div>
             <CardTitle className="text-lg">Auro Finance</CardTitle>
+            <ProtocolClosureNotice protocolKey="auro" stopPropagation />
           </div>
           <div className="flex items-center gap-2">
             <div className="text-lg">{formatCurrency(totalValue(), 2)}</div>

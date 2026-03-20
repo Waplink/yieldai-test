@@ -382,26 +382,17 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
               {/* Desktop Layout */}
               <div className="hidden sm:flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center -space-x-1">
-                    <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
+                  <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
+                    {tokenInfo.logoUrl ? (
                       <Image
-                        src="/protocol_ico/moar-market-logo-primary.png"
-                        alt="MOAR"
+                        src={tokenInfo.logoUrl}
+                        alt={tokenInfo.symbol}
                         width={32}
                         height={32}
                         className="object-contain"
                       />
-                    </div>
-                    {tokenInfo.logoUrl && (
-                      <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
-                        <Image
-                          src={tokenInfo.logoUrl}
-                          alt={tokenInfo.symbol}
-                          width={32}
-                          height={32}
-                          className="object-contain"
-                        />
-                      </div>
+                    ) : (
+                      <span className="text-sm font-semibold">{(tokenInfo.symbol || "?").slice(0, 1)}</span>
                     )}
                   </div>
                   <div>
@@ -519,26 +510,17 @@ export function MoarPositions({ address, onPositionsValueChange }: MoarPositions
                 {/* Верхняя строка - токен и значение */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center -space-x-1">
-                      <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
+                    <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
+                      {tokenInfo.logoUrl ? (
                         <Image
-                          src="/protocol_ico/moar-market-logo-primary.png"
-                          alt="MOAR"
+                          src={tokenInfo.logoUrl}
+                          alt={tokenInfo.symbol}
                           width={32}
                           height={32}
                           className="object-contain"
                         />
-                      </div>
-                      {tokenInfo.logoUrl && (
-                        <div className="w-8 h-8 relative rounded-full overflow-hidden ring-2 ring-background flex items-center justify-center bg-muted">
-                          <Image
-                            src={tokenInfo.logoUrl}
-                            alt={tokenInfo.symbol}
-                            width={32}
-                            height={32}
-                            className="object-contain"
-                          />
-                        </div>
+                      ) : (
+                        <span className="text-sm font-semibold">{(tokenInfo.symbol || "?").slice(0, 1)}</span>
                       )}
                     </div>
                     <div>

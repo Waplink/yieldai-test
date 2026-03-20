@@ -95,6 +95,9 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
   const { selectedProtocol, setSelectedProtocol } = useProtocol();
   const { tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
 
+  // Protocols that are closed/winding down must not appear in Ideas pools filter
+  const HIDDEN_IDEAS_PROTOCOLS = new Set(["Earnium", "Auro Finance", "Aries", "Meso Finance"]);
+
   // New states for progressive loading
   // Initialize loading states immediately to show tabs and skeletons right away
   const [protocolsLoading, setProtocolsLoading] = useState<Record<string, boolean>>({
@@ -102,7 +105,6 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Hyperion': true,
     'Thala': true,
     'Tapp Exchange': true,
-    'Auro Finance': true,
     'Amnis Finance': true,
     'Kofi Finance': true,
     'Echelon': true,
@@ -120,7 +122,6 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Hyperion': '/protocol_ico/hyperion.png',
     'Thala': '/protocol_ico/thala.png',
     'Tapp Exchange': '/protocol_ico/tappexchange.png',
-    'Auro Finance': '/protocol_ico/auro.png',
     'Amnis Finance': '/protocol_ico/amnis.png',
     'Kofi Finance': '/protocol_ico/kofi.png',
     'Echelon': '/protocol_ico/echelon.png',
@@ -426,56 +427,6 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   swapFee: pool.swapFee,
                   aprSources: pool.aprSources,
                   lptAddress: pool.lptAddress,
-                  originalPool: pool
-                };
-              });
-            }
-          },
-          {
-            name: 'Auro Finance',
-            url: '/api/protocols/auro/pools',
-			logoUrl: '/protocol_ico/auro.png',
-            transform: (data: any) => {
-              const allPools = data.data || [];
-
-              // Собираем BORROW-пулы в мапу по адресу пула
-              const borrowByAddress = new Map<string, number>();
-              allPools
-                .filter((pool: any) => pool.type === 'BORROW')
-                .forEach((pool: any) => {
-                  const addr = pool.poolAddress;
-                  const borrowApr = parseFloat(pool.totalBorrowApr || pool.borrowApr || 0);
-                  if (addr && !isNaN(borrowApr)) {
-                    borrowByAddress.set(addr, borrowApr);
-                  }
-                });
-
-              const collateralPools = allPools
-                .filter((pool: any) => pool.type === 'COLLATERAL')
-                .filter((pool: any) => {
-                  const tvl = parseFloat(pool.tvl || "0");
-                  const totalAPY = (pool.totalSupplyApr || 0);
-                  return tvl > 1000 && totalAPY > 0;
-                });
-
-              return collateralPools.map((pool: any) => {
-                const supplyApr = parseFloat(pool.supplyApr || "0");
-                const supplyIncentiveApr = parseFloat(pool.supplyIncentiveApr || "0");
-                const stakingApr = parseFloat(pool.stakingApr || "0");
-                const totalAPY = supplyApr + supplyIncentiveApr + stakingApr;
-                // Используем borrow по адресу пула, если нет - используем общий BORROW для всех пулов
-                const borrowAPR = borrowByAddress.get(pool.poolAddress) || borrowByAddress.get('BORROW') || 0;
-
-                return {
-                  asset: pool.collateralTokenSymbol || 'Unknown',
-                  provider: 'Auro Finance',
-                  totalAPY: totalAPY,
-                  depositApy: totalAPY,
-                  borrowAPY: borrowAPR,
-                  token: pool.collateralTokenAddress || pool.poolAddress,
-                  protocol: 'Auro Finance',
-                  tvlUSD: parseFloat(pool.tvl || "0"),
-                  poolType: 'Lending',
                   originalPool: pool
                 };
               });
@@ -951,7 +902,9 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
       ...Object.keys(protocolsData),
       ...getProtocolsList().map((p) => p.name),
     ]),
-  ].sort((a, b) => a.localeCompare(b));
+  ]
+    .filter((name) => !HIDDEN_IDEAS_PROTOCOLS.has(name))
+    .sort((a, b) => a.localeCompare(b));
 
   if (showLoadingIndicators) {
     return (

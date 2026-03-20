@@ -25,13 +25,12 @@ export function mapMoarPositionToProtocolPosition(
   const symbol = position.assetInfo?.symbol ?? position.assetName ?? '';
   const formattedAmount = trimTrailingZeros(formatNumber(amount, 4));
 
-  const moarLogoUrl = '/protocol_ico/moar-market-logo-primary.png';
   return {
     id: `moar-${position.poolId}-${position.assetName}`,
     label: symbol || '—',
     value,
-    logoUrl: moarLogoUrl,
-    logoUrl2: position.assetInfo?.logoUrl ?? undefined,
+    // Standard Moar protocol card: show only the underlying asset icon.
+    logoUrl: position.assetInfo?.logoUrl ?? undefined,
     badge: PositionBadge.Supply,
     subLabel: formattedAmount,
     price,

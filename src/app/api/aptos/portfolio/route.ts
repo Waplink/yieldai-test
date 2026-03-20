@@ -5,6 +5,7 @@ import { FungibleAssetBalance } from '@/lib/types/aptos';
 import { TokenPrice } from '@/lib/types/panora';
 import tokenList from '@/lib/data/tokenList.json';
 import protocolsList from '@/lib/data/protocolsList.json';
+import { normalizeAddress } from '@/lib/utils/addressNormalization';
 
 interface PortfolioToken {
   address: string;
@@ -79,6 +80,37 @@ const getTokenInfo = (coinAddress: string) => {
   
   return null;
 };
+
+// In-memory cache for Echelon markets (one request per 60s max)
+const ECHELON_CACHE_TTL_MS = 60_000;
+type EchelonAsset = { address?: string; faAddress?: string; symbol: string; name: string; decimals?: number; price?: number };
+type EchelonMarkets = { assets: Array<EchelonAsset> };
+let echelonCache: { data: EchelonMarkets; ts: number } | null = null;
+
+function normalizeAssetTypeForLookup(assetType: string): string {
+  const segment = assetType.includes('::') ? assetType.split('::')[0]! : assetType;
+  const withPrefix = segment.startsWith('0x') ? segment : `0x${segment}`;
+  return normalizeAddress(withPrefix);
+}
+
+async function getEchelonMarkets(): Promise<EchelonMarkets | null> {
+  if (echelonCache && Date.now() - echelonCache.ts < ECHELON_CACHE_TTL_MS) {
+    return echelonCache.data;
+  }
+  try {
+    const res = await fetch('https://app.echelon.market/api/markets?network=aptos_mainnet', {
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'YieldAI/1.0' },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const assets = Array.isArray(json?.data?.assets) ? (json.data.assets as Array<EchelonAsset>) : [];
+    const data: EchelonMarkets = { assets };
+    echelonCache = { data, ts: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
 
 // Функция для получения информации о протоколе
 const getProtocolInfo = (protocolName: string) => {
@@ -333,6 +365,45 @@ export async function GET(request: Request) {
         value
       };
     });
+
+    // Fallback: fill missing prices from Echelon API (one request, cached 60s)
+    const missingPriceTokens = tokens.filter((t) => t.price === null);
+    if (missingPriceTokens.length > 0) {
+      const echelonData = await getEchelonMarkets();
+      const assets = echelonData?.assets ?? [];
+      const echelonByAddress = new Map<string, { symbol: string; name: string; decimals: number; price: number }>();
+      for (const a of assets) {
+        const addr = a.address ?? a.faAddress;
+        if (!addr || a.price == null) continue;
+        const key = normalizeAssetTypeForLookup(addr);
+        echelonByAddress.set(key, {
+          symbol: a.symbol,
+          name: a.name,
+          decimals: a.decimals ?? 8,
+          price: a.price,
+        });
+        if (a.faAddress && a.faAddress !== addr) {
+          echelonByAddress.set(normalizeAddress(a.faAddress), {
+            symbol: a.symbol,
+            name: a.name,
+            decimals: a.decimals ?? 8,
+            price: a.price,
+          });
+        }
+      }
+      for (const token of missingPriceTokens) {
+        const key = normalizeAssetTypeForLookup(token.address);
+        const e = echelonByAddress.get(key);
+        if (e) {
+          token.name = e.name;
+          token.symbol = e.symbol;
+          token.decimals = e.decimals;
+          token.price = String(e.price);
+          const amount = parseFloat(token.amount) / Math.pow(10, e.decimals);
+          token.value = (amount * e.price).toString();
+        }
+      }
+    }
 
     // Sort tokens by value
     tokens.sort((a, b) => {

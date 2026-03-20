@@ -202,27 +202,35 @@ export async function GET() {
 
         // Collect staking APR mapping (if available and positive)
         const rawStakingApr = (asset as any).stakingApr as number | undefined;
-        if (typeof rawStakingApr === 'number' && rawStakingApr > 0) {
-          const aprPct = rawStakingApr * 100;
-          const entry = { aprPct, source: 'echelon' as const };
-          if (asset.address) {
-            stakingAprs[asset.address] = entry;
-          }
-          if (asset.faAddress) {
-            stakingAprs[asset.faAddress] = entry;
-          }
+        // Some assets (e.g. DLP) expose yield as extraAprs instead of stakingApr.
+        const extraAprs = (asset as any).extraAprs as Array<{ source?: string; value?: number; type?: string }> | undefined;
+        const extraSupplyAprFrac = Array.isArray(extraAprs)
+          ? extraAprs
+              .filter((x) => x && x.type === 'supply' && typeof x.value === 'number')
+              .reduce((sum, x) => sum + (x.value as number), 0)
+          : 0;
+        const extraSupplyAprPct = extraSupplyAprFrac > 0 ? extraSupplyAprFrac * 100 : 0;
+
+        const stakingAprPct =
+          (typeof rawStakingApr === 'number' && rawStakingApr > 0 ? rawStakingApr * 100 : 0) +
+          extraSupplyAprPct;
+
+        if (stakingAprPct > 0) {
+          const entry = { aprPct: stakingAprPct, source: 'echelon' as const };
+          if (asset.address) stakingAprs[asset.address] = entry;
+          if (asset.faAddress) stakingAprs[asset.faAddress] = entry;
         }
 
         // Create combined pool entry with both supply and borrow APRs
         const hasSupply = asset.supplyCap > 0;
         const hasBorrow = asset.borrowCap > 0;
-        const hasStaking = typeof rawStakingApr === 'number' && rawStakingApr > 0;
+        const hasStaking = stakingAprPct > 0;
         
         if (hasSupply || hasBorrow || hasStaking) {
           // Determine the main APR for sorting (use depositApy for correct total APR)
           let mainAPR = 0;
           if (hasSupply || hasStaking) {
-            mainAPR = (hasSupply ? totalSupplyApr : 0) + (hasStaking ? rawStakingApr * 100 : 0) + (supplyRewardsApr * 100);
+            mainAPR = (hasSupply ? totalSupplyApr : 0) + (hasStaking ? stakingAprPct : 0) + (supplyRewardsApr * 100);
           }
 
           // Create pool type description
@@ -243,7 +251,7 @@ export async function GET() {
              provider: 'Echelon',
              totalAPY: mainAPR,
              // depositApy включает: lending APR + staking APR + rewards APR
-             depositApy: (hasSupply ? totalSupplyApr : 0) + (hasStaking ? rawStakingApr * 100 : 0) + (supplyRewardsApr * 100),
+             depositApy: (hasSupply ? totalSupplyApr : 0) + (hasStaking ? stakingAprPct : 0) + (supplyRewardsApr * 100),
              borrowAPY: hasBorrow ? totalBorrowApr : 0,
              token: asset.faAddress || asset.address, // Use faAddress if available, otherwise address
              protocol: 'Echelon',
@@ -259,15 +267,15 @@ export async function GET() {
              totalSupply: marketStat.totalShares,
              totalBorrow: marketStat.totalLiability,
              // Staking-specific fields (if applicable)
-             stakingApr: hasStaking ? rawStakingApr * 100 : undefined,
+             stakingApr: hasStaking ? stakingAprPct : undefined,
              isStakingPool: hasStaking && !hasSupply && !hasBorrow,
              stakingToken: hasStaking ? asset.symbol : undefined,
              underlyingToken: hasStaking ? asset.symbol : undefined,
              // Добавляем разбивку APR для tooltip
              lendingApr: hasSupply ? (asset.supplyApr || 0) * 100 : 0,
-             stakingAprOnly: hasStaking ? rawStakingApr * 100 : 0,
+             stakingAprOnly: hasStaking ? stakingAprPct : 0,
              // Общий Supply APR = Lending APR + Staking APR (без rewards)
-             totalSupplyApr: (hasSupply ? (asset.supplyApr || 0) * 100 : 0) + (hasStaking ? rawStakingApr * 100 : 0),
+             totalSupplyApr: (hasSupply ? (asset.supplyApr || 0) * 100 : 0) + (hasStaking ? stakingAprPct : 0),
              // LTV fields
              ltv: asset.ltv || 0,
              lt: asset.lt || 0,

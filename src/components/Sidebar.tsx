@@ -40,6 +40,23 @@ import { RefreshCw } from "lucide-react";
 import { CollapsibleControls } from "@/components/ui/collapsible-controls";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils/numberFormat";
+
+function shortenHexAddress(addr: string, head = 4, tail = 4): string {
+  if (!addr) return "Unknown";
+  if (!addr.startsWith("0x")) return addr;
+  if (addr.length <= 2 + head + tail + 1) return addr;
+  return `${addr.slice(0, 2 + head)}…${addr.slice(-tail)}`;
+}
+
+function needsAddressLabel(token: Token): boolean {
+  const s = (token.symbol ?? "").trim();
+  if (!s) return true;
+  if (s === "Unknown") return true;
+  // When we fall back to displaying raw types/segments, it can get extremely long.
+  if (s.includes("::")) return true;
+  if (s.length > 16) return true;
+  return false;
+}
 export default function Sidebar() {
   // Use native restore hook to ensure native Aptos wallets are reconnected
   const { account } = useAptosNativeRestore();
@@ -119,10 +136,20 @@ export default function Sidebar() {
       setIsRefreshing(true);
       const portfolioService = new AptosPortfolioService();
       const portfolio = await portfolioService.getPortfolio(account.address.toString());
-      setTokens(portfolio.tokens);
+      // Sidebar UI: for unknown/very long symbols, show a shortened address label instead.
+      const displayTokens = (portfolio.tokens || []).map((t) => {
+        if (needsAddressLabel(t)) {
+          return {
+            ...t,
+            symbol: shortenHexAddress(t.address),
+          };
+        }
+        return t;
+      });
+      setTokens(displayTokens);
 
       // Вычисляем общую стоимость из токенов
-      const total = portfolio.tokens.reduce((sum, token) => {
+      const total = displayTokens.reduce((sum, token) => {
         return sum + (token.value ? parseFloat(token.value) : 0);
       }, 0);
       setTotalValue(total);
@@ -168,64 +195,64 @@ export default function Sidebar() {
   }, [loadPortfolio]);
 
   const handleHyperionValueChange = useCallback((value: number) => {
-    setHyperionValue(value);
+    setHyperionValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleEchelonValueChange = useCallback((value: number) => {
-    setEchelonValue(value);
+    setEchelonValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleAriesValueChange = useCallback((value: number) => {
-    setAriesValue(value);
+    setAriesValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleJouleValueChange = useCallback((value: number) => {
-    setJouleValue(value);
+    setJouleValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleTappValueChange = useCallback((value: number) => {
-    setTappValue(value);
+    setTappValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleMesoValueChange = useCallback((value: number) => {
-    setMesoValue(value);
+    setMesoValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleAuroValueChange = useCallback((value: number) => {
-    setAuroValue(value);
+    setAuroValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleAmnisValueChange = useCallback((value: number) => {
-    setAmnisValue(value);
+    setAmnisValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleEarniumValueChange = useCallback((value: number) => {
-    setEarniumValue(value);
+    setEarniumValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleAaveValueChange = useCallback((value: number) => {
-    setAaveValue(value);
+    setAaveValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   const handleMoarValueChange = useCallback((value: number) => {
-    setMoarValue(value);
+    setMoarValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleThalaValueChange = useCallback((value: number) => {
-    setThalaValue(value);
+    setThalaValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleEchoValueChange = useCallback((value: number) => {
-    setEchoValue(value);
+    setEchoValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleDecibelValueChange = useCallback((value: number) => {
-    setDecibelValue(value);
+    setDecibelValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleDecibelMainnetValueChange = useCallback((value: number) => {
-    setDecibelMainnetValue(value);
+    setDecibelMainnetValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleAptreeValueChange = useCallback((value: number) => {
-    setAptreeValue(value);
+    setAptreeValue(Number.isFinite(value) ? value : 0);
   }, []);
   const handleYieldAIValueChange = useCallback((value: number) => {
-    setYieldAIValue(value);
+    setYieldAIValue(Number.isFinite(value) ? value : 0);
   }, []);
 
   // Считаем сумму по кошельку
@@ -235,8 +262,25 @@ export default function Sidebar() {
   }, 0);
 
   // Считаем сумму по всем протоколам (Decibel: full assets when available, else pre-deposit fallback)
-  const decibelTotal = decibelValue > 0 ? decibelValue : decibelMainnetValue;
-  const totalProtocolsValue = hyperionValue + echelonValue + ariesValue + jouleValue + tappValue + mesoValue + auroValue + amnisValue + earniumValue + aaveValue + moarValue + thalaValue + echoValue + decibelTotal + aptreeValue + yieldAIValue;
+  const decibelTotalRaw = decibelValue > 0 ? decibelValue : decibelMainnetValue;
+  const decibelTotal = Number.isFinite(decibelTotalRaw) ? decibelTotalRaw : 0;
+  const totalProtocolsValue =
+    (Number.isFinite(hyperionValue) ? hyperionValue : 0) +
+    (Number.isFinite(echelonValue) ? echelonValue : 0) +
+    (Number.isFinite(ariesValue) ? ariesValue : 0) +
+    (Number.isFinite(jouleValue) ? jouleValue : 0) +
+    (Number.isFinite(tappValue) ? tappValue : 0) +
+    (Number.isFinite(mesoValue) ? mesoValue : 0) +
+    (Number.isFinite(auroValue) ? auroValue : 0) +
+    (Number.isFinite(amnisValue) ? amnisValue : 0) +
+    (Number.isFinite(earniumValue) ? earniumValue : 0) +
+    (Number.isFinite(aaveValue) ? aaveValue : 0) +
+    (Number.isFinite(moarValue) ? moarValue : 0) +
+    (Number.isFinite(thalaValue) ? thalaValue : 0) +
+    (Number.isFinite(echoValue) ? echoValue : 0) +
+    decibelTotal +
+    (Number.isFinite(aptreeValue) ? aptreeValue : 0) +
+    (Number.isFinite(yieldAIValue) ? yieldAIValue : 0);
 
   // Итоговая сумма
   const totalAssets = walletTotal + totalProtocolsValue;

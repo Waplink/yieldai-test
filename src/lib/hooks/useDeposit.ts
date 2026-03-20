@@ -31,7 +31,8 @@ export function useDeposit() {
   const deposit = useCallback(async (
     protocolKey: ProtocolKey,
     token: string,
-    amount: bigint
+    amount: bigint,
+    options?: { marketAddress?: string }
   ) => {
     try {
       console.log('Starting deposit:', { protocolKey, token, amount });
@@ -51,7 +52,7 @@ export function useDeposit() {
         throw new Error(`Protocol ${protocolKey} does not have buildDeposit method`);
       }
 
-      const payload = await executeDeposit(protocolInstance, token, amount, wallet);
+      const payload = await executeDeposit(protocolInstance, token, amount, wallet, options);
       console.log('Generated payload:', payload);
 
       if (!payload || typeof payload !== 'object') {

@@ -1,50 +1,70 @@
 import { BaseProtocol } from "./BaseProtocol";
 import { TransactionPayload } from "@aptos-labs/ts-sdk";
-import { getTokenInfo } from '@/lib/tokens/tokenRegistry';
+import { getTokenInfoWithFallback } from '@/lib/tokens/tokenRegistry';
 
 export class EchelonProtocol implements BaseProtocol {
   name = "Echelon";
 
+  /** Normalize hex address for comparison (0x + strip leading zeros after 0x) */
+  private normalizeAddress(addr: string): string {
+    if (!addr || typeof addr !== 'string') return addr;
+    if (!addr.startsWith('0x')) return addr;
+    const rest = addr.slice(2).replace(/^0+/, '') || '0';
+    return '0x' + rest;
+  }
+
   async getMarketAddress(token: string): Promise<string> {
+    const normalizedToken = this.normalizeAddress(token);
+
     const response = await fetch('/api/protocols/echelon/pools');
     const data = await response.json();
     
-    if (!data.success || !Array.isArray(data.marketData)) {
-      throw new Error("Invalid response from Echelon API");
+    if (data.success && Array.isArray(data.marketData)) {
+      // Special handling for APT token address mapping
+      let searchToken = token;
+      if (token === '0xa') {
+        searchToken = '0x1::aptos_coin::AptosCoin';
+      } else if (token === '0x1::aptos_coin::AptosCoin') {
+        searchToken = '0xa';
+      }
+
+      let market = data.marketData.find((m: any) => m.coin === token || this.normalizeAddress(m.coin) === normalizedToken);
+      if (!market && searchToken !== token) {
+        market = data.marketData.find((m: any) => m.coin === searchToken || this.normalizeAddress(m.coin) === this.normalizeAddress(searchToken));
+      }
+      if (market) {
+        return market.market;
+      }
     }
 
-    // Special handling for APT token address mapping
-    let searchToken = token;
-    if (token === '0xa') {
-      // If token is faAddress (0xa), search for the full tokenAddress
-      searchToken = '0x1::aptos_coin::AptosCoin';
-    } else if (token === '0x1::aptos_coin::AptosCoin') {
-      // If token is full tokenAddress, also try faAddress as fallback
-      searchToken = '0xa';
+    // Fallback: fetch v2/pools (includes DLP and other assets from app.echelon.market)
+    const v2Response = await fetch('/api/protocols/echelon/v2/pools');
+    const v2Data = await v2Response.json();
+    if (v2Data.success && Array.isArray(v2Data.data)) {
+      const pool = v2Data.data.find(
+        (p: any) =>
+          (p.token && this.normalizeAddress(p.token) === normalizedToken) ||
+          (p.token === token)
+      );
+      if (pool?.marketAddress) {
+        return pool.marketAddress;
+      }
     }
 
-    let market = data.marketData.find((m: any) => m.coin === token);
-    
-    // If not found with original token, try with mapped token
-    if (!market && searchToken !== token) {
-      market = data.marketData.find((m: any) => m.coin === searchToken);
-    }
-    
-    if (!market) {
-      throw new Error(`Market not found for token ${token}`);
-    }
-
-    return market.market;
+    throw new Error(`Market not found for token ${token}`);
   }
 
-  async buildDeposit(amountOctas: bigint, token: string, userAddress?: string) {
-    console.log('Building deposit for:', { amountOctas, token, userAddress });
+  async buildDeposit(amountOctas: bigint, token: string, userAddress?: string, marketAddress?: string) {
+    console.log('Building deposit for:', { amountOctas, token, userAddress, marketAddress });
 
-    const tokenInfo = await getTokenInfo(token);
+    const tokenInfo = await getTokenInfoWithFallback(token);
+    if (!tokenInfo) {
+      throw new Error(`Token ${token} not found in token list or protocol APIs`);
+    }
     console.log('Token info:', tokenInfo);
 
-    const marketAddress = await this.getMarketAddress(token);
-    console.log('Market address:', marketAddress);
+    const resolvedMarketAddress = marketAddress ?? await this.getMarketAddress(token);
+    console.log('Market address:', resolvedMarketAddress);
 
     const functionName = tokenInfo.isFungible 
       ? "0xc6bc659f1649553c1a3fa05d9727433dc03843baac29473c817d06d39e7621ba::scripts::supply_fa"
@@ -57,14 +77,17 @@ export class EchelonProtocol implements BaseProtocol {
       type: "entry_function_payload" as const,
       function: functionName,
       type_arguments: typeArgument,
-      arguments: [marketAddress, amountOctas.toString()]
+      arguments: [resolvedMarketAddress, amountOctas.toString()]
     };
   }
 
   async buildWithdraw(marketAddress: string, amountOctas: bigint, token: string, userAddress?: string) {
     console.log('Building withdraw for:', { marketAddress, amountOctas, token, userAddress });
 
-    const tokenInfo = await getTokenInfo(token);
+    const tokenInfo = await getTokenInfoWithFallback(token);
+    if (!tokenInfo) {
+      throw new Error(`Token ${token} not found in token list or protocol APIs`);
+    }
     console.log('Token info:', tokenInfo);
 
     // Check if this is 100% withdraw by analyzing amount

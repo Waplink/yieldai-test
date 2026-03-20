@@ -27,7 +27,7 @@ import {
   useMoarRewards,
   useMoarPools,
 } from "@/lib/query/hooks/protocols/moar";
-import { mapMoarPositionsToProtocolPositions } from "@/components/protocols/moar/mapMoarToProtocolPositions";
+import { mapMoarPositionsToProtocolPositionsAiAgent } from "./mapMoarToProtocolPositionsAiAgent";
 import { ProtocolCardPosition } from "@/shared/ProtocolCard/ProtocolCardPosition/ProtocolCardPosition";
 
 /** Inline Moar positions + rewards for a single safe (no nested card). */
@@ -67,7 +67,7 @@ function MoarInline({
     return map;
   })();
 
-  const protocolPositions = mapMoarPositionsToProtocolPositions(
+  const protocolPositions = mapMoarPositionsToProtocolPositionsAiAgent(
     positions,
     aprByPoolId
   );

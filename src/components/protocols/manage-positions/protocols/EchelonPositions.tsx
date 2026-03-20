@@ -52,6 +52,7 @@ export function EchelonPositions() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showClaimAllModal, setShowClaimAllModal] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [selectedDepositMarketAddress, setSelectedDepositMarketAddress] = useState<string | undefined>(undefined);
   const [tokenPrices, setTokenPrices] = useState<Record<string, string>>({});
   const [rewardsData, setRewardsData] = useState<EchelonReward[]>([]);
   const [apyData, setApyData] = useState<Record<string, any>>({});
@@ -117,17 +118,26 @@ export function EchelonPositions() {
 
     // Добавляем адреса токенов наград
     rewardsData.forEach((reward) => {
-      const tokenInfo = getRewardTokenInfoHelper(reward.token);
-      if (tokenInfo?.faAddress) {
-        addresses.add(normalizeAddress(tokenInfo.faAddress));
+      // IMPORTANT:
+      // Для загрузки tokenPrices нам нужны только адреса наград.
+      // Не используем getRewardTokenInfoHelper, потому что он зависит от getTokenPrice/tokenPrices
+      // и может вызывать лишние перезапуски эффекта загрузки цен (условный "инфинит-лооп").
+      const token = (tokenList as any).data.data.find(
+        (t: any) =>
+          t.symbol.toLowerCase() === reward.token.toLowerCase() ||
+          t.name.toLowerCase().includes(reward.token.toLowerCase())
+      );
+
+      if (token?.faAddress) {
+        addresses.add(normalizeAddress(token.faAddress));
       }
-      if (tokenInfo?.address) {
-        addresses.add(normalizeAddress(tokenInfo.address));
+      if (token?.tokenAddress) {
+        addresses.add(normalizeAddress(token.tokenAddress));
       }
     });
 
     return Array.from(addresses);
-  }, [positions, rewardsData, getRewardTokenInfoHelper]);
+  }, [positions, rewardsData]);
 
   // Получаем цену токена из кэша
   const getTokenPrice = (coinAddress: string): string => {
@@ -652,8 +662,13 @@ export function EchelonPositions() {
         const apy = poolData.supplyAPY / 100; // Конвертируем из процентов в десятичную форму
         return apy;
       } else if (position.type === 'borrow') {
-        const apy = poolData.borrowAPY / 100;
-        return apy;
+        const borrowInterestAprPct =
+          typeof poolData.borrowAPY === 'number' && Number.isFinite(poolData.borrowAPY) ? poolData.borrowAPY : 0;
+        const borrowRewardsAprPct =
+          typeof poolData.borrowRewardsApr === 'number' && Number.isFinite(poolData.borrowRewardsApr) ? poolData.borrowRewardsApr : 0;
+
+        // For borrow positions we show net APR: interest APR minus rewards APR.
+        return (borrowInterestAprPct - borrowRewardsAprPct) / 100;
       }
     }
     return null;
@@ -731,6 +746,7 @@ export function EchelonPositions() {
      }
     
     setSelectedPosition(position);
+    setSelectedDepositMarketAddress(marketAddress);
     setShowDepositModal(true);
   };
 
@@ -928,6 +944,18 @@ export function EchelonPositions() {
                                     <span className="text-yellow-400">{formatNumber(apyData[position.coin].supplyRewardsApr, 2)}%</span>
                                   </div>
                                 )}
+                                {isBorrow && apyData[position.coin]?.borrowAPY > 0 && (
+                                  <div className="flex justify-between">
+                                    <span>Borrow APR:</span>
+                                    <span className="text-red-400">{formatNumber(apyData[position.coin].borrowAPY, 2)}%</span>
+                                  </div>
+                                )}
+                                {isBorrow && apyData[position.coin]?.borrowRewardsApr > 0 && (
+                                  <div className="flex justify-between">
+                                    <span>Borrow Rewards APR (subtract):</span>
+                                    <span className="text-yellow-400">{formatNumber(apyData[position.coin].borrowRewardsApr, 2)}%</span>
+                                  </div>
+                                )}
                                 <div className="border-t border-gray-600 pt-1 mt-1">
                                   <div className="flex justify-between font-semibold">
                                     <span>Total:</span>
@@ -1072,6 +1100,18 @@ export function EchelonPositions() {
                                 <div className="flex justify-between">
                                   <span>Rewards APR:</span>
                                   <span className="text-yellow-400">{formatNumber(apyData[position.coin].supplyRewardsApr, 2)}%</span>
+                                </div>
+                              )}
+                              {isBorrow && apyData[position.coin]?.borrowAPY > 0 && (
+                                <div className="flex justify-between">
+                                  <span>Borrow APR:</span>
+                                  <span className="text-red-400">{formatNumber(apyData[position.coin].borrowAPY, 2)}%</span>
+                                </div>
+                              )}
+                              {isBorrow && apyData[position.coin]?.borrowRewardsApr > 0 && (
+                                <div className="flex justify-between">
+                                  <span>Borrow Rewards APR (subtract):</span>
+                                  <span className="text-yellow-400">{formatNumber(apyData[position.coin].borrowRewardsApr, 2)}%</span>
                                 </div>
                               )}
                               <div className="border-t border-gray-600 pt-1 mt-1">
@@ -1233,6 +1273,7 @@ export function EchelonPositions() {
           onClose={() => {
             setShowDepositModal(false);
             setSelectedPosition(null);
+            setSelectedDepositMarketAddress(undefined);
           }}
           protocol={{
             name: "Echelon",
@@ -1256,6 +1297,7 @@ export function EchelonPositions() {
             address: selectedPosition.coin
           }}
           priceUSD={parseFloat(getTokenPrice(selectedPosition.coin)) || 0}
+          poolAddress={selectedDepositMarketAddress}
         />
       )}
 

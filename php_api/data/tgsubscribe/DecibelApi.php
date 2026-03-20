@@ -233,6 +233,7 @@ class DecibelApi
 			$weightedAverageInput = $_GET['weighted_average'];
 		}
 
+		$weightedAverageRequested = $weightedAverageInput !== null;
 		$weightedAverage = in_array(
 			strtolower(trim((string)$weightedAverageInput)),
 			['1', 'true', 'yes', 'on'],
@@ -301,10 +302,18 @@ class DecibelApi
 				];
 			}
 
+			if ($weightedAverageRequested) {
+				return [
+					'success' => true,
+					'weighted_average' => $weightedAverage ? $this->buildFundingWeightedAverage($rows) : null,
+					'error' => '',
+				];
+			}
+
 			return [
 				'success' => true,
 				'data' => $rows,
-				'weighted_average' => $weightedAverage ? $this->buildFundingWeightedAverage($rows) : null,
+				'weighted_average' => null,
 				'error' => '',
 			];
 		}

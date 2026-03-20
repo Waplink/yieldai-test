@@ -10,6 +10,7 @@ import Image from "next/image";
 import tokenList from "@/lib/data/tokenList.json";
 import { useCollapsible } from "@/contexts/CollapsibleContext";
 import { ManagePositionsButton } from "../ManagePositionsButton";
+import { ProtocolClosureNotice } from "@/components/ui/protocol-closure-notice";
 
 interface PositionsListProps {
   address?: string;
@@ -339,6 +340,7 @@ export function PositionsList({ address, onPositionsValueChange, refreshKey, onP
                   </div>
                 )}
                 <CardTitle className="text-lg">Earnium</CardTitle>
+                <ProtocolClosureNotice protocolKey="earnium" />
               </div>
               <div className="text-lg">Loading...</div>
             </div>
@@ -369,6 +371,7 @@ export function PositionsList({ address, onPositionsValueChange, refreshKey, onP
               </div>
             )}
             <CardTitle className="text-lg">Earnium</CardTitle>
+            <ProtocolClosureNotice protocolKey="earnium" stopPropagation />
           </div>
           <div className="flex items-center gap-2">
             <div className="text-lg">${totalValue.toFixed(2)}</div>

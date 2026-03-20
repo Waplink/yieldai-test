@@ -6,13 +6,15 @@ interface ExecuteDepositParams {
   token: string;
   amount: bigint;
   wallet: WalletContextState;
+  options?: { marketAddress?: string };
 }
 
 export async function executeDeposit(
   protocol: BaseProtocol,
   token: string,
   amount: bigint,
-  wallet: WalletContextState
+  wallet: WalletContextState,
+  options?: { marketAddress?: string }
 ) {
   console.log('Executing deposit with:', {
     protocol,
@@ -83,8 +85,9 @@ export async function executeDeposit(
     console.log('Using standard Auro buildDeposit method');
   }
 
-  // Standard protocol handling
-  const payload = await protocol.buildDeposit(amount, token, wallet.account?.address?.toString());
+  // Standard protocol handling (optional marketAddress for Echelon managed positions)
+  const marketAddress = options?.marketAddress;
+  const payload = await protocol.buildDeposit(amount, token, wallet.account?.address?.toString(), marketAddress);
   console.log('Generated payload:', payload);
 
   if (!payload || typeof payload !== 'object') {
