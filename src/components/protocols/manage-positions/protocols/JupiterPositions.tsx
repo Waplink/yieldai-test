@@ -354,7 +354,7 @@ export function JupiterPositions() {
   ]);
 
   const waitForReadySolanaSession = useCallback(
-    async (retries = 20, delayMs = 250) => {
+    async (retries = 12, delayMs = 150) => {
       let session = resolveSolanaSession();
       for (let i = 0; i < retries && (!session.signerAddress || !session.hasSigner); i++) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -419,17 +419,17 @@ export function JupiterPositions() {
         }
         const retried = await waitForReadySolanaSession(8, 250);
         resolvedSignerAddress = retried.signerAddress || effectiveSignerAddress;
-        resolvedSendTransaction = retried.sendTransaction ?? activeSendTransaction;
-        resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+        resolvedSendTransaction = retried.sendTransaction ?? resolvedSendTransaction;
+        resolvedSignTransaction = retried.signTransaction ?? resolvedSignTransaction;
       }
     }
 
     if (!resolvedSignerAddress || (!resolvedSendTransaction && !resolvedSignTransaction)) {
       await recoverSolanaWalletSelection();
-      const retriedAfterSelect = await waitForReadySolanaSession(10, 250);
+      const retriedAfterSelect = await waitForReadySolanaSession(10, 150);
       resolvedSignerAddress = retriedAfterSelect.signerAddress || effectiveSignerAddress;
-      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? activeSendTransaction;
-      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? activeSignTransaction;
+      resolvedSendTransaction = retriedAfterSelect.sendTransaction ?? resolvedSendTransaction;
+      resolvedSignTransaction = retriedAfterSelect.signTransaction ?? resolvedSignTransaction;
     }
 
     // Continue when we have an address but signer APIs are still warming up:
@@ -520,9 +520,9 @@ export function JupiterPositions() {
       let activeSignerAddressForTx = resolvedSignerAddress;
 
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
-        const retriedBeforeSend = await waitForReadySolanaSession(6, 200);
-        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? activeSendTransaction;
-        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? activeSignTransaction;
+        const retriedBeforeSend = await waitForReadySolanaSession(6, 150);
+        resolvedSendTransaction = retriedBeforeSend.sendTransaction ?? resolvedSendTransaction;
+        resolvedSignTransaction = retriedBeforeSend.signTransaction ?? resolvedSignTransaction;
       }
       if (!resolvedSendTransaction && !resolvedSignTransaction) {
         throw new Error("Wallet API is unavailable after reconnect. Reconnect Solana wallet and try again.");
@@ -540,9 +540,9 @@ export function JupiterPositions() {
             let recovered = false;
             for (let attempt = 0; attempt < 2 && !recovered; attempt++) {
               await recoverSolanaWalletSelection();
-              const retried = await waitForReadySolanaSession(20, 250);
-              const retrySend = retried.sendTransaction ?? activeSendTransaction;
-              const retrySign = retried.signTransaction ?? activeSignTransaction;
+              const retried = await waitForReadySolanaSession(10, 150);
+              const retrySend = retried.sendTransaction;
+              const retrySign = retried.signTransaction;
               const retrySignerAddress = retried.signerAddress || activeSignerAddressForTx;
               if (retrySignerAddress && retrySignerAddress !== activeSignerAddressForTx) {
                 const retryTxResp = await fetch("/api/protocols/jupiter/deposit", {
@@ -590,48 +590,7 @@ export function JupiterPositions() {
               }
             }
             if (!recovered) {
-              // Final delayed retry inside the same click to avoid forced second click UX.
-              await new Promise((resolve) => setTimeout(resolve, 1500));
-              await recoverSolanaWalletSelection();
-              const finalRetry = await waitForReadySolanaSession(20, 250);
-              const finalSend = finalRetry.sendTransaction ?? activeSendTransaction;
-              const finalSign = finalRetry.signTransaction ?? activeSignTransaction;
-              const finalSignerAddress = finalRetry.signerAddress || activeSignerAddressForTx;
-              if (finalSignerAddress && finalSignerAddress !== activeSignerAddressForTx) {
-                const finalTxResp = await fetch("/api/protocols/jupiter/deposit", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    asset: canonicalMint || normalizedMint || mint,
-                    signer: finalSignerAddress,
-                    amount: String(amountBaseUnits),
-                    preferLegacyInstruction,
-                  }),
-                });
-                const finalTxData = await finalTxResp.json().catch(() => null);
-                if (!finalTxResp.ok || !finalTxData?.success || !finalTxData?.data?.transaction) {
-                  throw new Error(finalTxData?.error || `Deposit prepare failed: ${finalTxResp.status}`);
-                }
-                const finalSerialized = decodeBase64Tx(finalTxData.data.transaction);
-                txForWallet = isVersionedTransactionBytes(finalSerialized)
-                  ? VersionedTransaction.deserialize(finalSerialized)
-                  : Transaction.from(finalSerialized);
-                activeSignerAddressForTx = finalSignerAddress;
-              }
-              if (finalSend) {
-                signature = await finalSend(txForWallet as any, connection, {
-                  skipPreflight: false,
-                  preflightCommitment: "confirmed",
-                });
-              } else if (finalSign) {
-                const finalSigned = await finalSign(txForWallet as any);
-                signature = await connection.sendRawTransaction(finalSigned.serialize(), {
-                  skipPreflight: false,
-                  preflightCommitment: "confirmed",
-                });
-              } else {
-                throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
-              }
+              throw new Error("Wallet API is still syncing after reconnect. Try again in 1-2 seconds.");
             }
           } else {
           if (!resolvedSignTransaction) {
