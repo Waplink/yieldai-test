@@ -35,6 +35,11 @@ const WSOL_MINT = "So11111111111111111111111111111111111111112";
 const USDG_MINT = "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH";
 const JUPITER_PREFER_LEGACY_DEPOSIT_MINTS = new Set([WSOL_MINT, USDG_MINT]);
 const JUPITER_PREFER_LEGACY_SYMBOLS = new Set(["WSOL", "USDG"]);
+const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
+  WSOL: WSOL_MINT,
+  USDG: USDG_MINT,
+  USDS: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA",
+};
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -481,8 +486,9 @@ export function JupiterPositions() {
     }
 
     const normalizedMint = normalizeMint(mint);
+    const canonicalMint = JUPITER_MINT_BY_SYMBOL[selectedMeta.canonicalSymbol || ""] || normalizedMint;
     const preferLegacyInstruction =
-      JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(normalizedMint) ||
+      JUPITER_PREFER_LEGACY_DEPOSIT_MINTS.has(canonicalMint) ||
       JUPITER_PREFER_LEGACY_SYMBOLS.has(selectedMeta.canonicalSymbol || "");
 
     try {
@@ -492,7 +498,7 @@ export function JupiterPositions() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          asset: normalizedMint || mint,
+          asset: canonicalMint || normalizedMint || mint,
           signer: resolvedSignerAddress,
           amount: String(amountBaseUnits),
           preferLegacyInstruction,
