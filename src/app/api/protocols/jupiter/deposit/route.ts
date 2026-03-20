@@ -115,14 +115,11 @@ async function buildLegacyTransactionFromInstruction(input: {
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
 
   for (const ix of instructions) {
-    // For USDG (Token-2022), ATA create in Jupiter legacy payload may fail
+    // For USDG (Token-2022), ATA program instructions from legacy payload can fail
     // with IncorrectProgramId/IllegalOwner in mixed wallet setups.
-    // User must already have USDG ATA to hold a positive USDG balance, so skip it.
+    // Since depositor already has USDG balance, skip ATA instructions entirely.
     if (isToken2022Mint && ix.programId === ataProgramIdStr) {
-      const mintInIx = ix.accounts?.[3]?.pubkey;
-      if (mintInIx === input.asset) {
-        continue;
-      }
+      continue;
     }
 
     transaction.add(
