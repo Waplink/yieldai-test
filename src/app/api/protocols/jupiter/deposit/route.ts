@@ -3,6 +3,7 @@ import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiU
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 type DepositRequest = {
@@ -114,21 +115,27 @@ async function buildLegacyTransactionFromInstruction(input: {
 
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
+  const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
+  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
   for (const ix of instructions) {
-    // For USDG (Token-2022), skip ATA create for the USDG mint itself.
-    // User already has USDG ATA if balance is present, and this avoids
-    // incompatible Create flows that trigger IncorrectProgramId/IllegalOwner.
-    if (isToken2022Mint && ix.programId === ataProgramIdStr) {
-      const mintInIx = ix.accounts?.[3]?.pubkey;
-      if (mintInIx === input.asset) {
-        continue;
-      }
-    }
+    const patchedAccounts =
+      isToken2022Mint && ix.programId === ataProgramIdStr
+        ? (() => {
+            const mintInIx = ix.accounts?.[3]?.pubkey;
+            if (mintInIx !== input.asset) return ix.accounts;
+            return ix.accounts.map((account) => {
+              if (account.pubkey === tokenProgramStr) {
+                return { ...account, pubkey: token2022ProgramStr };
+              }
+              return account;
+            });
+          })()
+        : ix.accounts;
 
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: ix.accounts.map((account) => ({
+        keys: patchedAccounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
