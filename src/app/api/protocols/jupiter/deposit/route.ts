@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
-  TOKEN_2022_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 type DepositRequest = {
@@ -116,42 +113,22 @@ async function buildLegacyTransactionFromInstruction(input: {
 
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
-  const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
-  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
 
   for (const ix of instructions) {
-    const patchedAccounts =
-      isToken2022Mint && ix.programId === ataProgramIdStr
-        ? ix.accounts.map((account) => {
-            if (account.pubkey === tokenProgramStr) {
-              return { ...account, pubkey: token2022ProgramStr };
-            }
-            return account;
-          }).map((account, index, arr) => {
-            // ATA create ix accounts:
-            // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-            if (index !== 1 || arr.length < 6) return account;
-            try {
-              const owner = new PublicKey(arr[2].pubkey);
-              const mint = new PublicKey(arr[3].pubkey);
-              const recomputedAta = getAssociatedTokenAddressSync(
-                mint,
-                owner,
-                false,
-                TOKEN_2022_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              ).toBase58();
-              return { ...account, pubkey: recomputedAta };
-            } catch {
-              return account;
-            }
-          })
-        : ix.accounts;
+    // For USDG (Token-2022), ATA create in Jupiter legacy payload may fail
+    // with IncorrectProgramId/IllegalOwner in mixed wallet setups.
+    // User must already have USDG ATA to hold a positive USDG balance, so skip it.
+    if (isToken2022Mint && ix.programId === ataProgramIdStr) {
+      const mintInIx = ix.accounts?.[3]?.pubkey;
+      if (mintInIx === input.asset) {
+        continue;
+      }
+    }
 
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: patchedAccounts.map((account) => ({
+        keys: ix.accounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
