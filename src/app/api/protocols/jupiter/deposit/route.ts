@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey, Transaction, TransactionInstruction, clusterApiUrl } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 type DepositRequest = {
@@ -116,67 +114,21 @@ async function buildLegacyTransactionFromInstruction(input: {
 
   const isToken2022Mint = TOKEN_2022_JUPITER_MINTS.has(input.asset);
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
-  const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
-  const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
   for (const ix of instructions) {
-    const patchedAccounts =
-      isToken2022Mint && ix.programId === ataProgramIdStr
-        ? ix.accounts
-            .map((account) => {
-              if (account.pubkey === tokenProgramStr) {
-                return { ...account, pubkey: token2022ProgramStr };
-              }
-              return account;
-            })
-            .map((account, index, arr) => {
-              // ATA create ix accounts:
-              // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-              if (index !== 1 || arr.length < 6) return account;
-              try {
-                const owner = new PublicKey(arr[2].pubkey);
-                const mint = new PublicKey(arr[3].pubkey);
-                  const currentAta = arr[1].pubkey;
-                  const legacyAta = getAssociatedTokenAddressSync(
-                    mint,
-                    owner,
-                    false,
-                    TOKEN_PROGRAM_ID,
-                    ASSOCIATED_TOKEN_PROGRAM_ID
-                  ).toBase58();
-                  let token2022Ata: string;
-                try {
-                    token2022Ata = getAssociatedTokenAddressSync(
-                    mint,
-                    owner,
-                    false,
-                    TOKEN_2022_PROGRAM_ID,
-                    ASSOCIATED_TOKEN_PROGRAM_ID
-                  ).toBase58();
-                } catch {
-                    token2022Ata = getAssociatedTokenAddressSync(
-                    mint,
-                    owner,
-                    true,
-                    TOKEN_2022_PROGRAM_ID,
-                    ASSOCIATED_TOKEN_PROGRAM_ID
-                  ).toBase58();
-                }
-                  // Only rewrite ATA when current is clearly legacy-derived.
-                  if (currentAta === legacyAta) {
-                    return { ...account, pubkey: token2022Ata };
-                  }
-                  // If upstream already provided token-2022 ATA (or custom expected ATA), keep it.
-                  return account;
-              } catch {
-                return account;
-              }
-            })
-        : ix.accounts;
+    // For USDG (Token-2022), skip ATA create for the USDG mint itself.
+    // User already has USDG ATA if balance is present, and this avoids
+    // incompatible Create flows that trigger IncorrectProgramId/IllegalOwner.
+    if (isToken2022Mint && ix.programId === ataProgramIdStr) {
+      const mintInIx = ix.accounts?.[3]?.pubkey;
+      if (mintInIx === input.asset) {
+        continue;
+      }
+    }
 
     transaction.add(
       new TransactionInstruction({
         programId: new PublicKey(ix.programId),
-        keys: patchedAccounts.map((account) => ({
+        keys: ix.accounts.map((account) => ({
           pubkey: new PublicKey(account.pubkey),
           isSigner: !!account.isSigner,
           isWritable: !!account.isWritable,
