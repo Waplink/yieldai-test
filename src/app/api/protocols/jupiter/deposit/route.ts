@@ -135,9 +135,17 @@ async function buildLegacyTransactionFromInstruction(input: {
               try {
                 const owner = new PublicKey(arr[2].pubkey);
                 const mint = new PublicKey(arr[3].pubkey);
-                let recomputedAta: string;
+                  const currentAta = arr[1].pubkey;
+                  const legacyAta = getAssociatedTokenAddressSync(
+                    mint,
+                    owner,
+                    false,
+                    TOKEN_PROGRAM_ID,
+                    ASSOCIATED_TOKEN_PROGRAM_ID
+                  ).toBase58();
+                  let token2022Ata: string;
                 try {
-                  recomputedAta = getAssociatedTokenAddressSync(
+                    token2022Ata = getAssociatedTokenAddressSync(
                     mint,
                     owner,
                     false,
@@ -145,7 +153,7 @@ async function buildLegacyTransactionFromInstruction(input: {
                     ASSOCIATED_TOKEN_PROGRAM_ID
                   ).toBase58();
                 } catch {
-                  recomputedAta = getAssociatedTokenAddressSync(
+                    token2022Ata = getAssociatedTokenAddressSync(
                     mint,
                     owner,
                     true,
@@ -153,7 +161,12 @@ async function buildLegacyTransactionFromInstruction(input: {
                     ASSOCIATED_TOKEN_PROGRAM_ID
                   ).toBase58();
                 }
-                return { ...account, pubkey: recomputedAta };
+                  // Only rewrite ATA when current is clearly legacy-derived.
+                  if (currentAta === legacyAta) {
+                    return { ...account, pubkey: token2022Ata };
+                  }
+                  // If upstream already provided token-2022 ATA (or custom expected ATA), keep it.
+                  return account;
               } catch {
                 return account;
               }
