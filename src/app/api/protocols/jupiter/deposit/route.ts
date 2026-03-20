@@ -125,27 +125,25 @@ async function buildLegacyTransactionFromInstruction(input: {
     const patchedAccounts =
       isToken2022Mint && ix.programId === ataProgramIdStr
         ? (() => {
-            return ix.accounts
-              .map((account) => {
-                if (account.pubkey === tokenProgramStr) {
-                  return { ...account, pubkey: token2022ProgramStr };
-                }
-                return account;
-              })
-              .map((account, index, arr) => {
-                // ATA create ix accounts:
-                // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
-                if (index !== 1 || arr.length < 6) return account;
-                try {
-                  const ownerStr = arr[2].pubkey;
-                  const mintStr = arr[3].pubkey;
-                  const isUserAtaCreate = ownerStr === signerStr && mintStr === assetStr;
-                  if (!isUserAtaCreate) {
-                    return account;
-                  }
+            // ATA create ix accounts:
+            // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
+            if (!Array.isArray(ix.accounts) || ix.accounts.length < 6) {
+              return ix.accounts;
+            }
 
-                  const owner = new PublicKey(arr[2].pubkey);
-                  const mint = new PublicKey(arr[3].pubkey);
+            const ownerStr = ix.accounts[2]?.pubkey;
+            const mintStr = ix.accounts[3]?.pubkey;
+            const isUserAtaCreate = ownerStr === signerStr && mintStr === assetStr;
+            if (!isUserAtaCreate) {
+              // Do not patch unrelated ATA instructions.
+              return ix.accounts;
+            }
+
+            return ix.accounts.map((account, index) => {
+              try {
+                if (index === 1) {
+                  const owner = new PublicKey(ownerStr);
+                  const mint = new PublicKey(mintStr);
                   let recomputedAta: string;
                   try {
                     recomputedAta = getAssociatedTokenAddressSync(
@@ -156,7 +154,6 @@ async function buildLegacyTransactionFromInstruction(input: {
                       ASSOCIATED_TOKEN_PROGRAM_ID
                     ).toBase58();
                   } catch {
-                    // Derived/x-chain wallets may expose off-curve owners.
                     recomputedAta = getAssociatedTokenAddressSync(
                       mint,
                       owner,
@@ -166,10 +163,15 @@ async function buildLegacyTransactionFromInstruction(input: {
                     ).toBase58();
                   }
                   return { ...account, pubkey: recomputedAta };
-                } catch {
-                  return account;
                 }
-              });
+                if (account.pubkey === tokenProgramStr) {
+                  return { ...account, pubkey: token2022ProgramStr };
+                }
+                return account;
+              } catch {
+                return account;
+              }
+            });
           })()
         : ix.accounts;
 
