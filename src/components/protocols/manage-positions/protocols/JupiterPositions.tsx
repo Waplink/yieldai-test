@@ -160,8 +160,9 @@ export function JupiterPositions() {
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
   const adapterAddress = toBase58Address(adapterPublicKey);
   const derivedSolanaAddress = getSolanaWalletAddress(aptosWallet ?? null) ?? "";
-  const effectiveSignerAddress =
-    toBase58Address(publicKey) || adapterAddress || solanaAddress || derivedSolanaAddress || "";
+  // IMPORTANT: signer address must come from active Solana adapter/publicKey only.
+  // Do not use derived/fallback portfolio addresses for transaction signer.
+  const effectiveSignerAddress = toBase58Address(publicKey) || adapterAddress || "";
   const adapterSignTransaction =
     typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function"
       ? ((solanaWallet?.adapter as { signTransaction: (transaction: Transaction) => Promise<Transaction> }).signTransaction.bind(
@@ -310,7 +311,7 @@ export function JupiterPositions() {
         }
       | undefined;
     const runtimeAdapterAddress = toBase58Address(runtimeAdapter?.publicKey);
-    const runtimeSignerAddress = toBase58Address(publicKey) || runtimeAdapterAddress || effectiveSignerAddress;
+    const runtimeSignerAddress = toBase58Address(publicKey) || runtimeAdapterAddress || "";
 
     const adapterSend =
       typeof runtimeAdapter?.sendTransaction === "function"
