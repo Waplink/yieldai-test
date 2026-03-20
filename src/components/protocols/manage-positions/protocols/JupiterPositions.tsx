@@ -402,6 +402,7 @@ export function JupiterPositions() {
 
   const handleDeposit = async (amountUi: number) => {
     if (!selectedPosition) return;
+    setIsDepositing(true);
     const session = await waitForReadySolanaSession();
     let resolvedSignerAddress = session.signerAddress || effectiveSignerAddress;
     let resolvedSendTransaction = session.sendTransaction ?? activeSendTransaction;
@@ -447,6 +448,7 @@ export function JupiterPositions() {
           title: "Solana wallet reconnecting",
           description: "Wallet address is unavailable after reconnect. Reconnect Solana wallet and try again.",
         });
+        setIsDepositing(false);
         return;
       }
       toast({
@@ -454,6 +456,7 @@ export function JupiterPositions() {
         description: "Connect Solana wallet to deposit to Jupiter.",
         variant: "destructive",
       });
+      setIsDepositing(false);
       return;
     }
 
@@ -463,6 +466,7 @@ export function JupiterPositions() {
         description: "Enter a valid deposit amount.",
         variant: "destructive",
       });
+      setIsDepositing(false);
       return;
     }
 
@@ -473,6 +477,7 @@ export function JupiterPositions() {
         description: "Jupiter token address is missing.",
         variant: "destructive",
       });
+      setIsDepositing(false);
       return;
     }
 
@@ -483,6 +488,7 @@ export function JupiterPositions() {
         description: "Increase amount to meet token precision.",
         variant: "destructive",
       });
+      setIsDepositing(false);
       return;
     }
 
@@ -493,8 +499,6 @@ export function JupiterPositions() {
       JUPITER_PREFER_LEGACY_SYMBOLS.has(selectedMeta.canonicalSymbol || "");
 
     try {
-      setIsDepositing(true);
-
       const txResp = await fetch("/api/protocols/jupiter/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -677,6 +681,7 @@ export function JupiterPositions() {
 
   const handleWithdraw = async (amountUi: number) => {
     if (!selectedPosition) return;
+    setIsWithdrawing(true);
     const session = await waitForReadySolanaSession();
     let resolvedSignerAddress = session.signerAddress || effectiveSignerAddress;
     let resolvedSendTransaction = session.sendTransaction ?? activeSendTransaction;
@@ -713,6 +718,7 @@ export function JupiterPositions() {
           title: "Solana wallet reconnecting",
           description: "Wallet API is unavailable after auto-reconnect attempts. Reconnect Solana wallet and try again.",
         });
+        setIsWithdrawing(false);
         return;
       }
       toast({
@@ -720,6 +726,7 @@ export function JupiterPositions() {
         description: "Connect Solana wallet to withdraw from Jupiter.",
         variant: "destructive",
       });
+      setIsWithdrawing(false);
       return;
     }
 
@@ -729,6 +736,7 @@ export function JupiterPositions() {
         description: "Enter a valid withdraw amount.",
         variant: "destructive",
       });
+      setIsWithdrawing(false);
       return;
     }
 
@@ -739,6 +747,7 @@ export function JupiterPositions() {
         description: `Withdraw amount exceeds supplied balance (${formatNumber(suppliedAmount, 6)} ${symbol}).`,
         variant: "destructive",
       });
+      setIsWithdrawing(false);
       return;
     }
 
@@ -748,6 +757,7 @@ export function JupiterPositions() {
         description: "Jupiter token address is missing.",
         variant: "destructive",
       });
+      setIsWithdrawing(false);
       return;
     }
 
@@ -758,12 +768,11 @@ export function JupiterPositions() {
         description: "Increase amount to meet token precision.",
         variant: "destructive",
       });
+      setIsWithdrawing(false);
       return;
     }
 
     try {
-      setIsWithdrawing(true);
-
       const txResp = await fetch("/api/protocols/jupiter/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
