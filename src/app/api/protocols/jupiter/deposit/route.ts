@@ -118,6 +118,8 @@ async function buildLegacyTransactionFromInstruction(input: {
   const ataProgramIdStr = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
   const tokenProgramStr = TOKEN_PROGRAM_ID.toBase58();
   const token2022ProgramStr = TOKEN_2022_PROGRAM_ID.toBase58();
+  const signerStr = input.signer;
+  const assetStr = input.asset;
 
   for (const ix of instructions) {
     const patchedAccounts =
@@ -135,15 +137,34 @@ async function buildLegacyTransactionFromInstruction(input: {
                 // 0 payer, 1 ata, 2 owner, 3 mint, 4 system, 5 token program
                 if (index !== 1 || arr.length < 6) return account;
                 try {
+                  const ownerStr = arr[2].pubkey;
+                  const mintStr = arr[3].pubkey;
+                  const isUserAtaCreate = ownerStr === signerStr && mintStr === assetStr;
+                  if (!isUserAtaCreate) {
+                    return account;
+                  }
+
                   const owner = new PublicKey(arr[2].pubkey);
                   const mint = new PublicKey(arr[3].pubkey);
-                  const recomputedAta = getAssociatedTokenAddressSync(
-                    mint,
-                    owner,
-                    false,
-                    TOKEN_2022_PROGRAM_ID,
-                    ASSOCIATED_TOKEN_PROGRAM_ID
-                  ).toBase58();
+                  let recomputedAta: string;
+                  try {
+                    recomputedAta = getAssociatedTokenAddressSync(
+                      mint,
+                      owner,
+                      false,
+                      TOKEN_2022_PROGRAM_ID,
+                      ASSOCIATED_TOKEN_PROGRAM_ID
+                    ).toBase58();
+                  } catch {
+                    // Derived/x-chain wallets may expose off-curve owners.
+                    recomputedAta = getAssociatedTokenAddressSync(
+                      mint,
+                      owner,
+                      true,
+                      TOKEN_2022_PROGRAM_ID,
+                      ASSOCIATED_TOKEN_PROGRAM_ID
+                    ).toBase58();
+                  }
                   return { ...account, pubkey: recomputedAta };
                 } catch {
                   return account;
