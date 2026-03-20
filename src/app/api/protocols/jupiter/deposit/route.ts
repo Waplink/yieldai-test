@@ -133,9 +133,9 @@ async function buildLegacyTransactionFromInstruction(input: {
 
             const ownerStr = ix.accounts[2]?.pubkey;
             const mintStr = ix.accounts[3]?.pubkey;
-            const isUserAtaCreate = ownerStr === signerStr && mintStr === assetStr;
-            if (!isUserAtaCreate) {
-              // Do not patch unrelated ATA instructions.
+            const isAssetAtaCreate = mintStr === assetStr;
+            if (!isAssetAtaCreate) {
+              // Do not patch ATA instructions for other mints.
               return ix.accounts;
             }
 
