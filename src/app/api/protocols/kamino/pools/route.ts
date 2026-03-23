@@ -167,7 +167,7 @@ export async function GET() {
         dailyVolumeUSD: 0,
         poolType: "Lending",
       };
-    });
+    }).filter((pool) => (pool.totalAPY || 0) > 1);
 
     data.sort((a, b) => (b.totalAPY || 0) - (a.totalAPY || 0));
 
