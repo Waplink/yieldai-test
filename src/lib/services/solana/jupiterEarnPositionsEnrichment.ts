@@ -107,8 +107,9 @@ function parseBigIntSafe(s: unknown): bigint {
 }
 
 /**
- * Jupiter Lend `/earn/positions` often returns shares=0 while jl* SPL balances sit in the wallet.
- * Merge wallet jl balances into `shares` and recompute `underlyingAssets` from vault ratio totalAssets/totalSupply.
+ * Jupiter Lend `/earn/positions` sometimes returns shares=0 while jl* SPL balances sit in the wallet.
+ * We only **backfill** in that case: if API already reports non-zero shares/underlying, we trust it.
+ * Adding wallet jl on top of non-zero API shares was doubling amounts on the UI.
  */
 export function enrichJupiterEarnPositionsWithWalletShares(
   rows: unknown[],
@@ -124,12 +125,13 @@ export function enrichJupiterEarnPositionsWithWalletShares(
     const jlMint = typeof token.address === "string" ? token.address.trim() : "";
     if (!jlMint) return row;
 
-    const walletJl = mintToBalance.get(jlMint) ?? BigInt(0);
-    if (walletJl === BigInt(0)) return row;
-
     const apiShares = parseBigIntSafe(r.shares);
-    const effectiveShares = apiShares + walletJl;
-    if (effectiveShares === BigInt(0)) return row;
+    const walletJl = mintToBalance.get(jlMint) ?? BigInt(0);
+
+    // Only fill from chain when API says "no shares" but wallet holds jl receipt tokens.
+    if (apiShares > BigInt(0) || walletJl === BigInt(0)) return row;
+
+    const effectiveShares = walletJl;
 
     const totalAssets = parseBigIntSafe(token.totalAssets);
     const totalSupply = parseBigIntSafe(token.totalSupply);

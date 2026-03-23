@@ -114,7 +114,7 @@ function buildJupiterMeta(
     hasJupiterApiKey: !!getJupiterApiKey(),
     enrichment,
     note:
-      "Lend HTTP API often reports shares=0 while jl* receipt tokens sit in the wallet; we merge SPL jl balances and recompute underlying via totalAssets/totalSupply. Set SOLANA_RPC_URL/HELIUS for reliable RPC.",
+      "When Lend API returns shares=0 but jl* SPL exist in wallet, we backfill from RPC (totalAssets/totalSupply). If API shares>0 we do not add wallet jl (avoids doubled amounts). Use SOLANA_RPC_API_KEY for Helius.",
     maxUnderlyingBalanceRaw,
   };
 }
