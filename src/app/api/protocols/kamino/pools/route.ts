@@ -4,6 +4,8 @@ import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata
 import { NATIVE_MINT } from "@solana/spl-token";
 
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
+const RETRY_ATTEMPTS = 5;
+const RETRY_DELAY_MS = 2000;
 
 type KaminoMarket = {
   lendingMarket: string;
@@ -40,16 +42,53 @@ function normalizeLiquiditySymbol(symbol: string, mint: string): string {
   return symbol;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok) return response;
+
+      const shouldRetry =
+        response.status === 502 || response.status === 503 || response.status === 504;
+
+      if (!shouldRetry || attempt === RETRY_ATTEMPTS) {
+        return response;
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === RETRY_ATTEMPTS) break;
+    }
+
+    await sleep(RETRY_DELAY_MS);
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Kamino request failed after retries");
+}
+
 export async function GET() {
   try {
-    const marketsRes = await fetch(`${KAMINO_API_BASE_URL}/v2/kamino-market`, {
+    const marketsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/v2/kamino-market`, {
       method: "GET",
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
 
     if (!marketsRes.ok) {
-      throw new Error(`Kamino markets API error: ${marketsRes.status} ${marketsRes.statusText}`);
+      console.warn("[Kamino][Pools] markets API unavailable, returning empty data", {
+        status: marketsRes.status,
+        statusText: marketsRes.statusText,
+      });
+      return NextResponse.json({
+        success: true,
+        data: [],
+        count: 0,
+      });
     }
 
     const markets = (await marketsRes.json()) as KaminoMarket[];
@@ -62,7 +101,7 @@ export async function GET() {
     for (const market of marketsToQuery) {
       if (!market?.lendingMarket) continue;
 
-      const metricsRes = await fetch(
+      const metricsRes = await fetchWithRetry(
         `${KAMINO_API_BASE_URL}/kamino-market/${market.lendingMarket}/reserves/metrics?env=mainnet-beta`,
         {
           method: "GET",
@@ -72,9 +111,16 @@ export async function GET() {
       );
 
       if (!metricsRes.ok) {
-        throw new Error(
-          `Kamino reserves metrics API error: ${metricsRes.status} ${metricsRes.statusText} (${market.lendingMarket})`
-        );
+        console.warn("[Kamino][Pools] reserves metrics API unavailable, returning empty data", {
+          market: market.lendingMarket,
+          status: metricsRes.status,
+          statusText: metricsRes.statusText,
+        });
+        return NextResponse.json({
+          success: true,
+          data: [],
+          count: 0,
+        });
       }
 
       const metrics = (await metricsRes.json()) as KaminoReserveMetrics[];
@@ -140,16 +186,12 @@ export async function GET() {
       }
     );
   } catch (error) {
-    console.error("[Kamino][Pools] error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-        data: [],
-        count: 0,
-      },
-      { status: 500 }
-    );
+    console.warn("[Kamino][Pools] fallback to empty data after retries", error);
+    return NextResponse.json({
+      success: true,
+      data: [],
+      count: 0,
+    });
   }
 }
 
