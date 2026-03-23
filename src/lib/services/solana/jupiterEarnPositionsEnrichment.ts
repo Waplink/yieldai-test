@@ -1,4 +1,5 @@
 import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
+import { SolanaPortfolioService } from "@/lib/services/solana/portfolio";
 
 const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
@@ -52,10 +53,19 @@ function getSolanaRpcEndpointList(): string[] {
   return Array.from(new Set(list));
 }
 
+function mergeMintMapsPreferMax(a: Map<string, bigint>, b: Map<string, bigint>): Map<string, bigint> {
+  const out = new Map(a);
+  for (const [k, v] of b) {
+    const av = out.get(k) ?? BigInt(0);
+    out.set(k, v > av ? v : av);
+  }
+  return out;
+}
+
 /**
- * SPL + Token-2022 balances by mint (raw amount string as in chain).
+ * Fallback: same RPC list as enrichment (Helius key first, etc.). Sums multiple token accounts per mint.
  */
-export async function fetchWalletSplBalancesByMint(ownerBase58: string): Promise<Map<string, bigint>> {
+async function fetchWalletSplBalancesByMintViaRpc(ownerBase58: string): Promise<Map<string, bigint>> {
   const owner = new PublicKey(ownerBase58);
   const endpoints = getSolanaRpcEndpointList();
   let lastError: Error | null = null;
@@ -74,13 +84,17 @@ export async function fetchWalletSplBalancesByMint(ownerBase58: string): Promise
           program?: string;
           parsed?: {
             info?: { mint?: string; tokenAmount?: { amount?: string } };
+            parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string } } };
           };
         };
-        const mint = data.parsed?.info?.mint;
-        const amount = data.parsed?.info?.tokenAmount?.amount;
+        const inner = data.parsed?.info ?? data.parsed?.parsed?.info;
+        const mint = inner?.mint;
+        const amount = inner?.tokenAmount?.amount;
         if (!mint || amount === undefined) continue;
         try {
-          map.set(mint, BigInt(String(amount)));
+          const raw = BigInt(String(amount).split(".")[0] || "0");
+          if (raw <= BigInt(0)) continue;
+          map.set(mint, (map.get(mint) ?? BigInt(0)) + raw);
         } catch {
           // ignore
         }
@@ -95,7 +109,31 @@ export async function fetchWalletSplBalancesByMint(ownerBase58: string): Promise
   throw lastError ?? new Error("Solana RPC: all endpoints failed");
 }
 
-function parseBigIntSafe(s: unknown): bigint {
+/**
+ * SPL + Token-2022 balances by mint (raw amounts, summed per mint).
+ * Uses the same RPC path as `SolanaPortfolioService` (no uiAmount filter) merged with the enrichment RPC list.
+ */
+export async function fetchWalletSplBalancesByMint(ownerBase58: string): Promise<Map<string, bigint>> {
+  let fromPortfolio = new Map<string, bigint>();
+  try {
+    fromPortfolio = await SolanaPortfolioService.getInstance().getRawSplBalancesByMint(ownerBase58);
+  } catch (e) {
+    console.warn("[Jupiter enrich] getRawSplBalancesByMint failed:", e instanceof Error ? e.message : e);
+  }
+
+  let fromRpc = new Map<string, bigint>();
+  try {
+    fromRpc = await fetchWalletSplBalancesByMintViaRpc(ownerBase58);
+  } catch (e) {
+    console.warn("[Jupiter enrich] RPC SPL balances failed:", e instanceof Error ? e.message : e);
+  }
+
+  if (fromPortfolio.size === 0) return fromRpc;
+  if (fromRpc.size === 0) return fromPortfolio;
+  return mergeMintMapsPreferMax(fromPortfolio, fromRpc);
+}
+
+export function parseBigIntSafe(s: unknown): bigint {
   try {
     const t = String(s ?? "0").trim();
     if (!t) return BigInt(0);
@@ -104,6 +142,104 @@ function parseBigIntSafe(s: unknown): bigint {
   } catch {
     return BigInt(0);
   }
+}
+
+const BASE58_ADDR = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/**
+ * Jupiter sometimes exposes the jl mint as `token.address`; older payloads may use string `id`.
+ */
+export function resolveJlMintFromToken(token: Record<string, unknown> | undefined): string {
+  if (!token) return "";
+  const addr = typeof token.address === "string" ? token.address.trim() : "";
+  if (addr) return addr;
+  const id = token.id;
+  if (typeof id === "string" && BASE58_ADDR.test(id)) return id.trim();
+  return "";
+}
+
+/**
+ * Scaffold rows from `/earn/positions` may omit `totalAssets` / `totalSupply` needed for backfill.
+ * Merge catalog fields from `GET /lend/v1/earn/tokens` by jl mint.
+ */
+export function mergeEarnTokenCatalogIntoPositionRows(
+  rows: unknown[],
+  earnTokens: unknown[]
+): unknown[] {
+  const byJl = new Map<string, Record<string, unknown>>();
+  for (const et of earnTokens) {
+    if (!et || typeof et !== "object") continue;
+    const t = et as Record<string, unknown>;
+    const jl = typeof t.address === "string" ? t.address.trim() : "";
+    if (jl) byJl.set(jl, t);
+  }
+
+  return rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const r = row as Record<string, unknown>;
+    const token = r.token as Record<string, unknown> | undefined;
+    if (!token) return row;
+    const jl = resolveJlMintFromToken(token);
+    if (!jl) return row;
+    const catalog = byJl.get(jl);
+    if (!catalog) return row;
+
+    return {
+      ...r,
+      token: {
+        ...catalog,
+        ...token,
+        totalSupply: token.totalSupply ?? catalog.totalSupply,
+        totalAssets: token.totalAssets ?? catalog.totalAssets,
+        asset: token.asset ?? catalog.asset,
+      },
+    };
+  });
+}
+
+/** Safe counts for meta: why wallet jl may not match API rows. */
+export function computeJupiterMintDiagnostics(
+  rows: unknown[],
+  mintToBalance: Map<string, bigint>,
+  earnTokens: unknown[]
+): {
+  earnTokensCatalogSize: number;
+  jlMintAddressesFromApiRows: number;
+  walletMintsThatMatchEarnJl: number;
+  apiJlMintsThatHaveWalletBalance: number;
+} {
+  const earnJl = new Set<string>();
+  for (const et of earnTokens) {
+    if (!et || typeof et !== "object") continue;
+    const t = et as Record<string, unknown>;
+    const jl = typeof t.address === "string" ? t.address.trim() : "";
+    if (jl) earnJl.add(jl);
+  }
+
+  const apiJls = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const t = (row as Record<string, unknown>).token as Record<string, unknown> | undefined;
+    const jl = resolveJlMintFromToken(t);
+    if (jl) apiJls.add(jl);
+  }
+
+  let walletMintsThatMatchEarnJl = 0;
+  for (const m of mintToBalance.keys()) {
+    if (earnJl.has(m)) walletMintsThatMatchEarnJl += 1;
+  }
+
+  let apiJlMintsThatHaveWalletBalance = 0;
+  for (const jl of apiJls) {
+    if ((mintToBalance.get(jl) ?? BigInt(0)) > BigInt(0)) apiJlMintsThatHaveWalletBalance += 1;
+  }
+
+  return {
+    earnTokensCatalogSize: earnTokens.length,
+    jlMintAddressesFromApiRows: apiJls.size,
+    walletMintsThatMatchEarnJl,
+    apiJlMintsThatHaveWalletBalance,
+  };
 }
 
 /**
@@ -122,7 +258,7 @@ export function enrichJupiterEarnPositionsWithWalletShares(
     const token = r.token as Record<string, unknown> | undefined;
     if (!token) return row;
 
-    const jlMint = typeof token.address === "string" ? token.address.trim() : "";
+    const jlMint = resolveJlMintFromToken(token);
     if (!jlMint) return row;
 
     const apiShares = parseBigIntSafe(r.shares);
@@ -151,4 +287,58 @@ export function enrichJupiterEarnPositionsWithWalletShares(
   });
 
   return { enriched, rowsTouched };
+}
+
+/**
+ * When Lend `/earn/positions` omits a market row for the user but the wallet holds jl* SPL,
+ * build positions from `GET /lend/v1/earn/tokens` + on-chain balances.
+ */
+export function appendSyntheticJupiterEarnPositionsFromWallet(
+  rows: unknown[],
+  mintToBalance: Map<string, bigint>,
+  earnTokens: unknown[],
+  ownerAddress: string
+): { merged: unknown[]; rowsAppended: number } {
+  const existingJl = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const t = (row as Record<string, unknown>).token as Record<string, unknown> | undefined;
+    const addr = resolveJlMintFromToken(t);
+    if (addr) existingJl.add(addr);
+  }
+
+  const out = [...rows];
+  let rowsAppended = 0;
+
+  for (const et of earnTokens) {
+    if (!et || typeof et !== "object") continue;
+    const token = et as Record<string, unknown>;
+    const jl = typeof token.address === "string" ? token.address.trim() : "";
+    if (!jl) continue;
+
+    const bal = mintToBalance.get(jl) ?? BigInt(0);
+    if (bal === BigInt(0)) continue;
+    if (existingJl.has(jl)) continue;
+
+    existingJl.add(jl);
+
+    const totalSupply = parseBigIntSafe(token.totalSupply);
+    const totalAssets = parseBigIntSafe(token.totalAssets);
+    let underlyingRaw = BigInt(0);
+    if (totalSupply > BigInt(0) && totalAssets > BigInt(0)) {
+      underlyingRaw = (bal * totalAssets) / totalSupply;
+    }
+
+    out.push({
+      token: et,
+      ownerAddress: ownerAddress,
+      shares: String(bal),
+      underlyingAssets: String(underlyingRaw),
+      underlyingBalance: "0",
+      allowance: "0",
+    });
+    rowsAppended += 1;
+  }
+
+  return { merged: out, rowsAppended };
 }
