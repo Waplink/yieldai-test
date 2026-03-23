@@ -18,8 +18,8 @@ export async function fetchWalletSplBalancesByMint(ownerBase58: string): Promise
   const owner = new PublicKey(ownerBase58);
   const connection = new Connection(getSolanaRpcUrl(), "confirmed");
   const [legacy, token2022] = await Promise.all([
-    connection.getParsedTokenAccountsByOwner(owner, TOKEN_PROGRAM_ID, "confirmed"),
-    connection.getParsedTokenAccountsByOwner(owner, TOKEN_2022_PROGRAM_ID, "confirmed"),
+    connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, "confirmed"),
+    connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }, "confirmed"),
   ]);
 
   const map = new Map<string, bigint>();
