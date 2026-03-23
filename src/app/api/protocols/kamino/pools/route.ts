@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { InvestmentData } from "@/types/investments";
 import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata";
 import { NATIVE_MINT } from "@solana/spl-token";
+import { access } from "node:fs/promises";
+import path from "node:path";
 
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
@@ -40,6 +42,25 @@ function normalizeLiquiditySymbol(symbol: string, mint: string): string {
   const nativeMint = NATIVE_MINT.toBase58();
   if (mint === nativeMint) return "SOL";
   return symbol;
+}
+
+function normalizeIconSymbol(symbol?: string | null): string {
+  return (symbol ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function resolveLocalTokenIconBySymbol(symbol?: string | null): Promise<string | undefined> {
+  const key = normalizeIconSymbol(symbol);
+  if (!key) return undefined;
+
+  const relativePath = `/token_ico/${key}.png`;
+  const absolutePath = path.join(process.cwd(), "public", "token_ico", `${key}.png`);
+
+  try {
+    await access(absolutePath);
+    return relativePath;
+  } catch {
+    return undefined;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -144,6 +165,19 @@ export async function GET() {
       console.warn("[Kamino] token metadata resolve failed, continuing without it", e);
     }
 
+    const displaySymbolByMint = new Map<string, string>();
+    for (const reserve of filtered) {
+      const mint = reserve.liquidityTokenMint;
+      if (!mint || displaySymbolByMint.has(mint)) continue;
+      const meta = metadataMap[mint];
+      displaySymbolByMint.set(mint, normalizeLiquiditySymbol(meta?.symbol || reserve.liquidityToken, mint));
+    }
+
+    const iconByMint = new Map<string, string | undefined>();
+    for (const [mint, symbol] of displaySymbolByMint.entries()) {
+      iconByMint.set(mint, await resolveLocalTokenIconBySymbol(symbol));
+    }
+
     const data: InvestmentData[] = filtered.map((m) => {
       const tokenMint = m.liquidityTokenMint;
       const meta = tokenMint ? metadataMap[tokenMint] : undefined;
@@ -152,6 +186,7 @@ export async function GET() {
       const depositApy = toApyPct(m.supplyApy);
       const borrowApy = toApyPct(m.borrowApy);
       const tvlUSD = toNumber(m.totalSupplyUsd, 0);
+      const localIcon = tokenMint ? iconByMint.get(tokenMint) : undefined;
 
       return {
         asset,
@@ -162,7 +197,7 @@ export async function GET() {
         token: tokenMint,
         tokenDecimals: typeof meta?.decimals === "number" ? meta.decimals : undefined,
         protocol: "Kamino",
-        logoUrl: meta?.logoUrl,
+        logoUrl: localIcon || meta?.logoUrl,
         tvlUSD,
         dailyVolumeUSD: 0,
         poolType: "Lending",
