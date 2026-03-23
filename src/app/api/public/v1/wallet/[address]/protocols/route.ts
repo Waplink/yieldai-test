@@ -103,6 +103,12 @@ function extractPositions(payload: unknown): unknown[] {
   return [];
 }
 
+function extractUpstreamMeta(payload: unknown): unknown | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const obj = payload as Record<string, unknown>;
+  return obj.meta;
+}
+
 function getPositionsCount(protocolKey: string, positions: unknown[]): number {
   if (protocolKey !== 'joule') {
     return positions.length;
