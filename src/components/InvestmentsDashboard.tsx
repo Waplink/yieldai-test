@@ -81,10 +81,11 @@ interface Token {
 
 function getChainLogoForProtocol(protocolName: string): { src: string; alt: string } {
   const protocol = getProtocolByName(protocolName);
-  const isSolana = (protocol?.name || protocolName).toLowerCase() === "jupiter";
+  const normalizedProtocol = (protocol?.name || protocolName).toLowerCase();
+  const isSolana = normalizedProtocol === "jupiter" || normalizedProtocol === "kamino";
   return isSolana
-    ? { src: "/chain_ico/solana.svg?v=3", alt: "Solana" }
-    : { src: "/chain_ico/aptos.svg?v=2", alt: "Aptos" };
+    ? { src: "/chain_ico/solana.png?v=1", alt: "Solana" }
+    : { src: "/chain_ico/aptos.png?v=1", alt: "Aptos" };
 }
 
 export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
@@ -133,7 +134,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Echo Protocol': '/protocol_ico/echo.png',
     'APTree': '/protocol_ico/aptree.png',
     'Jupiter': 'https://jup.ag/favicon.ico',
-    'Kamino': '/chain_ico/solana.svg',
+    'Kamino': '/chain_ico/solana.png',
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -715,7 +716,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
           {
             name: 'Kamino',
             url: '/api/protocols/kamino/pools',
-            logoUrl: '/chain_ico/solana.svg',
+            logoUrl: '/chain_ico/solana.png',
             transform: (data: any) => {
               const pools = Array.isArray(data?.data) ? data.data : [];
               return pools.map((pool: any) => ({
