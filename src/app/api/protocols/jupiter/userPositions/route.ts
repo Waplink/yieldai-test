@@ -4,13 +4,15 @@ import {
   computeJupiterMintDiagnostics,
   enrichJupiterEarnPositionsWithWalletShares,
   fetchWalletSplBalancesByMint,
+  mergeEarnTokenCatalogArrays,
   mergeEarnTokenCatalogIntoPositionRows,
 } from "@/lib/services/solana/jupiterEarnPositionsEnrichment";
 
 /** Official Lend API (requires x-api-key — see https://dev.jup.ag/api-reference/lend/earn/positions) */
 const JUPITER_OFFICIAL_POSITIONS_URL = "https://api.jup.ag/lend/v1/earn/positions";
 const JUPITER_LITE_POSITIONS_URL = "https://lite-api.jup.ag/lend/v1/earn/positions";
-const JUPITER_EARN_TOKENS_URL = "https://lite-api.jup.ag/lend/v1/earn/tokens";
+const JUPITER_EARN_TOKENS_LITE_URL = "https://lite-api.jup.ag/lend/v1/earn/tokens";
+const JUPITER_EARN_TOKENS_OFFICIAL_URL = "https://api.jup.ag/lend/v1/earn/tokens";
 
 function getJupiterApiKey(): string | undefined {
   return (
@@ -162,6 +164,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const address = (searchParams.get("address") || "").trim();
+    const debug = (searchParams.get("debug") || "").trim() === "1";
 
     if (!address) {
       return NextResponse.json(
@@ -188,19 +191,29 @@ export async function GET(request: NextRequest) {
 
     const headersWithKey = apiKey ? { ...baseHeaders, "x-api-key": apiKey } : baseHeaders;
 
-    const [official, lite, earnTokensPayload] = await Promise.all([
+    const [official, lite, earnLitePayload, earnOfficialPayload] = await Promise.all([
       fetchPositionsFromUrl(JUPITER_OFFICIAL_POSITIONS_URL + query, headersWithKey),
       fetchPositionsFromUrl(JUPITER_LITE_POSITIONS_URL + query, headersWithKey),
-      fetch(JUPITER_EARN_TOKENS_URL, {
+      fetch(JUPITER_EARN_TOKENS_LITE_URL, {
         method: "GET",
         headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; YieldAI/1.0)" },
         cache: "no-store",
       })
         .then(async (r) => (r.ok ? r.json().catch(() => []) : []))
         .catch(() => []),
+      fetch(JUPITER_EARN_TOKENS_OFFICIAL_URL, {
+        method: "GET",
+        headers: headersWithKey,
+        cache: "no-store",
+      })
+        .then(async (r) => (r.ok ? r.json().catch(() => []) : []))
+        .catch(() => []),
     ]);
 
-    const earnTokens = Array.isArray(earnTokensPayload) ? earnTokensPayload : [];
+    const earnLite = Array.isArray(earnLitePayload) ? earnLitePayload : [];
+    const earnOfficial = Array.isArray(earnOfficialPayload) ? earnOfficialPayload : [];
+    /** Official + lite catalogs can differ; dedupe by jl mint address. */
+    const earnTokens = mergeEarnTokenCatalogArrays([earnOfficial, earnLite]);
 
     const officialMeaningful = countMeaningful(official.rows);
     const liteMeaningful = countMeaningful(lite.rows);
@@ -247,6 +260,8 @@ export async function GET(request: NextRequest) {
         rowsMergedWithWalletJl: rowsTouched,
         syntheticRowsFromEarnTokens: rowsAppended,
         splMintAccountsInWallet: mintToBalance.size,
+        earnTokensCatalogLiteCount: earnLite.length,
+        earnTokensCatalogOfficialCount: earnOfficial.length,
         ...diagnostics,
       };
     } catch (e) {
@@ -258,28 +273,41 @@ export async function GET(request: NextRequest) {
 
     const positions = mergedPositions.filter(isMeaningfulJupiterPosition);
 
-    return NextResponse.json({
+    const basePayload = {
       success: true,
       data: positions,
       count: positions.length,
-      meta: buildJupiterMeta(mergedPositions, positions, {
-        official: {
-          ok: official.ok,
-          status: official.status,
-          rows: official.rows.length,
-          meaningful: officialMeaningful,
-          errorHint: official.errorHint,
+    };
+
+    if (!debug) {
+      return NextResponse.json(basePayload);
+    }
+
+    return NextResponse.json({
+      ...basePayload,
+      meta: buildJupiterMeta(
+        mergedPositions,
+        positions,
+        {
+          official: {
+            ok: official.ok,
+            status: official.status,
+            rows: official.rows.length,
+            meaningful: officialMeaningful,
+            errorHint: official.errorHint,
+          },
+          lite: {
+            ok: lite.ok,
+            status: lite.status,
+            rows: lite.rows.length,
+            meaningful: liteMeaningful,
+            errorHint: lite.errorHint,
+          },
+          chosenSource: chosen,
+          apiKeySource,
         },
-        lite: {
-          ok: lite.ok,
-          status: lite.status,
-          rows: lite.rows.length,
-          meaningful: liteMeaningful,
-          errorHint: lite.errorHint,
-        },
-        chosenSource: chosen,
-        apiKeySource,
-      }, enrichmentMeta),
+        enrichmentMeta
+      ),
     });
   } catch (error) {
     console.error("[Jupiter] userPositions error:", error);

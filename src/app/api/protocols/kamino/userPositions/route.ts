@@ -66,7 +66,137 @@ export type KaminoUserPositionRow =
   | {
       source: "kamino-earn";
       position: unknown;
+    }
+  | {
+      /** Steakhouse / vault “farms” — not KLend obligations; see GET /farms/users/{wallet}/transactions */
+      source: "kamino-farm";
+      farmPubkey: string;
+      tokenMint: string;
+      netTokenAmount: string;
+      netUsdAmount: string;
+      lastActivity: string;
+      transactionCount: number;
     };
+
+type KaminoFarmTx = {
+  instruction?: string;
+  createdOn?: string;
+  transactionSignature?: string;
+  tokenAmount?: string;
+  usdAmount?: string;
+  farm?: string;
+  token?: string;
+};
+
+function parseAmountSigned(tx: KaminoFarmTx): { token: number; usd: number } {
+  const token = Number.parseFloat(String(tx.tokenAmount ?? "0"));
+  const usd = Number.parseFloat(String(tx.usdAmount ?? "0"));
+  const ins = String(tx.instruction ?? "").toLowerCase();
+  let sign = 0;
+  if (ins === "deposit" || ins === "claim" || ins === "compound" || ins === "stake") sign = 1;
+  else if (ins === "withdraw" || ins === "unstake") sign = -1;
+  else if (ins === "pending-withdraw") sign = 0;
+  else sign = 0;
+  return {
+    token: Number.isFinite(token) ? token * sign : 0,
+    usd: Number.isFinite(usd) ? usd * sign : 0,
+  };
+}
+
+async function fetchAllFarmUserTransactions(address: string): Promise<KaminoFarmTx[]> {
+  const out: KaminoFarmTx[] = [];
+  let paginationToken: string | undefined;
+
+  for (let page = 0; page < 25; page++) {
+    const url = new URL(`${KAMINO_API_BASE_URL}/farms/users/${address}/transactions`);
+    url.searchParams.set("limit", "200");
+    if (paginationToken) url.searchParams.set("paginationToken", paginationToken);
+
+    const res = await fetchWithRetry(url.toString(), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    if (!res.ok) break;
+
+    const payload = (await res.json().catch(() => null)) as {
+      result?: KaminoFarmTx[];
+      paginationToken?: string;
+    } | null;
+
+    const batch = Array.isArray(payload?.result) ? payload.result : [];
+    out.push(...batch);
+
+    paginationToken =
+      typeof payload?.paginationToken === "string" && payload.paginationToken.length > 0
+        ? payload.paginationToken
+        : undefined;
+
+    if (!paginationToken || batch.length === 0) break;
+  }
+
+  return out;
+}
+
+function aggregateFarmPositions(transactions: KaminoFarmTx[]): KaminoUserPositionRow[] {
+  type Agg = {
+    farm: string;
+    token: string;
+    netToken: number;
+    netUsd: number;
+    lastActivity: string;
+    count: number;
+  };
+
+  const map = new Map<string, Agg>();
+
+  for (const tx of transactions) {
+    const farm = typeof tx.farm === "string" ? tx.farm.trim() : "";
+    const token = typeof tx.token === "string" ? tx.token.trim() : "";
+    if (!farm || !token) continue;
+
+    const { token: dToken, usd: dUsd } = parseAmountSigned(tx);
+    if (dToken === 0 && dUsd === 0) continue;
+
+    const key = `${farm}:${token}`;
+    const prev = map.get(key);
+    const created = String(tx.createdOn ?? "");
+    const next: Agg = prev ?? {
+      farm,
+      token,
+      netToken: 0,
+      netUsd: 0,
+      lastActivity: created,
+      count: 0,
+    };
+
+    next.netToken += dToken;
+    next.netUsd += dUsd;
+    next.count += 1;
+    if (created && (!next.lastActivity || created > next.lastActivity)) {
+      next.lastActivity = created;
+    }
+
+    map.set(key, next);
+  }
+
+  const rows: KaminoUserPositionRow[] = [];
+  for (const a of map.values()) {
+    if (Math.abs(a.netToken) < 1e-12 && Math.abs(a.netUsd) < 1e-12) continue;
+    rows.push({
+      source: "kamino-farm",
+      farmPubkey: a.farm,
+      tokenMint: a.token,
+      netTokenAmount: String(a.netToken),
+      netUsdAmount: String(a.netUsd),
+      lastActivity: a.lastActivity,
+      transactionCount: a.count,
+    });
+  }
+
+  return rows;
+}
 
 /**
  * GET /api/protocols/kamino/userPositions?address=<solana_wallet>
@@ -74,6 +204,7 @@ export type KaminoUserPositionRow =
  * Aggregates:
  * - Kamino Lend: GET /kamino-market/{market}/users/{wallet}/obligations (all markets from v2/kamino-market)
  * - Kamino Earn: GET /kvaults/users/{wallet}/positions
+ * - Kamino Farms (Steakhouse-style vaults): GET /farms/users/{wallet}/transactions (aggregated net per farm+token)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -171,6 +302,16 @@ export async function GET(request: NextRequest) {
       flat.push({ source: "kamino-earn", position: pos });
     }
 
+    let farmTx: KaminoFarmTx[] = [];
+    try {
+      farmTx = await fetchAllFarmUserTransactions(address);
+    } catch {
+      farmTx = [];
+    }
+
+    const farmRows = aggregateFarmPositions(farmTx);
+    flat.push(...farmRows);
+
     return NextResponse.json({
       success: true,
       data: flat,
@@ -179,6 +320,8 @@ export async function GET(request: NextRequest) {
         marketsQueried: marketList.length,
         lendPositions: flat.filter((r) => r.source === "kamino-lend").length,
         earnPositions: flat.filter((r) => r.source === "kamino-earn").length,
+        farmPositions: flat.filter((r) => r.source === "kamino-farm").length,
+        farmTransactionsFetched: farmTx.length,
       },
     });
   } catch (error) {

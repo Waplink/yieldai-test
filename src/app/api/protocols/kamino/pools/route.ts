@@ -12,6 +12,7 @@ const RETRY_DELAY_MS = 2000;
 type KaminoMarket = {
   lendingMarket: string;
   isPrimary?: boolean;
+  name?: string;
 };
 
 type KaminoReserveMetrics = {
@@ -113,13 +114,12 @@ export async function GET() {
     }
 
     const markets = (await marketsRes.json()) as KaminoMarket[];
-    const primaryMarkets = (Array.isArray(markets) ? markets : []).filter((m) => m.isPrimary);
-    const marketsToQuery = primaryMarkets.length > 0 ? primaryMarkets : (markets || []).slice(0, 1);
-
-    const allReserveMetrics: KaminoReserveMetrics[] = [];
+    const marketList = Array.isArray(markets) ? markets : [];
+    const allReserveMetrics: Array<KaminoReserveMetrics & { marketPubkey: string; marketName?: string }> = [];
 
     // Keep this intentionally sequential to reduce the chance of rate-limits on unauthenticated requests.
-    for (const market of marketsToQuery) {
+    // We query ALL markets so multiple USDC variants (Gauntlet/Steakhouse/etc.) show up separately.
+    for (const market of marketList) {
       if (!market?.lendingMarket) continue;
 
       const metricsRes = await fetchWithRetry(
@@ -145,7 +145,11 @@ export async function GET() {
       }
 
       const metrics = (await metricsRes.json()) as KaminoReserveMetrics[];
-      if (Array.isArray(metrics)) allReserveMetrics.push(...metrics);
+      if (Array.isArray(metrics)) {
+        for (const m of metrics) {
+          allReserveMetrics.push({ ...m, marketPubkey: market.lendingMarket, marketName: market.name });
+        }
+      }
     }
 
     // Filter out empty pools.
@@ -173,6 +177,13 @@ export async function GET() {
       displaySymbolByMint.set(mint, normalizeLiquiditySymbol(meta?.symbol || reserve.liquidityToken, mint));
     }
 
+    const mintCount = new Map<string, number>();
+    for (const r of filtered) {
+      const mint = r.liquidityTokenMint;
+      if (!mint) continue;
+      mintCount.set(mint, (mintCount.get(mint) ?? 0) + 1);
+    }
+
     const iconByMint = new Map<string, string | undefined>();
     for (const [mint, symbol] of displaySymbolByMint.entries()) {
       iconByMint.set(mint, await resolveLocalTokenIconBySymbol(symbol));
@@ -182,7 +193,12 @@ export async function GET() {
       const tokenMint = m.liquidityTokenMint;
       const meta = tokenMint ? metadataMap[tokenMint] : undefined;
 
-      const asset = normalizeLiquiditySymbol(meta?.symbol || m.liquidityToken, tokenMint);
+      const baseAsset = normalizeLiquiditySymbol(meta?.symbol || m.liquidityToken, tokenMint);
+      const marketSuffix =
+        tokenMint && (mintCount.get(tokenMint) ?? 0) > 1 && m.marketName
+          ? ` (${m.marketName})`
+          : "";
+      const asset = `${baseAsset}${marketSuffix}`;
       const depositApy = toApyPct(m.supplyApy);
       const borrowApy = toApyPct(m.borrowApy);
       const tvlUSD = toNumber(m.totalSupplyUsd, 0);
@@ -201,6 +217,11 @@ export async function GET() {
         tvlUSD,
         dailyVolumeUSD: 0,
         poolType: "Lending",
+        originalPool: {
+          marketPubkey: m.marketPubkey,
+          marketName: m.marketName,
+          reserve: m.reserve,
+        },
       };
     }).filter((pool) => (pool.totalAPY || 0) > 1);
 

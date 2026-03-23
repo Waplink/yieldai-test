@@ -197,6 +197,23 @@ export function mergeEarnTokenCatalogIntoPositionRows(
   });
 }
 
+/** Dedupe by `address` — first occurrence wins (prefer earlier list = e.g. official before lite). */
+export function mergeEarnTokenCatalogArrays(parts: unknown[][]): unknown[] {
+  const byAddr = new Map<string, unknown>();
+  for (const part of parts) {
+    if (!Array.isArray(part)) continue;
+    for (const t of part) {
+      if (!t || typeof t !== "object") continue;
+      const rec = t as Record<string, unknown>;
+      const addressValue = rec.address;
+      const addr = typeof addressValue === "string" ? addressValue.trim() : "";
+      if (!addr || byAddr.has(addr)) continue;
+      byAddr.set(addr, t);
+    }
+  }
+  return Array.from(byAddr.values());
+}
+
 /** Safe counts for meta: why wallet jl may not match API rows. */
 export function computeJupiterMintDiagnostics(
   rows: unknown[],
@@ -207,6 +224,8 @@ export function computeJupiterMintDiagnostics(
   jlMintAddressesFromApiRows: number;
   walletMintsThatMatchEarnJl: number;
   apiJlMintsThatHaveWalletBalance: number;
+  walletMintPrefixes8?: string[];
+  hint?: string;
 } {
   const earnJl = new Set<string>();
   for (const et of earnTokens) {
@@ -234,11 +253,26 @@ export function computeJupiterMintDiagnostics(
     if ((mintToBalance.get(jl) ?? BigInt(0)) > BigInt(0)) apiJlMintsThatHaveWalletBalance += 1;
   }
 
+  const walletMintPrefixes8 =
+    mintToBalance.size > 0
+      ? Array.from(mintToBalance.keys())
+          .sort()
+          .map((m) => (m.length >= 8 ? m.slice(0, 8) : m))
+      : undefined;
+
+  let hint: string | undefined;
+  if (mintToBalance.size > 0 && walletMintsThatMatchEarnJl === 0) {
+    hint =
+      "SPL mint(s) in this wallet do not match any Jupiter Lend jl receipt mint (merged lite + official /earn/tokens). Balances like USDC or SOL are not Lend positions; deposits are jl* tokens. Verify the address matches the wallet that holds jl.";
+  }
+
   return {
     earnTokensCatalogSize: earnTokens.length,
     jlMintAddressesFromApiRows: apiJls.size,
     walletMintsThatMatchEarnJl,
     apiJlMintsThatHaveWalletBalance,
+    walletMintPrefixes8,
+    hint,
   };
 }
 
