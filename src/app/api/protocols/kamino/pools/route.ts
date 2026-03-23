@@ -1,0 +1,155 @@
+import { NextResponse } from "next/server";
+import { InvestmentData } from "@/types/investments";
+import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata";
+import { NATIVE_MINT } from "@solana/spl-token";
+
+const KAMINO_API_BASE_URL = "https://api.kamino.finance";
+
+type KaminoMarket = {
+  lendingMarket: string;
+  isPrimary?: boolean;
+};
+
+type KaminoReserveMetrics = {
+  reserve: string;
+  liquidityToken: string;
+  liquidityTokenMint: string;
+  maxLtv: string;
+  borrowApy: string;
+  supplyApy: string;
+  totalSupply: string;
+  totalBorrow: string;
+  totalBorrowUsd: string;
+  totalSupplyUsd: string;
+};
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toApyPct(apyFraction: unknown): number {
+  // API returns APY as a fraction, e.g. 0.038... for 3.8%
+  const apy = toNumber(apyFraction, 0);
+  return apy * 100;
+}
+
+function normalizeLiquiditySymbol(symbol: string, mint: string): string {
+  const nativeMint = NATIVE_MINT.toBase58();
+  if (mint === nativeMint) return "SOL";
+  return symbol;
+}
+
+export async function GET() {
+  try {
+    const marketsRes = await fetch(`${KAMINO_API_BASE_URL}/v2/kamino-market`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+
+    if (!marketsRes.ok) {
+      throw new Error(`Kamino markets API error: ${marketsRes.status} ${marketsRes.statusText}`);
+    }
+
+    const markets = (await marketsRes.json()) as KaminoMarket[];
+    const primaryMarkets = (Array.isArray(markets) ? markets : []).filter((m) => m.isPrimary);
+    const marketsToQuery = primaryMarkets.length > 0 ? primaryMarkets : (markets || []).slice(0, 1);
+
+    const allReserveMetrics: KaminoReserveMetrics[] = [];
+
+    // Keep this intentionally sequential to reduce the chance of rate-limits on unauthenticated requests.
+    for (const market of marketsToQuery) {
+      if (!market?.lendingMarket) continue;
+
+      const metricsRes = await fetch(
+        `${KAMINO_API_BASE_URL}/kamino-market/${market.lendingMarket}/reserves/metrics?env=mainnet-beta`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        }
+      );
+
+      if (!metricsRes.ok) {
+        throw new Error(
+          `Kamino reserves metrics API error: ${metricsRes.status} ${metricsRes.statusText} (${market.lendingMarket})`
+        );
+      }
+
+      const metrics = (await metricsRes.json()) as KaminoReserveMetrics[];
+      if (Array.isArray(metrics)) allReserveMetrics.push(...metrics);
+    }
+
+    // Filter out empty pools.
+    const filtered = allReserveMetrics.filter((m) => toNumber(m.totalSupplyUsd, 0) > 0);
+
+    const tokenMints = Array.from(
+      new Set(filtered.map((m) => m.liquidityTokenMint).filter(Boolean))
+    );
+
+    // Best-effort metadata enrichment (symbol/decimals/logo). If it fails, we still return pools.
+    let metadataMap: Record<string, { symbol?: string; decimals?: number; logoUrl?: string }> = {};
+    try {
+      const metadataService = JupiterTokenMetadataService.getInstance();
+      const raw = await metadataService.getMetadataMap(tokenMints);
+      metadataMap = raw as any;
+    } catch (e) {
+      console.warn("[Kamino] token metadata resolve failed, continuing without it", e);
+    }
+
+    const data: InvestmentData[] = filtered.map((m) => {
+      const tokenMint = m.liquidityTokenMint;
+      const meta = tokenMint ? metadataMap[tokenMint] : undefined;
+
+      const asset = normalizeLiquiditySymbol(meta?.symbol || m.liquidityToken, tokenMint);
+      const depositApy = toApyPct(m.supplyApy);
+      const borrowApy = toApyPct(m.borrowApy);
+      const tvlUSD = toNumber(m.totalSupplyUsd, 0);
+
+      return {
+        asset,
+        provider: "Kamino",
+        totalAPY: depositApy,
+        depositApy,
+        borrowAPY: borrowApy,
+        token: tokenMint,
+        tokenDecimals: typeof meta?.decimals === "number" ? meta.decimals : undefined,
+        protocol: "Kamino",
+        logoUrl: meta?.logoUrl,
+        tvlUSD,
+        dailyVolumeUSD: 0,
+        poolType: "Lending",
+      };
+    });
+
+    data.sort((a, b) => (b.totalAPY || 0) - (a.totalAPY || 0));
+
+    return NextResponse.json(
+      {
+        success: true,
+        data,
+        count: data.length,
+      },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=120, s-maxage=120, stale-while-revalidate=300",
+          "Cdn-Cache-Control": "max-age=120",
+          "Surrogate-Control": "max-age=120",
+        },
+      }
+    );
+  } catch (error) {
+    console.error("[Kamino][Pools] error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        data: [],
+        count: 0,
+      },
+      { status: 500 }
+    );
+  }
+}
+
