@@ -5,6 +5,7 @@ import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { ProtocolCard } from "@/shared/ProtocolCard";
 import { PositionBadge } from "@/shared/ProtocolCard/types";
 import { formatNumber } from "@/lib/utils/numberFormat";
+import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 interface PositionsListProps {
   address?: string;
@@ -120,7 +121,7 @@ export function PositionsList({
           id: `jupiter-${idx}`,
           label: symbol,
           value,
-          logoUrl: position?.token?.asset?.logoUrl,
+          logoUrl: getPreferredJupiterTokenIcon(symbol, position?.token?.asset?.logoUrl),
           badge: PositionBadge.Supply,
           subLabel: formatNumber(amount, 4),
           price,
