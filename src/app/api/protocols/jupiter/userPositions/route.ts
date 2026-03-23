@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-/** Official Lend API (requires x-api-key — same portal as other Jupiter APIs). */
+/** Official Lend API (requires x-api-key — see https://dev.jup.ag/api-reference/lend/earn/positions) */
 const JUPITER_OFFICIAL_POSITIONS_URL = "https://api.jup.ag/lend/v1/earn/positions";
-/** Legacy host; may return scaffold rows with zero balances compared to official API. */
 const JUPITER_LITE_POSITIONS_URL = "https://lite-api.jup.ag/lend/v1/earn/positions";
 
 function getJupiterApiKey(): string | undefined {
@@ -12,6 +11,14 @@ function getJupiterApiKey(): string | undefined {
     process.env.JUPITER_API_KEY ||
     undefined
   )?.trim() || undefined;
+}
+
+/** Which env var provided the key (for debugging; never expose the value). */
+function getJupiterApiKeySource(): string | null {
+  if (process.env.JUP_API_KEY?.trim()) return "JUP_API_KEY";
+  if (process.env.NEXT_PUBLIC_JUP_API_KEY?.trim()) return "NEXT_PUBLIC_JUP_API_KEY";
+  if (process.env.JUPITER_API_KEY?.trim()) return "JUPITER_API_KEY";
+  return null;
 }
 
 function isLikelySolanaAddress(input: string): boolean {
@@ -44,6 +51,8 @@ function extractPositionsPayload(payload: unknown): unknown[] {
     const o = payload as Record<string, unknown>;
     if (Array.isArray(o.data)) return o.data;
     if (Array.isArray(o.positions)) return o.positions;
+    if (Array.isArray(o.items)) return o.items;
+    if (Array.isArray(o.result)) return o.result;
   }
   return [];
 }
@@ -61,9 +70,16 @@ function buildJupiterMeta(
   allPositions: unknown[],
   filtered: unknown[],
   sources: {
-    official?: { ok: boolean; rows: number; meaningful: number };
-    lite?: { ok: boolean; rows: number; meaningful: number };
+    official?: {
+      ok: boolean;
+      status: number;
+      rows: number;
+      meaningful: number;
+      errorHint?: string;
+    };
+    lite?: { ok: boolean; status: number; rows: number; meaningful: number; errorHint?: string };
     chosenSource?: string;
+    apiKeySource?: string | null;
   }
 ): Record<string, unknown> {
   let maxUnderlyingBalanceRaw = "0";
@@ -89,9 +105,10 @@ function buildJupiterMeta(
     activeLendPositions: filtered.length,
     filteredOutScaffoldRows: Math.max(0, allPositions.length - filtered.length),
     sources,
+    apiKeySource: sources.apiKeySource,
     hasJupiterApiKey: !!getJupiterApiKey(),
     note:
-      "Prefer api.jup.ag with JUP_API_KEY for accurate lend balances. lite-api can disagree with the Jupiter UI. Rows kept only if shares or underlyingAssets are non-zero.",
+      "Server needs JUP_API_KEY (or NEXT_PUBLIC_JUP_API_KEY) at runtime; redeploy after adding env. Prefer api.jup.ag for Lend. If official status is 401/403, create/enable a Lend-capable key at https://portal.jup.ag . lite-api may return scaffold zeros without matching the app UI.",
     maxUnderlyingBalanceRaw,
   };
 }
@@ -99,27 +116,37 @@ function buildJupiterMeta(
 async function fetchPositionsFromUrl(
   url: string,
   headers: Record<string, string>
-): Promise<{ ok: boolean; rows: unknown[] }> {
+): Promise<{ ok: boolean; status: number; rows: unknown[]; errorHint?: string }> {
   try {
     const response = await fetch(url, {
       method: "GET",
       headers,
       cache: "no-store",
     });
+    const status = response.status;
     if (!response.ok) {
-      return { ok: false, rows: [] };
+      const text = await response.text().catch(() => "");
+      const errorHint =
+        text.length > 0 && text.length < 400
+          ? text
+          : `http_${status}`;
+      return { ok: false, status, rows: [], errorHint };
     }
     const payload = await response.json().catch(() => []);
-    return { ok: true, rows: extractPositionsPayload(payload) };
-  } catch {
-    return { ok: false, rows: [] };
+    return { ok: true, status, rows: extractPositionsPayload(payload) };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      rows: [],
+      errorHint: e instanceof Error ? e.message : "network_error",
+    };
   }
 }
 
 /**
  * GET /api/protocols/jupiter/userPositions?address=<solana_wallet>
- * Uses official Jupiter Lend API when JUP_API_KEY is set, otherwise lite-api.
- * Picks the response with more non-zero positions when both are available.
+ * Uses official Jupiter Lend API when a key is set; also sends the same key to lite-api (often improves data).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -147,16 +174,13 @@ export async function GET(request: NextRequest) {
 
     const query = `?users=${encodeURIComponent(address)}`;
     const apiKey = getJupiterApiKey();
+    const apiKeySource = getJupiterApiKeySource();
 
-    const officialHeaders = apiKey
-      ? { ...baseHeaders, "x-api-key": apiKey }
-      : baseHeaders;
+    const headersWithKey = apiKey ? { ...baseHeaders, "x-api-key": apiKey } : baseHeaders;
 
     const [official, lite] = await Promise.all([
-      apiKey
-        ? fetchPositionsFromUrl(JUPITER_OFFICIAL_POSITIONS_URL + query, officialHeaders)
-        : Promise.resolve({ ok: false, rows: [] as unknown[] }),
-      fetchPositionsFromUrl(JUPITER_LITE_POSITIONS_URL + query, baseHeaders),
+      fetchPositionsFromUrl(JUPITER_OFFICIAL_POSITIONS_URL + query, headersWithKey),
+      fetchPositionsFromUrl(JUPITER_LITE_POSITIONS_URL + query, headersWithKey),
     ]);
 
     const officialMeaningful = countMeaningful(official.rows);
@@ -191,15 +215,20 @@ export async function GET(request: NextRequest) {
       meta: buildJupiterMeta(allPositions, positions, {
         official: {
           ok: official.ok,
+          status: official.status,
           rows: official.rows.length,
           meaningful: officialMeaningful,
+          errorHint: official.errorHint,
         },
         lite: {
           ok: lite.ok,
+          status: lite.status,
           rows: lite.rows.length,
           meaningful: liteMeaningful,
+          errorHint: lite.errorHint,
         },
         chosenSource: chosen,
+        apiKeySource,
       }),
     });
   } catch (error) {
