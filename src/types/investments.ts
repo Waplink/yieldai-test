@@ -30,6 +30,11 @@ export interface InvestmentData {
   borrowCap?: number;
   supplyRewardsApr?: number;
   borrowRewardsApr?: number;
+  // Echelon managed positions may refer to a different address variant than `token`.
+  // For example: `userPositions[].coin` can be a "coin type" address (market_coin/metadata.inner),
+  // while `v2/pools` may expose `faAddress` as `token`.
+  coinAddress?: string;
+  faAddress?: string;
   marketAddress?: string;
   totalSupply?: number;
   totalBorrow?: number;

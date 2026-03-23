@@ -97,12 +97,22 @@ async function buildAndSubmit(options: {
     senderAuthenticator,
   });
 
+  const hash = result.hash as string;
+
   console.log(`${logPrefix} tx submitted:`, {
-    hash: result.hash,
+    hash,
     function: fn,
   });
 
-  return { hash: result.hash as string, dryRun: false };
+  // Wait until this tx is committed so the next tx from the same executor gets a fresh sequence number.
+  // Without this, rapid back-to-back submits hit: invalid_transaction_update / mempool payload mismatch.
+  await aptos.waitForTransaction({
+    transactionHash: hash,
+  });
+
+  console.log(`${logPrefix} tx confirmed on-chain:`, { hash, function: fn });
+
+  return { hash, dryRun: false };
 }
 
 export async function executeClaimApt(options: {

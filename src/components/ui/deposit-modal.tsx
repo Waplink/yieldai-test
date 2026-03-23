@@ -74,6 +74,49 @@ export function DepositModal({
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
   const { account, signAndSubmitTransaction } = useWallet();
 
+  const [resolvedTokenIn, setResolvedTokenIn] = useState(tokenIn);
+  const [resolvedPriceUSD, setResolvedPriceUSD] = useState(priceUSD);
+
+  // For Echelon deposits (e.g. DLP) tokenList.json may not contain the token.
+  // Resolve metadata for UI (logo/symbol/decimals/price) from the universal token API.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (protocol.key !== 'echelon') return;
+    if (!tokenIn?.address) return;
+
+    // If logo is already resolved (not placeholder), don't fetch.
+    if (tokenIn.logo && tokenIn.logo !== '/file.svg') {
+      setResolvedTokenIn(tokenIn);
+      setResolvedPriceUSD(priceUSD);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/tokens/info?address=${encodeURIComponent(tokenIn.address)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data?.success || !data?.data) return;
+        const d = data.data;
+        if (cancelled) return;
+        setResolvedTokenIn({
+          symbol: d.symbol ?? tokenIn.symbol,
+          logo: d.logoUrl ?? tokenIn.logo ?? '/file.svg',
+          decimals: typeof d.decimals === 'number' ? d.decimals : tokenIn.decimals,
+          address: tokenIn.address,
+        });
+        setResolvedPriceUSD(typeof d.price === 'number' ? d.price : (priceUSD || 0));
+      } catch {
+        // Ignore; modal will use fallback props.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, protocol.key, tokenIn?.address, tokenIn?.logo, tokenIn?.decimals, priceUSD]);
+
   // Получаем информацию о токене из списка токенов
   const getTokenInfo = (address: string): Token | undefined => {
     // Normalize addresses by removing leading zeros after 0x
@@ -131,7 +174,7 @@ export function DepositModal({
     isValid,
   } = useAmountInput({
     balance: walletBalance,
-    decimals: tokenIn.decimals,
+    decimals: resolvedTokenIn.decimals,
   });
 
 
@@ -142,8 +185,8 @@ export function DepositModal({
   );
   
   const displaySymbol = useMemo(() => 
-    tokenInfo?.symbol || tokenIn.symbol,
-    [tokenInfo?.symbol, tokenIn.symbol]
+    tokenInfo?.symbol || resolvedTokenIn.symbol,
+    [tokenInfo?.symbol, resolvedTokenIn.symbol]
   );
   
   const tokenOutInfo = useMemo(() => 
@@ -158,8 +201,8 @@ export function DepositModal({
 
   // Доходность
   const yieldResult = useMemo(() => 
-    calcYield(protocol.apy, amount, tokenIn.decimals),
-    [protocol.apy, amount, tokenIn.decimals]
+    calcYield(protocol.apy, amount, resolvedTokenIn.decimals),
+    [protocol.apy, amount, resolvedTokenIn.decimals]
   );
 
   // Устанавливаем максимальное значение при открытии модального окна
@@ -326,7 +369,7 @@ export function DepositModal({
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 relative">
                 <Image
-                  src={tokenIn.logo}
+                  src={resolvedTokenIn.logo}
                   alt={displaySymbol}
                   width={32}
                   height={32}
@@ -340,7 +383,7 @@ export function DepositModal({
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 relative">
                 <Image
-                  src={tokenOut.logo}
+                  src={tokenOut.address === tokenIn.address ? resolvedTokenIn.logo : tokenOut.logo}
                   alt={displayTokenOutSymbol}
                   width={32}
                   height={32}
@@ -368,8 +411,8 @@ export function DepositModal({
                 />
                 <div className="flex items-center gap-1">
                   <Image
-                    src={tokenIn.logo}
-                    alt={tokenIn.symbol}
+                    src={resolvedTokenIn.logo}
+                    alt={displaySymbol}
                     width={16}
                     height={16}
                     className="rounded-full"
@@ -378,7 +421,7 @@ export function DepositModal({
                   <span className="text-sm">{displaySymbol}</span>
                   {amountString && (
                     <span className={`text-sm ml-2 ${amount > walletBalance ? 'text-red-500' : 'text-muted-foreground'}`}>
-                      ≈ ${(parseFloat(amountString) * priceUSD).toFixed(2)}
+                      ≈ ${(parseFloat(amountString) * resolvedPriceUSD).toFixed(2)}
                     </span>
                   )}
                 </div>
@@ -463,9 +506,9 @@ export function DepositModal({
         isOpen={isSwapModalOpen}
         onClose={() => setIsSwapModalOpen(false)}
         protocol={protocol}
-        tokenIn={tokenIn}
+        tokenIn={resolvedTokenIn}
         amount={amount}
-        priceUSD={priceUSD}
+        priceUSD={resolvedPriceUSD}
         poolAddress={poolAddress}
       />
     </>

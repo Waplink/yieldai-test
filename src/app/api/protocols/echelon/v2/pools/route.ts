@@ -53,7 +53,7 @@ function calculateRewardsApr(
 
     // Check if rewards have ended
     if (rewardData.endTime && rewardData.endTime <= currentTime) {
-      console.log(`Rewards for ${rewardData.symbol} have ended at ${new Date(rewardData.endTime * 1000).toISOString()}`);
+      // console.log(`Rewards for ${rewardData.symbol} have ended at ${new Date(rewardData.endTime * 1000).toISOString()}`);
       continue; // Skip expired rewards
     }
 
@@ -71,7 +71,7 @@ function calculateRewardsApr(
 
 export async function GET() {
   try {
-    console.log('Fetching Echelon markets data...');
+    // console.log('Fetching Echelon markets data...');
     
     // Fetch data from Echelon API
     const response = await fetch('https://app.echelon.market/api/markets?network=aptos_mainnet', {
@@ -253,7 +253,11 @@ export async function GET() {
              // depositApy включает: lending APR + staking APR + rewards APR
              depositApy: (hasSupply ? totalSupplyApr : 0) + (hasStaking ? stakingAprPct : 0) + (supplyRewardsApr * 100),
              borrowAPY: hasBorrow ? totalBorrowApr : 0,
-             token: asset.faAddress || asset.address, // Use faAddress if available, otherwise address
+            // `token` is kept for backward compatibility with existing frontend/protocol logic.
+            // For managed positions, the "coin" variant is typically closer to `userPositions[].coin`.
+            token: asset.faAddress || asset.address, // Use faAddress if available, otherwise address
+            faAddress: asset.faAddress,
+            coinAddress: asset.address,
              protocol: 'Echelon',
              poolType: poolType,
              tvlUSD: (marketStat.totalShares + marketStat.totalLiability) * (asset.price || 0),

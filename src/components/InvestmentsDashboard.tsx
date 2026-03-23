@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SegmentedControl, Box } from "@radix-ui/themes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InvestmentsDashboardLoading } from "./InvestmentsDashboardLoading";
 import { DecibelIdeasBlock } from "./decibel-ideas-block";
+import { TokenInfoService, type TokenInfo } from "@/lib/services/tokenInfoService";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 
 // Список адресов токенов Echelon, которые нужно исключить из отображения
@@ -134,6 +135,12 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
+
+  // For Echelon (e.g. DLP) tokenList.json may not contain the token.
+  // Resolve missing token metadata from /api/tokens/info to show correct icons and decimals.
+  const tokenInfoService = TokenInfoService.getInstance();
+  const [resolvedTokenInfos, setResolvedTokenInfos] = useState<Record<string, TokenInfo>>({});
+  const requestedResolvedTokenInfosRef = useRef<Set<string>>(new Set());
 
   const [showSearchOptions, setShowSearchOptions] = useState(false);
   const [searchByProtocols, setSearchByProtocols] = useState(false);
@@ -502,12 +509,19 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
               const pools = data.data || [];
 
               return pools.map((pool: any) => {
+                // Echelon borrow APR should be displayed as net:
+                // borrowAPY (interest) minus borrowRewardsApr (rewards influence).
+                const netBorrowAPY =
+                  (typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0) -
+                  (typeof pool.borrowRewardsApr === 'number' ? pool.borrowRewardsApr : 0);
                 return {
                   asset: pool.asset || 'Unknown',
                   provider: pool.provider || 'Echelon',
                   totalAPY: pool.totalAPY || 0,
-                  borrowAPY: pool.borrowAPY || 0,
+                  borrowAPY: netBorrowAPY,
                   token: pool.token || '',
+                  coinAddress: pool.coinAddress || undefined,
+                  faAddress: pool.faAddress || undefined,
                   protocol: 'Echelon',
                   poolType: pool.poolType || 'Lending',
                   tvlUSD: pool.tvlUSD || 0,
@@ -884,6 +898,51 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
         return displaySymbol.toLowerCase().includes(searchQuery.toLowerCase());
       })
     : filteredData; // В Pro вкладке используем все отфильтрованные данные
+
+  // Resolve token metadata for Echelon pools that are missing from tokenList.
+  // This mimics the managed-positions fallback behavior (token -> /api/tokens/info -> Echelon icon).
+  useEffect(() => {
+    if (activeTab !== 'pro') return;
+
+    const echelonItems = allLoadedData.filter((item) => item.protocol === 'Echelon');
+    const toResolve: string[] = [];
+
+    for (const item of echelonItems) {
+      const depositTokenAddress = item.coinAddress ?? item.token;
+      if (!depositTokenAddress) continue;
+
+      // If tokenList already knows it, no need to resolve.
+      const listTokenInfo = getTokenInfo(item.asset, depositTokenAddress);
+      if (listTokenInfo) continue;
+
+      if (requestedResolvedTokenInfosRef.current.has(depositTokenAddress)) continue;
+
+      requestedResolvedTokenInfosRef.current.add(depositTokenAddress);
+      toResolve.push(depositTokenAddress);
+    }
+
+    if (toResolve.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const map = await tokenInfoService.getTokenInfoBatch(toResolve);
+      if (cancelled) return;
+
+      setResolvedTokenInfos((prev) => {
+        const next = { ...prev };
+        toResolve.forEach((addr) => {
+          const info = map.get(addr);
+          if (info) next[addr] = info;
+        });
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, protocolsData]);
 
   if (error) {
     return (
@@ -1386,7 +1445,10 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
               <TableBody>
                 {currentTabData
                   .filter(item => {
-                    const tokenInfo = getTokenInfo(item.asset, item.token);
+                    const depositTokenAddress =
+                      item.protocol === 'Echelon' ? (item.coinAddress ?? item.token) : item.token;
+
+                    const tokenInfo = getTokenInfo(item.asset, depositTokenAddress);
                     const hasTokenInfo = !!tokenInfo;
                     const hasAssetColon = item.asset.includes('::');
                     const hasDexTokens = !!(item.token1Info && item.token2Info) || !!(item as any).tokensInfo?.length;
@@ -1398,9 +1460,18 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
 
-                    const tokenInfo = getTokenInfo(item.asset, item.token);
-                    const displaySymbol = tokenInfo?.symbol || item.asset;
-                    const logoUrl = tokenInfo?.logoUrl || item.logoUrl;
+                    const depositTokenAddress =
+                      item.protocol === 'Echelon' ? (item.coinAddress ?? item.token) : item.token;
+
+                    const tokenInfo = getTokenInfo(item.asset, depositTokenAddress);
+                    const resolvedTokenInfo = resolvedTokenInfos[depositTokenAddress];
+                    const displaySymbol = tokenInfo?.symbol || resolvedTokenInfo?.symbol || item.asset;
+                    const logoUrl = tokenInfo?.logoUrl || resolvedTokenInfo?.logoUrl || item.logoUrl;
+                    const decimals = tokenInfo?.decimals ?? resolvedTokenInfo?.decimals ?? 8;
+                    const priceUSD =
+                      tokenInfo?.usdPrice != null
+                        ? Number(tokenInfo.usdPrice || 0)
+                        : (resolvedTokenInfo?.price ?? 0);
                     const protocol = getProtocolByName(item.protocol);
                     const chainLogo = getChainLogoForProtocol(item.protocol);
 
@@ -1468,7 +1539,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                               <TooltipContent>
                                 <div className="space-y-1">
                                   <p className="font-medium">Token Info</p>
-                                  <p className="text-xs">Address: {item.token}</p>
+                                  <p className="text-xs">Address: {depositTokenAddress}</p>
                                   {isDex ? (
                                     // DEX tooltip content
                                     <>
@@ -1486,10 +1557,14 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                       )}
                                     </>
                                   ) : (
-                                    tokenInfo && (
+                                    (tokenInfo || resolvedTokenInfo) && (
                                       <>
-                                        <p className="text-xs">Name: {tokenInfo.name}</p>
-                                        <p className="text-xs">Symbol: {tokenInfo.symbol}</p>
+                                        <p className="text-xs">
+                                          Name: {tokenInfo?.name ?? resolvedTokenInfo?.name ?? displaySymbol}
+                                        </p>
+                                        <p className="text-xs">
+                                          Symbol: {tokenInfo?.symbol ?? resolvedTokenInfo?.symbol ?? displaySymbol}
+                                        </p>
                                       </>
                                     )
                                   )}
@@ -1650,12 +1725,17 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                     logo: logoUrl || '/file.svg',
                                     decimals:
                                       protocol?.name === 'Jupiter'
-                                        ? (item.tokenDecimals ?? tokenInfo?.decimals ?? 6)
-                                        : (tokenInfo?.decimals || 8),
-                                    address: item.token
+                                        ? (item.tokenDecimals ?? tokenInfo?.decimals ?? resolvedTokenInfo?.decimals ?? 6)
+                                        : decimals,
+                                    address:
+                                      protocol?.name === 'Jupiter' ? item.token : depositTokenAddress
                                   }}
                                   balance={BigInt(1000000000)} // TODO: Get real balance
-                                  priceUSD={Number(tokenInfo?.usdPrice || 0)}
+                                  priceUSD={
+                                    protocol?.name === 'Jupiter'
+                                      ? Number(tokenInfo?.usdPrice || 0)
+                                      : priceUSD
+                                  }
                                   solanaTokensOverride={solanaTokens}
                                   refreshSolanaOverride={refreshSolana}
                                 />

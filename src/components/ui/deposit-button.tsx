@@ -172,6 +172,8 @@ export function DepositButton({
   const attemptedSolanaReconnectRef = useRef(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
   const [protocolAPY, setProtocolAPY] = useState<number>(0); // No fallback - use real APR from API
+  const [resolvedTokenIn, setResolvedTokenIn] = useState<DepositButtonProps['tokenIn']>(tokenIn);
+  const [resolvedPriceUSD, setResolvedPriceUSD] = useState<number>(priceUSD || 0);
   const walletData = useWalletData();
   const { connected, wallet: aptosWallet } = useWallet();
   const {
@@ -288,8 +290,13 @@ export function DepositButton({
             const data = await response.json();
             if (data.success && data.data && data.data.length > 0) {
               // Find the pool for this specific token
+              const tokenAddr = tokenIn?.address;
               const pool = data.data.find((pool: any) =>
-                pool.token === tokenIn?.address && pool.asset && !pool.asset.includes('(Borrow)')
+                (pool.token === tokenAddr ||
+                  pool.coinAddress === tokenAddr ||
+                  pool.faAddress === tokenAddr) &&
+                pool.asset &&
+                !pool.asset.includes('(Borrow)')
               );
               if (pool && pool.depositApy) {
                 setProtocolAPY(pool.depositApy);
@@ -372,6 +379,43 @@ export function DepositButton({
       fetchAuroAPY();
     }
   }, [protocol.name, tokenIn?.address]);
+
+  // Resolve token metadata for Echelon deposits (e.g. DLP) when tokenList doesn't contain the token.
+  // This is only triggered when the DepositModal is opened, to avoid spamming requests for every table row.
+  useEffect(() => {
+    const resolveTokenInfo = async () => {
+      if (!isNativeDialogOpen) return;
+      if (protocol.name !== 'Echelon') return;
+      if (!tokenIn?.address) return;
+
+      // If we already have a usable logo from tokenList, don't fetch.
+      if (tokenIn.logo && tokenIn.logo !== '/file.svg') {
+        setResolvedTokenIn(tokenIn);
+        setResolvedPriceUSD(priceUSD || 0);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/tokens/info?address=${encodeURIComponent(tokenIn.address)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data?.success || !data?.data) return;
+
+        const fetched = data.data;
+        setResolvedTokenIn({
+          symbol: fetched.symbol ?? tokenIn.symbol,
+          logo: fetched.logoUrl ?? tokenIn.logo ?? '/file.svg',
+          decimals: typeof fetched.decimals === 'number' ? fetched.decimals : tokenIn.decimals,
+          address: tokenIn.address
+        });
+        setResolvedPriceUSD(typeof fetched.price === 'number' ? fetched.price : (priceUSD || 0));
+      } catch {
+        // Ignore token resolution failures; modal will use provided tokenIn props.
+      }
+    };
+
+    resolveTokenInfo();
+  }, [isNativeDialogOpen, protocol.name, tokenIn?.address, tokenIn?.logo, tokenIn?.decimals, priceUSD]);
 
   // Закрываем диалог подключения кошелька, когда кошелек подключится
   useEffect(() => {
@@ -892,18 +936,18 @@ export function DepositButton({
             key: protocol.key
           }}
           tokenIn={{
-            symbol: tokenIn.symbol,
-            logo: tokenIn.logo || '/file.svg', // Add fallback
-            decimals: tokenIn.decimals,
-            address: tokenIn.address
+            symbol: resolvedTokenIn?.symbol ?? tokenIn.symbol,
+            logo: resolvedTokenIn?.logo || tokenIn.logo || '/file.svg',
+            decimals: resolvedTokenIn?.decimals ?? tokenIn.decimals,
+            address: resolvedTokenIn?.address ?? tokenIn.address
           }}
           tokenOut={{
-            symbol: tokenIn.symbol,
-            logo: tokenIn.logo || '/file.svg', // Add fallback
-            decimals: tokenIn.decimals,
-            address: tokenIn.address
+            symbol: resolvedTokenIn?.symbol ?? tokenIn.symbol,
+            logo: resolvedTokenIn?.logo || tokenIn.logo || '/file.svg',
+            decimals: resolvedTokenIn?.decimals ?? tokenIn.decimals,
+            address: resolvedTokenIn?.address ?? tokenIn.address
           }}
-          priceUSD={priceUSD || 0}
+          priceUSD={resolvedPriceUSD || 0}
         poolAddress={poolAddress}
         />
       )}

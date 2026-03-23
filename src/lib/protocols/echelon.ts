@@ -44,7 +44,10 @@ export class EchelonProtocol implements BaseProtocol {
       const pool = v2Data.data.find(
         (p: any) =>
           (p.token && this.normalizeAddress(p.token) === normalizedToken) ||
-          (p.token === token)
+          (p.coinAddress && this.normalizeAddress(p.coinAddress) === normalizedToken) ||
+          (p.faAddress && this.normalizeAddress(p.faAddress) === normalizedToken) ||
+          (p.token === token) ||
+          (p.coinAddress === token)
       );
       if (pool?.marketAddress) {
         return pool.marketAddress;
