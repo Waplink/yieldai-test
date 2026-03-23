@@ -7,15 +7,43 @@ function isLikelySolanaAddress(input: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input);
 }
 
-function toBigIntSafe(value: unknown): bigint {
-  try {
-    if (typeof value === "bigint") return value;
-    if (typeof value === "number") return BigInt(Math.trunc(value));
-    if (typeof value === "string" && value.trim() !== "") return BigInt(value);
-  } catch {
-    // ignore parse errors
+/**
+ * Jupiter may return shares / underlyingAssets as uint strings, decimals, or numbers.
+ * Using only BigInt() incorrectly drops positions when values are decimal strings.
+ */
+function isPositiveAmount(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "bigint") return value > BigInt(0);
+  if (typeof value === "number") return Number.isFinite(value) && value > 0;
+
+  const s = String(value).trim();
+  if (!s) return false;
+
+  if (/^\d+$/.test(s)) {
+    try {
+      return BigInt(s) > BigInt(0);
+    } catch {
+      return false;
+    }
   }
-  return BigInt(0);
+
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0;
+}
+
+function extractPositionsPayload(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === "object") {
+    const o = payload as Record<string, unknown>;
+    if (Array.isArray(o.data)) return o.data;
+    if (Array.isArray(o.positions)) return o.positions;
+  }
+  return [];
+}
+
+function isMeaningfulJupiterPosition(p: unknown): boolean {
+  const obj = (p ?? {}) as Record<string, unknown>;
+  return isPositiveAmount(obj.shares) || isPositiveAmount(obj.underlyingAssets);
 }
 
 /**
@@ -45,7 +73,10 @@ export async function GET(request: NextRequest) {
       `${JUPITER_USER_POSITIONS_URL}?users=${encodeURIComponent(address)}`,
       {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; YieldAI/1.0)",
+        },
         cache: "no-store",
       }
     );
@@ -56,13 +87,10 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = await response.json().catch(() => []);
-    const allPositions = Array.isArray(payload) ? payload : [];
+    const allPositions = extractPositionsPayload(payload);
     const positions = allPositions.filter((p) => {
-      const obj = (p ?? {}) as Record<string, unknown>;
-      const shares = toBigIntSafe(obj.shares);
-      const underlyingAssets = toBigIntSafe(obj.underlyingAssets);
-      // Jupiter returns a scaffold with zero values for non-participating wallets.
-      return shares > BigInt(0) || underlyingAssets > BigInt(0);
+      // Jupiter may return scaffold rows with all-zero balances for non-participating wallets.
+      return isMeaningfulJupiterPosition(p);
     });
 
     return NextResponse.json({
