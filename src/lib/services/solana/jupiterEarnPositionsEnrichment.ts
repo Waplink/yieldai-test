@@ -31,7 +31,9 @@ function normalizeRpcEndpoint(endpoint: string): string | null {
 }
 
 /**
- * Priority matches `SolanaPortfolioService`: env URLs (with Helius key fix), then Helius from key, Ankr, public cluster.
+ * When `SOLANA_RPC_API_KEY` is set, try Helius with that key **first** so enrichment never hits a bare
+ * Helius URL from `SOLANA_RPC_URL` before the keyed endpoint (avoids 401 "missing api key").
+ * Then custom env URLs (normalized), Ankr, public cluster.
  */
 function getSolanaRpcEndpointList(): string[] {
   const directEnvEndpoints = [process.env.SOLANA_RPC_URL, process.env.NEXT_PUBLIC_SOLANA_RPC_URL]
@@ -39,11 +41,11 @@ function getSolanaRpcEndpointList(): string[] {
     .map((endpoint) => normalizeRpcEndpoint(endpoint as string))
     .filter(Boolean) as string[];
 
-  const fallbackHelius = buildHeliusEndpointFromKey();
+  const heliusFromKey = buildHeliusEndpointFromKey();
 
   const list = [
+    ...(heliusFromKey ? [heliusFromKey] : []),
     ...directEnvEndpoints,
-    ...(fallbackHelius ? [fallbackHelius] : []),
     "https://rpc.ankr.com/solana",
     clusterApiUrl("mainnet-beta"),
   ];
