@@ -14,6 +14,7 @@ import { ThalaProtocol } from "./thala";
 import { EchoProtocol } from "./echo";
 import { DecibelProtocol } from "./decibel";
 import { AptreeProtocol } from "./aptree";
+import { KaminoProtocol } from "./kamino";
 import { YieldAIProtocol } from "./yieldAi";
 import { BaseProtocol } from "./BaseProtocol";
 import { ProtocolKey } from "../transactions/types";
@@ -35,5 +36,6 @@ export const protocols: Record<ProtocolKey, BaseProtocol> = {
   echo: new EchoProtocol(),
   decibel: new DecibelProtocol(),
   aptree: new AptreeProtocol(),
+  kamino: new KaminoProtocol(),
   "yield-ai": new YieldAIProtocol(),
 }; 
