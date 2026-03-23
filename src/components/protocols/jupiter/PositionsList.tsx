@@ -10,6 +10,7 @@ interface PositionsListProps {
   address?: string;
   onPositionsValueChange?: (value: number) => void;
   showManageButton?: boolean;
+  onPositionsCheckComplete?: () => void;
 }
 
 interface JupiterPosition {
@@ -35,15 +36,22 @@ export function PositionsList({
   address,
   onPositionsValueChange,
   showManageButton = true,
+  onPositionsCheckComplete,
 }: PositionsListProps) {
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const protocol = getProtocolByName("Jupiter");
   const onValueRef = useRef(onPositionsValueChange);
   onValueRef.current = onPositionsValueChange;
+  const onCheckCompleteRef = useRef(onPositionsCheckComplete);
+  onCheckCompleteRef.current = onPositionsCheckComplete;
 
   useEffect(() => {
     let cancelled = false;
+    const markComplete = () => {
+      if (cancelled) return;
+      onCheckCompleteRef.current?.();
+    };
 
     async function load() {
       if (!address) {
@@ -51,6 +59,7 @@ export function PositionsList({
           setPositions([]);
           setTotalValue(0);
           onValueRef.current?.(0);
+          markComplete();
         }
         return;
       }
@@ -72,12 +81,14 @@ export function PositionsList({
           setPositions(list);
           setTotalValue(total);
           onValueRef.current?.(total);
+          markComplete();
         }
       } catch {
         if (!cancelled) {
           setPositions([]);
           setTotalValue(0);
           onValueRef.current?.(0);
+          markComplete();
         }
       }
     }
