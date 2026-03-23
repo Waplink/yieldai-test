@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  enrichJupiterEarnPositionsWithWalletShares,
+  fetchWalletSplBalancesByMint,
+} from "@/lib/services/solana/jupiterEarnPositionsEnrichment";
 
 /** Official Lend API (requires x-api-key — see https://dev.jup.ag/api-reference/lend/earn/positions) */
 const JUPITER_OFFICIAL_POSITIONS_URL = "https://api.jup.ag/lend/v1/earn/positions";
@@ -80,7 +84,8 @@ function buildJupiterMeta(
     lite?: { ok: boolean; status: number; rows: number; meaningful: number; errorHint?: string };
     chosenSource?: string;
     apiKeySource?: string | null;
-  }
+  },
+  enrichment?: Record<string, unknown>
 ): Record<string, unknown> {
   let maxUnderlyingBalanceRaw = "0";
   let maxUb = BigInt(0);
@@ -107,8 +112,9 @@ function buildJupiterMeta(
     sources,
     apiKeySource: sources.apiKeySource,
     hasJupiterApiKey: !!getJupiterApiKey(),
+    enrichment,
     note:
-      "Server needs JUP_API_KEY (or NEXT_PUBLIC_JUP_API_KEY) at runtime; redeploy after adding env. Prefer api.jup.ag for Lend. If official status is 401/403, create/enable a Lend-capable key at https://portal.jup.ag . lite-api may return scaffold zeros without matching the app UI.",
+      "Lend HTTP API often reports shares=0 while jl* receipt tokens sit in the wallet; we merge SPL jl balances and recompute underlying via totalAssets/totalSupply. Set SOLANA_RPC_URL/HELIUS for reliable RPC.",
     maxUnderlyingBalanceRaw,
   };
 }
@@ -206,13 +212,31 @@ export async function GET(request: NextRequest) {
       chosen = official.rows.length ? "official" : "lite";
     }
 
-    const positions = allPositions.filter(isMeaningfulJupiterPosition);
+    let enrichmentMeta: Record<string, unknown> = { applied: false as const };
+    let mergedPositions = allPositions;
+    try {
+      const mintToBalance = await fetchWalletSplBalancesByMint(address);
+      const { enriched, rowsTouched } = enrichJupiterEarnPositionsWithWalletShares(allPositions, mintToBalance);
+      mergedPositions = enriched;
+      enrichmentMeta = {
+        applied: true,
+        rowsMergedWithWalletJl: rowsTouched,
+        splMintAccountsInWallet: mintToBalance.size,
+      };
+    } catch (e) {
+      enrichmentMeta = {
+        applied: false,
+        error: e instanceof Error ? e.message : "enrichment_failed",
+      };
+    }
+
+    const positions = mergedPositions.filter(isMeaningfulJupiterPosition);
 
     return NextResponse.json({
       success: true,
       data: positions,
       count: positions.length,
-      meta: buildJupiterMeta(allPositions, positions, {
+      meta: buildJupiterMeta(mergedPositions, positions, {
         official: {
           ok: official.ok,
           status: official.status,
@@ -229,7 +253,7 @@ export async function GET(request: NextRequest) {
         },
         chosenSource: chosen,
         apiKeySource,
-      }),
+      }, enrichmentMeta),
     });
   } catch (error) {
     console.error("[Jupiter] userPositions error:", error);
