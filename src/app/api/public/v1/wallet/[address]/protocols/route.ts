@@ -35,6 +35,7 @@ const APTOS_PROTOCOLS: ProtocolConfig[] = [
 
 const SOLANA_PROTOCOLS: ProtocolConfig[] = [
   { key: 'jupiter', endpoint: '/api/protocols/jupiter/userPositions' },
+  { key: 'kamino', endpoint: '/api/protocols/kamino/userPositions' },
 ];
 
 function isRequireKey(): boolean {
