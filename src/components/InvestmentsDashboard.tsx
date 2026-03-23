@@ -134,7 +134,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Echo Protocol': '/protocol_ico/echo.png',
     'APTree': '/protocol_ico/aptree.png',
     'Jupiter': 'https://jup.ag/favicon.ico',
-    'Kamino': '/chain_ico/solana.png',
+    'Kamino': '/protocol_ico/kamino.png',
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -716,7 +716,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
           {
             name: 'Kamino',
             url: '/api/protocols/kamino/pools',
-            logoUrl: '/chain_ico/solana.png',
+            logoUrl: '/protocol_ico/kamino.png',
             transform: (data: any) => {
               const pools = Array.isArray(data?.data) ? data.data : [];
               return pools.map((pool: any) => ({
