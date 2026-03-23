@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const JUPITER_USER_POSITIONS_URL = "https://lite-api.jup.ag/lend/v1/earn/positions";
+/** Official Lend API (requires x-api-key — same portal as other Jupiter APIs). */
+const JUPITER_OFFICIAL_POSITIONS_URL = "https://api.jup.ag/lend/v1/earn/positions";
+/** Legacy host; may return scaffold rows with zero balances compared to official API. */
+const JUPITER_LITE_POSITIONS_URL = "https://lite-api.jup.ag/lend/v1/earn/positions";
+
+function getJupiterApiKey(): string | undefined {
+  return (
+    process.env.JUP_API_KEY ||
+    process.env.NEXT_PUBLIC_JUP_API_KEY ||
+    process.env.JUPITER_API_KEY ||
+    undefined
+  )?.trim() || undefined;
+}
 
 function isLikelySolanaAddress(input: string): boolean {
-  // Base58 without 0,O,I,l characters. Typical Solana pubkey length is 32-44.
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input);
 }
 
-/**
- * Jupiter may return shares / underlyingAssets as uint strings, decimals, or numbers.
- * Using only BigInt() incorrectly drops positions when values are decimal strings.
- */
 function isPositiveAmount(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   if (typeof value === "bigint") return value > BigInt(0);
@@ -43,17 +50,21 @@ function extractPositionsPayload(payload: unknown): unknown[] {
 
 function isMeaningfulJupiterPosition(p: unknown): boolean {
   const obj = (p ?? {}) as Record<string, unknown>;
-  /** In-protocol supply (jlTokens) and assets in the lending vault (incl. interest). */
   return isPositiveAmount(obj.shares) || isPositiveAmount(obj.underlyingAssets);
 }
 
-/**
- * Jupiter returns one row per market. Rows with shares=0 & underlyingAssets=0 are not active lend positions.
- * `underlyingBalance` is the underlying token in the user's wallet (not supplied to Lend) — we do not count it as a position.
- */
+function countMeaningful(rows: unknown[]): number {
+  return rows.filter(isMeaningfulJupiterPosition).length;
+}
+
 function buildJupiterMeta(
   allPositions: unknown[],
-  filtered: unknown[]
+  filtered: unknown[],
+  sources: {
+    official?: { ok: boolean; rows: number; meaningful: number };
+    lite?: { ok: boolean; rows: number; meaningful: number };
+    chosenSource?: string;
+  }
 ): Record<string, unknown> {
   let maxUnderlyingBalanceRaw = "0";
   let maxUb = BigInt(0);
@@ -77,15 +88,38 @@ function buildJupiterMeta(
     upstreamRowCount: allPositions.length,
     activeLendPositions: filtered.length,
     filteredOutScaffoldRows: Math.max(0, allPositions.length - filtered.length),
+    sources,
+    hasJupiterApiKey: !!getJupiterApiKey(),
     note:
-      "Jupiter Lend returns a row per market; only rows with non-zero shares or underlyingAssets are active lend positions. underlyingBalance is wallet balance, not a deposit.",
+      "Prefer api.jup.ag with JUP_API_KEY for accurate lend balances. lite-api can disagree with the Jupiter UI. Rows kept only if shares or underlyingAssets are non-zero.",
     maxUnderlyingBalanceRaw,
   };
 }
 
+async function fetchPositionsFromUrl(
+  url: string,
+  headers: Record<string, string>
+): Promise<{ ok: boolean; rows: unknown[] }> {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return { ok: false, rows: [] };
+    }
+    const payload = await response.json().catch(() => []);
+    return { ok: true, rows: extractPositionsPayload(payload) };
+  } catch {
+    return { ok: false, rows: [] };
+  }
+}
+
 /**
  * GET /api/protocols/jupiter/userPositions?address=<solana_wallet>
- * Returns Jupiter Lend user positions for a Solana wallet.
+ * Uses official Jupiter Lend API when JUP_API_KEY is set, otherwise lite-api.
+ * Picks the response with more non-zero positions when both are available.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -106,35 +140,67 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const response = await fetch(
-      `${JUPITER_USER_POSITIONS_URL}?users=${encodeURIComponent(address)}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Mozilla/5.0 (compatible; YieldAI/1.0)",
-        },
-        cache: "no-store",
-      }
-    );
+    const baseHeaders: Record<string, string> = {
+      Accept: "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible; YieldAI/1.0)",
+    };
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Jupiter API returned ${response.status}${text ? `: ${text}` : ""}`);
+    const query = `?users=${encodeURIComponent(address)}`;
+    const apiKey = getJupiterApiKey();
+
+    const officialHeaders = apiKey
+      ? { ...baseHeaders, "x-api-key": apiKey }
+      : baseHeaders;
+
+    const [official, lite] = await Promise.all([
+      apiKey
+        ? fetchPositionsFromUrl(JUPITER_OFFICIAL_POSITIONS_URL + query, officialHeaders)
+        : Promise.resolve({ ok: false, rows: [] as unknown[] }),
+      fetchPositionsFromUrl(JUPITER_LITE_POSITIONS_URL + query, baseHeaders),
+    ]);
+
+    const officialMeaningful = countMeaningful(official.rows);
+    const liteMeaningful = countMeaningful(lite.rows);
+
+    let allPositions: unknown[] = [];
+    let chosen: "official" | "lite" | "none" = "none";
+
+    if (official.ok && officialMeaningful > liteMeaningful) {
+      allPositions = official.rows;
+      chosen = "official";
+    } else if (lite.ok && liteMeaningful > officialMeaningful) {
+      allPositions = lite.rows;
+      chosen = "lite";
+    } else if (official.ok && official.rows.length > 0) {
+      allPositions = official.rows;
+      chosen = "official";
+    } else if (lite.ok && lite.rows.length > 0) {
+      allPositions = lite.rows;
+      chosen = "lite";
+    } else {
+      allPositions = official.rows.length ? official.rows : lite.rows;
+      chosen = official.rows.length ? "official" : "lite";
     }
 
-    const payload = await response.json().catch(() => []);
-    const allPositions = extractPositionsPayload(payload);
-    const positions = allPositions.filter((p) => {
-      // Jupiter may return scaffold rows with all-zero balances for non-participating wallets.
-      return isMeaningfulJupiterPosition(p);
-    });
+    const positions = allPositions.filter(isMeaningfulJupiterPosition);
 
     return NextResponse.json({
       success: true,
       data: positions,
       count: positions.length,
-      meta: buildJupiterMeta(allPositions, positions),
+      meta: buildJupiterMeta(allPositions, positions, {
+        official: {
+          ok: official.ok,
+          rows: official.rows.length,
+          meaningful: officialMeaningful,
+        },
+        lite: {
+          ok: lite.ok,
+          rows: lite.rows.length,
+          meaningful: liteMeaningful,
+        },
+        chosenSource: chosen,
+      }),
     });
   } catch (error) {
     console.error("[Jupiter] userPositions error:", error);
