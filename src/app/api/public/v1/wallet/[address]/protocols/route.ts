@@ -11,6 +11,8 @@ type ProtocolResult = {
   success: boolean;
   positionsCount: number;
   positions: unknown[];
+  /** Passthrough from upstream route (e.g. Jupiter scaffold explanation, Kamino market counts). */
+  meta?: unknown;
   status?: number;
   error?: string;
 };
@@ -168,6 +170,7 @@ async function fetchProtocolPositions(
       success: true,
       positionsCount,
       positions: normalizedPositions,
+      meta: extractUpstreamMeta(payload),
       status,
     };
   } catch (error) {

@@ -43,7 +43,44 @@ function extractPositionsPayload(payload: unknown): unknown[] {
 
 function isMeaningfulJupiterPosition(p: unknown): boolean {
   const obj = (p ?? {}) as Record<string, unknown>;
+  /** In-protocol supply (jlTokens) and assets in the lending vault (incl. interest). */
   return isPositiveAmount(obj.shares) || isPositiveAmount(obj.underlyingAssets);
+}
+
+/**
+ * Jupiter returns one row per market. Rows with shares=0 & underlyingAssets=0 are not active lend positions.
+ * `underlyingBalance` is the underlying token in the user's wallet (not supplied to Lend) — we do not count it as a position.
+ */
+function buildJupiterMeta(
+  allPositions: unknown[],
+  filtered: unknown[]
+): Record<string, unknown> {
+  let maxUnderlyingBalanceRaw = "0";
+  let maxUb = BigInt(0);
+  for (const p of allPositions) {
+    const obj = (p ?? {}) as Record<string, unknown>;
+    const ub = String(obj.underlyingBalance ?? "").trim();
+    if (/^\d+$/.test(ub)) {
+      try {
+        const v = BigInt(ub);
+        if (v > maxUb) {
+          maxUb = v;
+          maxUnderlyingBalanceRaw = ub;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return {
+    upstreamRowCount: allPositions.length,
+    activeLendPositions: filtered.length,
+    filteredOutScaffoldRows: Math.max(0, allPositions.length - filtered.length),
+    note:
+      "Jupiter Lend returns a row per market; only rows with non-zero shares or underlyingAssets are active lend positions. underlyingBalance is wallet balance, not a deposit.",
+    maxUnderlyingBalanceRaw,
+  };
 }
 
 /**
@@ -97,6 +134,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: positions,
       count: positions.length,
+      meta: buildJupiterMeta(allPositions, positions),
     });
   } catch (error) {
     console.error("[Jupiter] userPositions error:", error);
