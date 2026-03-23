@@ -485,6 +485,7 @@ export default function Sidebar() {
                   onRefresh={refreshSolana}
                   isRefreshing={isSolanaLoading}
                   hideSmallAssets={hideSmallAssets}
+                  onHideSmallAssetsChange={setHideSmallAssets}
                 />
                     <JupiterPositionsList
                       address={solanaAddress}

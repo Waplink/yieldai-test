@@ -626,6 +626,7 @@ export default function PortfolioPage() {
                         onRefresh={refreshSolana}
                         isRefreshing={isSolanaLoading}
                         hideSmallAssets={hideSmallAssets}
+                        onHideSmallAssetsChange={setHideSmallAssets}
                       />
                       <JupiterPositionsList
                         address={solanaAddress}
