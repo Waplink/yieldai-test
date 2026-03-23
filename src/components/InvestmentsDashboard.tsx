@@ -114,7 +114,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Decibel': true,
     'Echo Protocol': true,
     'APTree': true,
-    'Jupiter': true
+    'Jupiter': true,
+    'Kamino': true,
   });
   const [protocolsError, setProtocolsError] = useState<Record<string, string | null>>({});
   const [protocolsData, setProtocolsData] = useState<Record<string, InvestmentData[]>>({});
@@ -131,7 +132,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Decibel': '/protocol_ico/decibel.png',
     'Echo Protocol': '/protocol_ico/echo.png',
     'APTree': '/protocol_ico/aptree.png',
-    'Jupiter': 'https://jup.ag/favicon.ico'
+    'Jupiter': 'https://jup.ag/favicon.ico',
+    'Kamino': '/chain_ico/solana.svg',
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -704,6 +706,27 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 token: pool.token || '',
                 tokenDecimals: typeof pool.tokenDecimals === 'number' ? pool.tokenDecimals : undefined,
                 protocol: 'Jupiter',
+                logoUrl: pool.logoUrl || undefined,
+                tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
+                poolType: 'Lending',
+              }));
+            }
+          },
+          {
+            name: 'Kamino',
+            url: '/api/protocols/kamino/pools',
+            logoUrl: '/chain_ico/solana.svg',
+            transform: (data: any) => {
+              const pools = Array.isArray(data?.data) ? data.data : [];
+              return pools.map((pool: any) => ({
+                asset: pool.asset || 'Unknown',
+                provider: 'Kamino',
+                totalAPY: typeof pool.totalAPY === 'number' ? pool.totalAPY : 0,
+                depositApy: typeof pool.depositApy === 'number' ? pool.depositApy : 0,
+                borrowAPY: typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0,
+                token: pool.token || '',
+                tokenDecimals: typeof pool.tokenDecimals === 'number' ? pool.tokenDecimals : undefined,
+                protocol: 'Kamino',
                 logoUrl: pool.logoUrl || undefined,
                 tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
                 poolType: 'Lending',
@@ -1455,7 +1478,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
 
 
                     // Include whitelisted protocols that may not resolve tokenInfo yet.
-                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree' || item.protocol === 'Jupiter';
+                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree' || item.protocol === 'Jupiter' || item.protocol === 'Kamino';
                   })
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
