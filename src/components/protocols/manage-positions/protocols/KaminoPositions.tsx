@@ -1,14 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Decimal from "decimal.js";
+import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ExternalLink } from "lucide-react";
 import Image from "next/image";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
+import {
+  createMainnetRpc,
+  createWalletAdapterPartialSigner,
+  getSolanaRpcEndpoint,
+  loadKaminoVaultForAddress,
+  sendKitInstructionsWithWallet,
+} from "@/lib/solana/kaminoKvVaultTx";
+import { useToast } from "@/components/ui/use-toast";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
 const KAMINO_LOCAL_ICON = "/protocol_ico/kamino.png";
@@ -62,6 +76,49 @@ function isExternalUrl(value?: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
+function parseEarnVaultAddress(position: unknown): string | undefined {
+  if (!position || typeof position !== "object") return undefined;
+  const o = position as Record<string, unknown>;
+  const a = o.vaultAddress ?? o.vault ?? o.vaultPubkey;
+  if (typeof a === "string" && a.trim().length > 0) return a.trim();
+  return undefined;
+}
+
+function parseEarnShares(position: unknown): { total: number; unstaked: number; staked: number } {
+  if (!position || typeof position !== "object") {
+    return { total: 0, unstaked: 0, staked: 0 };
+  }
+  const o = position as Record<string, unknown>;
+  return {
+    total: toNumber(o.totalShares, 0),
+    unstaked: toNumber(o.unstakedShares, 0),
+    staked: toNumber(o.stakedShares, 0),
+  };
+}
+
+function toBase58Address(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof (value as { toBase58?: () => string }).toBase58 === "function") {
+    try {
+      return (value as { toBase58: () => string }).toBase58();
+    } catch {
+      // noop
+    }
+  }
+  return "";
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const message = (error.message || "").trim();
+    if (message.length > 0) return message;
+    return "Unknown error";
+  }
+  if (typeof error === "string") return error;
+  return "Unknown error";
+}
+
 function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: string }) {
   const [useFallback, setUseFallback] = useState(false);
   const src = useFallback && externalLogoUrl ? externalLogoUrl : KAMINO_LOCAL_ICON;
@@ -72,7 +129,6 @@ function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: s
       width={32}
       height={32}
       className="object-contain"
-      // Local icons can be optimized by Next.js; external icons are rendered as-is.
       unoptimized={isExternalUrl(src)}
       onError={() => {
         if (!useFallback && externalLogoUrl) setUseFallback(true);
@@ -81,14 +137,50 @@ function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: s
   );
 }
 
-function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
+type NormalizedKaminoRow =
+  | {
+      kind: "farm";
+      id: string;
+      label: string;
+      fallbackLogoUrl: string;
+      valueUsd: number;
+      amount: number;
+      price?: number;
+      typeLabel: string;
+      typeColor: string;
+    }
+  | {
+      kind: "lend";
+      id: string;
+      label: string;
+      fallbackLogoUrl: string;
+      valueUsd: number;
+      amount: number;
+      typeLabel: string;
+      typeColor: string;
+    }
+  | {
+      kind: "earn";
+      id: string;
+      label: string;
+      fallbackLogoUrl: string;
+      valueUsd: number;
+      amount: number;
+      typeLabel: string;
+      typeColor: string;
+      vaultAddress?: string;
+      shares: { total: number; unstaked: number; staked: number };
+    };
+
+function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKaminoRow {
   if (row.source === "kamino-farm") {
     const symbol = (row.tokenSymbol || "").trim() || shortKey(row.tokenMint);
-    const fallbackLogoUrl = getPreferredJupiterTokenIcon(row.tokenSymbol, row.tokenLogoUrl);
+    const fallbackLogoUrl = getPreferredJupiterTokenIcon(row.tokenSymbol, row.tokenLogoUrl) ?? "";
     const valueUsd = toNumber(row.netUsdAmount, 0);
     const amount = toNumber(row.netTokenAmount, 0);
     const price = amount > 0 ? valueUsd / amount : undefined;
     return {
+      kind: "farm",
       id: `kamino-farm-${row.farmPubkey}-${idx}`,
       label: `Kamino Farm (${symbol})`,
       fallbackLogoUrl,
@@ -109,6 +201,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
       "totalDepositUsd",
     ]);
     return {
+      kind: "lend",
       id: `kamino-lend-${row.marketPubkey}-${idx}`,
       label: row.marketName || `Kamino Lend (${shortKey(row.marketPubkey)})`,
       fallbackLogoUrl: "",
@@ -132,24 +225,49 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
       getDeep(row.position, "symbol") ??
       "Kamino Earn"
   );
+  const vaultAddress = parseEarnVaultAddress(row.position);
+  const shares = parseEarnShares(row.position);
   return {
-    id: `kamino-earn-${idx}`,
+    kind: "earn",
+    id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
     label,
     fallbackLogoUrl: "",
     valueUsd,
     amount: 0,
     typeLabel: "Supply",
     typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
+    vaultAddress,
+    shares,
   };
 }
 
 export function KaminoPositions() {
-  const { address: solanaAddress } = useSolanaPortfolio();
+  const { address: solanaAddress, refresh: refreshSolana } = useSolanaPortfolio();
+  const { toast } = useToast();
+  const { publicKey, signTransaction, wallet: solanaWallet, connecting: solanaConnecting } = useSolanaWallet();
+
   const [positions, setPositions] = useState<KaminoPosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPositions = async () => {
+  const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
+  const adapterAddress = toBase58Address(adapterPublicKey);
+  const effectiveSignerAddress = toBase58Address(publicKey) || adapterAddress || "";
+
+  const adapterSignTransaction =
+    typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function"
+      ? ((solanaWallet?.adapter as { signTransaction: (t: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction> }).signTransaction.bind(
+          solanaWallet?.adapter
+        ) as (t: VersionedTransaction) => Promise<VersionedTransaction>)
+      : undefined;
+  const activeSignTransaction = signTransaction ?? adapterSignTransaction;
+
+  const [earnModal, setEarnModal] = useState<"deposit" | "withdraw" | null>(null);
+  const [earnTarget, setEarnTarget] = useState<Extract<NormalizedKaminoRow, { kind: "earn" }> | null>(null);
+  const [earnAmount, setEarnAmount] = useState("");
+  const [earnSubmitting, setEarnSubmitting] = useState(false);
+
+  const loadPositions = useCallback(async () => {
     if (!solanaAddress) {
       setPositions([]);
       return;
@@ -168,7 +286,7 @@ export function KaminoPositions() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [solanaAddress]);
 
   useEffect(() => {
     void loadPositions();
@@ -184,11 +302,103 @@ export function KaminoPositions() {
     };
     window.addEventListener("refreshPositions", handleRefresh);
     return () => window.removeEventListener("refreshPositions", handleRefresh);
-  }, [solanaAddress]);
+  }, [loadPositions]);
 
   const normalized = useMemo(() => positions.map(normalizeKaminoPosition), [positions]);
   const sorted = useMemo(() => [...normalized].sort((a, b) => b.valueUsd - a.valueUsd), [normalized]);
   const totalValue = useMemo(() => sorted.reduce((sum, p) => sum + p.valueUsd, 0), [sorted]);
+
+  const openEarnDeposit = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
+    setEarnTarget(row);
+    setEarnAmount("");
+    setEarnModal("deposit");
+  }, []);
+
+  const openEarnWithdraw = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
+    setEarnTarget(row);
+    setEarnAmount("");
+    setEarnModal("withdraw");
+  }, []);
+
+  const closeEarnModal = useCallback(() => {
+    setEarnModal(null);
+    setEarnTarget(null);
+    setEarnAmount("");
+    setEarnSubmitting(false);
+  }, []);
+
+  const submitEarnModal = useCallback(async () => {
+    if (!earnTarget?.vaultAddress || !effectiveSignerAddress) {
+      toast({
+        variant: "destructive",
+        title: "Wallet required",
+        description: "Connect a Solana wallet that matches your portfolio address.",
+      });
+      return;
+    }
+    if (!activeSignTransaction) {
+      toast({
+        variant: "destructive",
+        title: "Wallet cannot sign",
+        description: solanaConnecting ? "Connecting wallet…" : "This wallet cannot sign transactions.",
+      });
+      return;
+    }
+
+    const rpc = createMainnetRpc();
+    const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
+    const signer = createWalletAdapterPartialSigner(effectiveSignerAddress, activeSignTransaction);
+
+    const amountDec = new Decimal((earnAmount || "").trim() || "0");
+    if (!amountDec.isFinite() || amountDec.lte(0)) {
+      toast({ variant: "destructive", title: "Invalid amount", description: "Enter a positive number." });
+      return;
+    }
+
+    setEarnSubmitting(true);
+    try {
+      const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
+      const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
+
+      if (earnModal === "deposit") {
+        const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
+        const stakeExtra =
+          dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
+        const ixs = [...dep.depositIxs, ...stakeExtra];
+        const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+        toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
+      } else {
+        const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
+        const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
+        const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+        toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
+      }
+
+      closeEarnModal();
+      await refreshSolana();
+      void loadPositions();
+      window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: earnModal === "deposit" ? "Deposit failed" : "Withdraw failed",
+        description: getErrorMessage(e),
+      });
+    } finally {
+      setEarnSubmitting(false);
+    }
+  }, [
+    earnTarget,
+    effectiveSignerAddress,
+    activeSignTransaction,
+    earnAmount,
+    earnModal,
+    toast,
+    closeEarnModal,
+    refreshSolana,
+    solanaConnecting,
+    loadPositions,
+  ]);
 
   if (loading) {
     return <div className="py-4 text-muted-foreground">Loading positions...</div>;
@@ -202,6 +412,56 @@ export function KaminoPositions() {
 
   return (
     <div className="space-y-4 text-base">
+      <Dialog open={earnModal !== null} onOpenChange={(o) => !o && closeEarnModal()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{earnModal === "deposit" ? "Deposit to vault" : "Withdraw from vault"}</DialogTitle>
+          </DialogHeader>
+          {earnTarget && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{earnTarget.label}</p>
+              {earnModal === "withdraw" && earnTarget.shares.total > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Share balance (approx.): {formatNumber(earnTarget.shares.total, 6)}
+                  {earnTarget.shares.staked > 0 && (
+                    <span className="block text-xs mt-1">
+                      Unstaked {formatNumber(earnTarget.shares.unstaked, 6)} · Staked{" "}
+                      {formatNumber(earnTarget.shares.staked, 6)}
+                    </span>
+                  )}
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="kamino-earn-amount">
+                  {earnModal === "deposit" ? "Amount (vault token)" : "Share amount to withdraw"}
+                </Label>
+                <Input
+                  id="kamino-earn-amount"
+                  inputMode="decimal"
+                  placeholder={earnModal === "deposit" ? "0.0" : "0.0"}
+                  value={earnAmount}
+                  onChange={(e) => setEarnAmount(e.target.value)}
+                  disabled={earnSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {earnModal === "deposit"
+                    ? "Deposit uses the vault’s underlying token amount."
+                    : "Enter shares in vault share units (same decimals as on Kamino). Any amount larger than your balance withdraws all."}
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={closeEarnModal} disabled={earnSubmitting}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitEarnModal()} disabled={earnSubmitting}>
+              {earnSubmitting ? "Submitting…" : earnModal === "deposit" ? "Deposit" : "Withdraw"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ScrollArea>
         {sorted.map((position) => (
           <div key={position.id} className="p-3 sm:p-4 border-b last:border-b-0">
@@ -217,23 +477,50 @@ export function KaminoPositions() {
                       {position.typeLabel}
                     </Badge>
                   </div>
-                  {position.price != null && (
+                  {"price" in position && position.price != null && (
                     <div className="text-base text-muted-foreground mt-0.5">{formatCurrency(position.price, 4)}</div>
                   )}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-lg font-bold">{formatCurrency(position.valueUsd, 2)}</div>
-                {position.amount > 0 && <div className="text-base text-muted-foreground">{formatNumber(position.amount, 6)}</div>}
+                {"amount" in position && position.amount > 0 && (
+                  <div className="text-base text-muted-foreground">{formatNumber(position.amount, 6)}</div>
+                )}
                 <div className="flex gap-2 mt-2 justify-end">
-                  <Button size="sm" variant="default" className="h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
-                    Deposit
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
-                    Withdraw
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Button>
+                  {position.kind === "earn" && position.vaultAddress ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-10"
+                        onClick={() => openEarnDeposit(position)}
+                        disabled={!effectiveSignerAddress || !activeSignTransaction}
+                      >
+                        Deposit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-10"
+                        onClick={() => openEarnWithdraw(position)}
+                        disabled={!effectiveSignerAddress || !activeSignTransaction}
+                      >
+                        Withdraw
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="default" className="h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                        Deposit
+                        <ExternalLink className="h-3 w-3 ml-1" />
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                        Withdraw
+                        <ExternalLink className="h-3 w-3 ml-1" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -251,25 +538,52 @@ export function KaminoPositions() {
                         {position.typeLabel}
                       </Badge>
                     </div>
-                    {position.price != null && (
+                    {"price" in position && position.price != null && (
                       <div className="text-sm text-muted-foreground">{formatCurrency(position.price, 4)}</div>
                     )}
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-base font-semibold">{formatCurrency(position.valueUsd, 2)}</div>
-                  {position.amount > 0 && <div className="text-sm text-muted-foreground">{formatNumber(position.amount, 6)}</div>}
+                  {"amount" in position && position.amount > 0 && (
+                    <div className="text-sm text-muted-foreground">{formatNumber(position.amount, 6)}</div>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <Button size="sm" variant="default" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
-                  Deposit
-                  <ExternalLink className="h-3 w-3 ml-1" />
-                </Button>
-                <Button size="sm" variant="outline" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
-                  Withdraw
-                  <ExternalLink className="h-3 w-3 ml-1" />
-                </Button>
+                {position.kind === "earn" && position.vaultAddress ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="w-full h-10"
+                      onClick={() => openEarnDeposit(position)}
+                      disabled={!effectiveSignerAddress || !activeSignTransaction}
+                    >
+                      Deposit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full h-10"
+                      onClick={() => openEarnWithdraw(position)}
+                      disabled={!effectiveSignerAddress || !activeSignTransaction}
+                    >
+                      Withdraw
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="sm" variant="default" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                      Deposit
+                      <ExternalLink className="h-3 w-3 ml-1" />
+                    </Button>
+                    <Button size="sm" variant="outline" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                      Withdraw
+                      <ExternalLink className="h-3 w-3 ml-1" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -284,4 +598,3 @@ export function KaminoPositions() {
     </div>
   );
 }
-
