@@ -8,6 +8,7 @@ import path from "node:path";
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
+const MIN_TVL_USD = 100_000;
 
 type KaminoVaultRow = {
   address: string;
@@ -178,6 +179,7 @@ export async function GET() {
       if (depositApy < 1) continue;
 
       const tvlUSD = toNumber(metrics.tokensInvestedUsd, 0) + toNumber(metrics.tokensAvailableUsd, 0);
+      if (tvlUSD < MIN_TVL_USD) continue;
       const meta = metadataMap[tokenMint];
       const symbol = displaySymbolByMint.get(tokenMint) || "Unknown";
       const localIcon = iconByMint.get(tokenMint);
