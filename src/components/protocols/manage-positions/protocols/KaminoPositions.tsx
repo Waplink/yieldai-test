@@ -11,6 +11,7 @@ import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
+const KAMINO_LOCAL_ICON = "/protocol_ico/kamino.png";
 
 type KaminoPosition = {
   source?: "kamino-lend" | "kamino-earn" | "kamino-farm" | string;
@@ -56,16 +57,40 @@ function shortKey(value?: string): string {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
+function isExternalUrl(value?: string): boolean {
+  if (!value) return false;
+  return /^https?:\/\//i.test(value);
+}
+
+function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: string }) {
+  const [useFallback, setUseFallback] = useState(false);
+  const src = useFallback && externalLogoUrl ? externalLogoUrl : KAMINO_LOCAL_ICON;
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={32}
+      height={32}
+      className="object-contain"
+      // Local icons can be optimized by Next.js; external icons are rendered as-is.
+      unoptimized={isExternalUrl(src)}
+      onError={() => {
+        if (!useFallback && externalLogoUrl) setUseFallback(true);
+      }}
+    />
+  );
+}
+
 function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
   if (row.source === "kamino-farm") {
     const symbol = (row.tokenSymbol || "").trim() || shortKey(row.tokenMint);
-    const logoUrl = getPreferredJupiterTokenIcon(row.tokenSymbol, row.tokenLogoUrl) || "/protocol_ico/kamino.png";
+    const fallbackLogoUrl = getPreferredJupiterTokenIcon(row.tokenSymbol, row.tokenLogoUrl);
     const valueUsd = toNumber(row.netUsdAmount, 0);
     const amount = toNumber(row.netTokenAmount, 0);
     return {
       id: `kamino-farm-${row.farmPubkey}-${idx}`,
       label: `Kamino Farm (${symbol})`,
-      logoUrl,
+      fallbackLogoUrl,
       valueUsd,
       amount,
       typeLabel: "Supply",
@@ -84,7 +109,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
     return {
       id: `kamino-lend-${row.marketPubkey}-${idx}`,
       label: row.marketName || `Kamino Lend (${shortKey(row.marketPubkey)})`,
-      logoUrl: "/protocol_ico/kamino.png",
+      fallbackLogoUrl: "",
       valueUsd,
       amount: 0,
       typeLabel: "Supply",
@@ -108,7 +133,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
   return {
     id: `kamino-earn-${idx}`,
     label,
-    logoUrl: "/protocol_ico/kamino.png",
+    fallbackLogoUrl: "",
     valueUsd,
     amount: 0,
     typeLabel: "Supply",
@@ -181,7 +206,7 @@ export function KaminoPositions() {
             <div className="hidden sm:flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 relative">
-                  <Image src={position.logoUrl} alt={position.label} width={32} height={32} className="object-contain" />
+                  <KaminoLogo alt={position.label} externalLogoUrl={position.fallbackLogoUrl} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -213,7 +238,7 @@ export function KaminoPositions() {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 relative">
-                    <Image src={position.logoUrl} alt={position.label} width={32} height={32} className="object-contain" />
+                    <KaminoLogo alt={position.label} externalLogoUrl={position.fallbackLogoUrl} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
