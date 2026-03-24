@@ -5,6 +5,7 @@ import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { ProtocolCard } from "@/shared/ProtocolCard";
 import { PositionBadge } from "@/shared/ProtocolCard/types";
 import { formatNumber } from "@/lib/utils/numberFormat";
+import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 type KaminoPositionsListProps = {
   address?: string;
@@ -21,6 +22,8 @@ type KaminoPositionRow = {
   position?: unknown;
   farmPubkey?: string;
   tokenMint?: string;
+  tokenSymbol?: string;
+  tokenLogoUrl?: string;
   netTokenAmount?: string;
   netUsdAmount?: string;
   lastActivity?: string;
@@ -155,10 +158,13 @@ export function PositionsList({
         if (r.source === "kamino-farm") {
           const value = toNumber(r.netUsdAmount, 0);
           const amount = toNumber(r.netTokenAmount, 0);
+          const tokenLabel = (r.tokenSymbol || "").trim();
+          const icon = getPreferredJupiterTokenIcon(r.tokenSymbol, r.tokenLogoUrl);
           return {
             id: `kamino-farm-${r.farmPubkey}-${r.tokenMint}-${idx}`,
-            label: `Farm ${shortKey(r.farmPubkey)}`,
+            label: tokenLabel ? `Kamino Farm (${tokenLabel})` : "Kamino Farm",
             value,
+            logoUrl: icon,
             badge: PositionBadge.Supply,
             subLabel: formatNumber(amount, 6),
           };

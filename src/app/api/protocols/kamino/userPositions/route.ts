@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata";
 
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
+const KNOWN_SOLANA_TOKEN_BY_MINT: Record<string, { symbol: string; logoUrl?: string }> = {
+  // Wrapped SOL
+  So11111111111111111111111111111111111111112: { symbol: "SOL", logoUrl: "/token_ico/sol.png" },
+  // Stables / majors used across Jupiter/Kamino
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: "USDC", logoUrl: "/token_ico/usdc.png" },
+  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: { symbol: "USDT", logoUrl: "/token_ico/usdt.png" },
+  "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": { symbol: "USDG", logoUrl: "/token_ico/usdg.png" },
+  USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA: { symbol: "USDS", logoUrl: "/token_ico/usds.png" },
+  JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD: { symbol: "JupUSD", logoUrl: "/token_ico/jupusd.png" },
+  HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr: { symbol: "EURC", logoUrl: "/token_ico/eurc.png" },
+};
 
 type KaminoMarketRow = {
   lendingMarket: string;
@@ -72,6 +84,8 @@ export type KaminoUserPositionRow =
       source: "kamino-farm";
       farmPubkey: string;
       tokenMint: string;
+      tokenSymbol?: string;
+      tokenLogoUrl?: string;
       netTokenAmount: string;
       netUsdAmount: string;
       lastActivity: string;
@@ -198,6 +212,35 @@ function aggregateFarmPositions(transactions: KaminoFarmTx[]): KaminoUserPositio
   return rows;
 }
 
+async function enrichFarmRowsWithTokenMetadata(rows: KaminoUserPositionRow[]): Promise<KaminoUserPositionRow[]> {
+  const farmRows = rows.filter(
+    (r): r is Extract<KaminoUserPositionRow, { source: "kamino-farm" }> => r.source === "kamino-farm"
+  );
+  if (farmRows.length === 0) return rows;
+
+  const mints = Array.from(new Set(farmRows.map((r) => r.tokenMint).filter(Boolean)));
+  if (mints.length === 0) return rows;
+
+  let metadataMap: Record<string, { symbol?: string; logoUrl?: string }> = {};
+  try {
+    const metadataService = JupiterTokenMetadataService.getInstance();
+    metadataMap = (await metadataService.getMetadataMap(mints)) as Record<string, { symbol?: string; logoUrl?: string }>;
+  } catch {
+    metadataMap = {};
+  }
+
+  return rows.map((r) => {
+    if (r.source !== "kamino-farm") return r;
+    const meta = metadataMap[r.tokenMint] || {};
+    const known = KNOWN_SOLANA_TOKEN_BY_MINT[r.tokenMint];
+    return {
+      ...r,
+      tokenSymbol: meta.symbol || known?.symbol || undefined,
+      tokenLogoUrl: meta.logoUrl || known?.logoUrl || undefined,
+    };
+  });
+}
+
 /**
  * GET /api/protocols/kamino/userPositions?address=<solana_wallet>
  *
@@ -310,7 +353,8 @@ export async function GET(request: NextRequest) {
     }
 
     const farmRows = aggregateFarmPositions(farmTx);
-    flat.push(...farmRows);
+    const farmRowsWithMeta = await enrichFarmRowsWithTokenMetadata(farmRows);
+    flat.push(...farmRowsWithMeta);
 
     return NextResponse.json({
       success: true,
