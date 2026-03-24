@@ -22,7 +22,7 @@ import {
   loadKaminoVaultForAddress,
   sendKitInstructionsWithWallet,
 } from "@/lib/solana/kaminoKvVaultTx";
-import { extractKvaultVaultAddress } from "@/lib/kamino/kvaultVaultAddress";
+import { extractKvaultVaultAddress, isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
 import { useToast } from "@/components/ui/use-toast";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
@@ -40,6 +40,9 @@ type KaminoPosition = {
   tokenLogoUrl?: string;
   netTokenAmount?: string;
   netUsdAmount?: string;
+  /** Set by API when farm pubkey maps to a kVault (Steakhouse, etc.). */
+  vaultAddress?: string;
+  vaultName?: string;
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -159,6 +162,7 @@ type NormalizedKaminoRow =
       fallbackLogoUrl: string;
       valueUsd: number;
       amount: number;
+      price?: number;
       typeLabel: string;
       typeColor: string;
       vaultAddress?: string;
@@ -172,6 +176,26 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
     const valueUsd = toNumber(row.netUsdAmount, 0);
     const amount = toNumber(row.netTokenAmount, 0);
     const price = amount > 0 ? valueUsd / amount : undefined;
+    const vaultResolved =
+      row.vaultAddress && isLikelySolanaAddress(row.vaultAddress) ? row.vaultAddress.trim() : undefined;
+    if (vaultResolved) {
+      const label =
+        (row.vaultName && row.vaultName.trim()) ||
+        (symbol ? `Kamino Farm (${symbol})` : `Kamino Farm (${shortKey(row.farmPubkey)})`);
+      return {
+        kind: "earn",
+        id: `kamino-farm-${row.farmPubkey}-${idx}`,
+        label,
+        fallbackLogoUrl,
+        valueUsd,
+        amount,
+        price,
+        typeLabel: "Supply",
+        typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
+        vaultAddress: vaultResolved,
+        shares: { total: 0, unstaked: 0, staked: 0 },
+      };
+    }
     return {
       kind: "farm",
       id: `kamino-farm-${row.farmPubkey}-${idx}`,

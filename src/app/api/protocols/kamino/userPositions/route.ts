@@ -95,7 +95,35 @@ export type KaminoUserPositionRow =
       netUsdAmount: string;
       lastActivity: string;
       transactionCount: number;
+      /** kVault vault pubkey for SDK (resolved from /kvaults/vaults via vault address or state.vaultFarm). */
+      vaultAddress?: string;
+      vaultName?: string;
     };
+
+type KaminoVaultCatalogRow = {
+  address: string;
+  state?: {
+    name?: string;
+    tokenMint?: string;
+    vaultFarm?: string;
+  };
+};
+
+/** Map farm transaction `farm` field and vault pubkey to the kVault address used by the SDK. */
+function buildFarmPubkeyToVaultMap(vaults: KaminoVaultCatalogRow[]): Map<string, { vaultAddress: string; vaultName?: string }> {
+  const m = new Map<string, { vaultAddress: string; vaultName?: string }>();
+  for (const v of vaults) {
+    if (!v?.address) continue;
+    const name = typeof v.state?.name === "string" ? v.state.name.trim() : undefined;
+    const info = { vaultAddress: v.address, vaultName: name };
+    m.set(v.address, info);
+    const vf = v.state?.vaultFarm;
+    if (typeof vf === "string" && vf.trim()) {
+      m.set(vf.trim(), info);
+    }
+  }
+  return m;
+}
 
 type KaminoFarmTx = {
   instruction?: string;
@@ -359,7 +387,33 @@ export async function GET(request: NextRequest) {
 
     const farmRows = aggregateFarmPositions(farmTx);
     const farmRowsWithMeta = await enrichFarmRowsWithTokenMetadata(farmRows);
-    flat.push(...farmRowsWithMeta);
+
+    let farmVaultCatalog: KaminoVaultCatalogRow[] = [];
+    try {
+      const vaultsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (vaultsRes.ok) {
+        const j = await vaultsRes.json().catch(() => []);
+        farmVaultCatalog = Array.isArray(j) ? j : [];
+      }
+    } catch {
+      farmVaultCatalog = [];
+    }
+    const farmToVault = buildFarmPubkeyToVaultMap(farmVaultCatalog);
+    const farmRowsResolved = farmRowsWithMeta.map((r) => {
+      if (r.source !== "kamino-farm") return r;
+      const meta = farmToVault.get(r.farmPubkey.trim());
+      if (!meta) return r;
+      return {
+        ...r,
+        vaultAddress: meta.vaultAddress,
+        vaultName: meta.vaultName,
+      };
+    });
+    flat.push(...farmRowsResolved);
 
     return NextResponse.json({
       success: true,
