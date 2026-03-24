@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata";
+import { extractKvaultVaultAddress, isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
 
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
@@ -21,10 +22,6 @@ type KaminoMarketRow = {
   name?: string;
   isPrimary?: boolean;
 };
-
-function isLikelySolanaAddress(input: string): boolean {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(input);
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,26 +63,6 @@ function hasEarnVaultBalance(item: unknown): boolean {
     (Number.isFinite(staked) && staked > 0) ||
     (Number.isFinite(unstaked) && unstaked > 0)
   );
-}
-
-/** Kamino API returns vault pubkey as `vaultAddress` or (in nested rows) as `address` — normalize for clients. */
-function extractKvaultVaultAddress(pos: unknown): string | undefined {
-  if (!pos || typeof pos !== "object") return undefined;
-  const o = pos as Record<string, unknown>;
-  const tryStr = (v: unknown): string | undefined =>
-    typeof v === "string" && v.trim().length > 0 && isLikelySolanaAddress(v.trim()) ? v.trim() : undefined;
-
-  const direct =
-    tryStr(o.vaultAddress) ?? tryStr(o.vaultPubkey) ?? tryStr(o.address) ?? tryStr(o.earnVaultAddress);
-  if (direct) return direct;
-
-  const vault = o.vault;
-  if (vault && typeof vault === "object") {
-    const v = vault as Record<string, unknown>;
-    const nested = tryStr(v.address) ?? tryStr(v.vaultAddress) ?? tryStr(v.pubkey);
-    if (nested) return nested;
-  }
-  return undefined;
 }
 
 function enrichEarnPositionPayload(pos: unknown): unknown {

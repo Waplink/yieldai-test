@@ -22,6 +22,7 @@ import {
   loadKaminoVaultForAddress,
   sendKitInstructionsWithWallet,
 } from "@/lib/solana/kaminoKvVaultTx";
+import { extractKvaultVaultAddress } from "@/lib/kamino/kvaultVaultAddress";
 import { useToast } from "@/components/ui/use-toast";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
@@ -74,27 +75,6 @@ function shortKey(value?: string): string {
 function isExternalUrl(value?: string): boolean {
   if (!value) return false;
   return /^https?:\/\//i.test(value);
-}
-
-function parseEarnVaultAddress(position: unknown): string | undefined {
-  if (!position || typeof position !== "object") return undefined;
-  const o = position as Record<string, unknown>;
-  // API: usually `vaultAddress`; some responses use root `address` for the vault (see Kamino OpenAPI).
-  const direct = o.vaultAddress ?? o.vaultPubkey ?? o.address ?? o.earnVaultAddress;
-  if (typeof direct === "string" && direct.trim().length > 0) return direct.trim();
-  const nested =
-    getDeep(position, "vault.address") ??
-    getDeep(position, "vault.vaultAddress") ??
-    getDeep(position, "earnVaultAddress");
-  if (typeof nested === "string" && nested.trim().length > 0) return nested.trim();
-  const vault = o.vault;
-  if (vault && typeof vault === "object") {
-    const vo = vault as Record<string, unknown>;
-    const addr = vo.address ?? vo.pubkey ?? vo.vaultAddress;
-    if (typeof addr === "string" && addr.trim().length > 0) return addr.trim();
-  }
-  if (typeof o.vault === "string" && o.vault.trim().length > 0) return o.vault.trim();
-  return undefined;
 }
 
 function parseEarnShares(position: unknown): { total: number; unstaked: number; staked: number } {
@@ -238,7 +218,12 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
       getDeep(row.position, "symbol") ??
       "Kamino Earn"
   );
-  const vaultAddress = parseEarnVaultAddress(row.position);
+  const mergedForVault =
+    row.position && typeof row.position === "object"
+      ? { ...(row as Record<string, unknown>), ...(row.position as Record<string, unknown>) }
+      : (row as Record<string, unknown>);
+  const vaultAddress =
+    extractKvaultVaultAddress(row.position) ?? extractKvaultVaultAddress(mergedForVault);
   const shares = parseEarnShares(row.position);
   return {
     kind: "earn",

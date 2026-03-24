@@ -730,7 +730,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 protocol: 'Kamino',
                 logoUrl: pool.logoUrl || undefined,
                 tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
-                poolType: 'Lending',
+                poolType: pool.poolType || 'Vault',
+                originalPool: pool.originalPool,
               }));
             }
           }
