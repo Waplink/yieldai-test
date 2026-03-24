@@ -25,6 +25,8 @@ import {
 import { useState, useEffect, useCallback, useRef } from "react";
 import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
+import { KaminoVaultDepositModal } from "./kamino-vault-deposit-modal";
+import { depositToKaminoVault } from "@/lib/solana/kaminoKvVaultTx";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { getAptosWalletNameFromStorage, isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
@@ -73,6 +75,11 @@ interface DepositButtonProps {
   poolAddress?: string;
   solanaTokensOverride?: SolanaToken[];
   refreshSolanaOverride?: () => Promise<void>;
+  /** Kamino kVault (Earn) from pools API — enables in-app deposit when set. */
+  kaminoVaultAddress?: string;
+  kaminoVaultLabel?: string;
+  /** Pool row APR for Kamino modal (protocolAPY is not fetched for Kamino in this component). */
+  kaminoDepositApy?: number;
 }
 
 const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
@@ -161,13 +168,22 @@ export function DepositButton({
   poolAddress,
   solanaTokensOverride,
   refreshSolanaOverride,
+  kaminoVaultAddress,
+  kaminoVaultLabel,
+  kaminoDepositApy,
 }: DepositButtonProps) {
   const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
+  const isKaminoKvVaultFlow =
+    protocol.name.toLowerCase() === "kamino" &&
+    typeof kaminoVaultAddress === "string" &&
+    kaminoVaultAddress.trim().length > 0;
 
   const [isExternalDialogOpen, setIsExternalDialogOpen] = useState(false);
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
   const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
   const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
+  const [isKaminoVaultDialogOpen, setIsKaminoVaultDialogOpen] = useState(false);
+  const [isKaminoVaultDepositing, setIsKaminoVaultDepositing] = useState(false);
   const isJupiterDepositInFlightRef = useRef(false);
   const attemptedSolanaReconnectRef = useRef(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
@@ -191,7 +207,7 @@ export function DepositButton({
     tokens: hookedSolanaTokens,
     refresh: hookedRefreshSolana,
   } = useSolanaPortfolio({
-    enabled: isJupiterProtocol && !solanaTokensOverride,
+    enabled: (isJupiterProtocol || isKaminoKvVaultFlow) && !solanaTokensOverride,
   });
   const solanaTokens = solanaTokensOverride ?? hookedSolanaTokens;
   const refreshSolana = refreshSolanaOverride ?? hookedRefreshSolana;
@@ -253,6 +269,18 @@ export function DepositButton({
           )
         : undefined);
 
+    if (!token) return 0;
+    const rawAmount = Number(token.amount);
+    const decimals = Number(token.decimals);
+    if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
+    return rawAmount / Math.pow(10, decimals);
+  })();
+
+  const kaminoWalletAmount = (() => {
+    if (!isKaminoKvVaultFlow) return 0;
+    const resolvedMint = normalizeMint(tokenIn?.address);
+    if (!resolvedMint) return 0;
+    const token = solanaTokens.find((t) => normalizeMint(t.address) === resolvedMint);
     if (!token) return 0;
     const rawAmount = Number(token.amount);
     const decimals = Number(token.decimals);
@@ -548,6 +576,24 @@ export function DepositButton({
         return;
       }
       setIsJupiterDialogOpen(true);
+      return;
+    }
+
+    if (isKaminoKvVaultFlow) {
+      const session = resolveSolanaSession();
+      if (!session.signerAddress || !session.hasSigner) {
+        if (session.hasSession || hasAnySolanaSession || !!effectiveSolanaAddress) {
+          setIsKaminoVaultDialogOpen(true);
+          return;
+        }
+        toast({
+          title: "Solana wallet required",
+          description: "Connect Solana wallet to deposit to Kamino vault.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setIsKaminoVaultDialogOpen(true);
       return;
     }
 
@@ -892,18 +938,96 @@ export function DepositButton({
     }
   };
 
+  const handleKaminoVaultDepositConfirm = async (amountUi: number) => {
+    if (isKaminoVaultDepositing) return;
+    const vault = kaminoVaultAddress?.trim();
+    if (!vault) return;
+
+    const session = await waitForReadySolanaSession();
+    let resolvedSignerAddress =
+      session.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
+    let resolvedSignTransaction = session.signTransaction ?? activeSignTransaction;
+
+    if (!resolvedSignerAddress || !resolvedSignTransaction) {
+      await recoverSolanaWalletSelection();
+      const retried = await waitForReadySolanaSession();
+      resolvedSignerAddress =
+        retried.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
+      resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+    }
+
+    if (!resolvedSignerAddress || !resolvedSignTransaction) {
+      toast({
+        title: "Solana wallet required",
+        description: "Connect Solana wallet to deposit to Kamino vault.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!Number.isFinite(amountUi) || amountUi <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a valid deposit amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (amountUi > kaminoWalletAmount + 1e-12) {
+      toast({
+        title: "Insufficient balance",
+        description: `Available: ${kaminoWalletAmount.toFixed(6)} ${tokenIn?.symbol || "token"}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsKaminoVaultDepositing(true);
+    try {
+      const signature = await depositToKaminoVault({
+        vaultAddress: vault,
+        amountUi,
+        signerAddress: resolvedSignerAddress,
+        signTransaction: resolvedSignTransaction as (tx: VersionedTransaction) => Promise<VersionedTransaction>,
+      });
+      await refreshSolana();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+      }
+      toast({
+        title: "Deposit submitted",
+        description: `Deposited ${amountUi} ${tokenIn?.symbol || "token"}.`,
+        action: (
+          <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
+            View on Solscan
+          </ToastAction>
+        ),
+      });
+      setIsKaminoVaultDialogOpen(false);
+    } catch (error) {
+      toast({
+        title: "Deposit failed",
+        description: getErrorText(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsKaminoVaultDepositing(false);
+    }
+  };
+
   return (
     <>
       <Button
-        variant={protocol.depositType === 'native' ? "default" : "secondary"}
+        variant={protocol.depositType === "native" || isJupiterProtocol || isKaminoKvVaultFlow ? "default" : "secondary"}
         className={cn(
           className,
-          protocol.depositType === 'native' && "bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+          (protocol.depositType === "native" || isJupiterProtocol || isKaminoKvVaultFlow) &&
+            "bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
         )}
         onClick={handleClick}
       >
         Deposit
-        {protocol.depositType === 'external' && (
+        {protocol.depositType === "external" && !isKaminoKvVaultFlow && (
           <ExternalLink className="ml-2 h-4 w-4" />
         )}
       </Button>
@@ -963,6 +1087,23 @@ export function DepositButton({
             logoUrl: tokenIn.logo,
             availableAmount: jupiterWalletAmount,
             apy: protocolAPY,
+            priceUsd: priceUSD || 0,
+          }}
+        />
+      )}
+
+      {isKaminoKvVaultFlow && tokenIn && tokenIn.address && (
+        <KaminoVaultDepositModal
+          isOpen={isKaminoVaultDialogOpen}
+          onClose={() => setIsKaminoVaultDialogOpen(false)}
+          onConfirm={handleKaminoVaultDepositConfirm}
+          isLoading={isKaminoVaultDepositing}
+          vaultLabel={kaminoVaultLabel || tokenIn.symbol}
+          token={{
+            symbol: tokenIn.symbol,
+            logoUrl: tokenIn.logo,
+            availableAmount: kaminoWalletAmount,
+            apy: typeof kaminoDepositApy === "number" ? kaminoDepositApy : protocolAPY,
             priceUsd: priceUSD || 0,
           }}
         />

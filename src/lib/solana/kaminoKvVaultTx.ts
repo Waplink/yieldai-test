@@ -18,6 +18,7 @@ import {
 import type { SignatureBytes } from "@solana/keys";
 import type { SignatureDictionary, TransactionPartialSigner } from "@solana/signers";
 import type { Transaction as KitTransaction } from "@solana/transactions";
+import Decimal from "decimal.js";
 import { Connection, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 
 export function getSolanaRpcEndpoint(): string {
@@ -121,4 +122,26 @@ export async function loadKaminoVaultForAddress(
   const vault = new KaminoVault(rpc as ConstructorParameters<typeof KaminoVault>[0], address(vaultAddress.trim()));
   const state = await vault.getState();
   return { vault, lookupTable: state.vaultLookupTable };
+}
+
+/** Deposit underlying tokens into a Kamino kVault (Earn). Returns transaction signature. */
+export async function depositToKaminoVault(params: {
+  vaultAddress: string;
+  amountUi: number;
+  signerAddress: string;
+  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+}): Promise<string> {
+  const amountDec = new Decimal(params.amountUi);
+  if (!amountDec.isFinite() || amountDec.lte(0)) {
+    throw new Error("Enter a positive amount.");
+  }
+  const rpc = createMainnetRpc();
+  const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
+  const signer = createWalletAdapterPartialSigner(params.signerAddress, params.signTransaction);
+  const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, params.vaultAddress);
+  const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
+  const stakeExtra =
+    dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
+  const ixs = [...dep.depositIxs, ...stakeExtra];
+  return sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
 }

@@ -1748,7 +1748,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                     symbol: displaySymbol,
                                     logo: logoUrl || '/file.svg',
                                     decimals:
-                                      protocol?.name === 'Jupiter'
+                                      protocol?.name === 'Jupiter' || protocol?.name === 'Kamino'
                                         ? (item.tokenDecimals ?? tokenInfo?.decimals ?? resolvedTokenInfo?.decimals ?? 6)
                                         : decimals,
                                     address:
@@ -1762,6 +1762,13 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   }
                                   solanaTokensOverride={solanaTokens}
                                   refreshSolanaOverride={refreshSolana}
+                                  kaminoVaultAddress={
+                                    item.protocol === 'Kamino' && item.originalPool?.vaultAddress
+                                      ? String(item.originalPool.vaultAddress)
+                                      : undefined
+                                  }
+                                  kaminoVaultLabel={item.protocol === 'Kamino' ? item.asset : undefined}
+                                  kaminoDepositApy={item.protocol === 'Kamino' ? item.depositApy : undefined}
                                 />
                               )
                             ) : (
