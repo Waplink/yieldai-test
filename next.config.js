@@ -3,6 +3,14 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Kamino klend-sdk → kliquidity-sdk → @orca-so/whirlpools-core (WASM). Bundling WASM into
+  // .next/server/chunks breaks at prerender (ENOENT on *._bg.wasm). Keep these as Node externals.
+  serverExternalPackages: [
+    '@orca-so/whirlpools-core',
+    '@orca-so/whirlpools',
+    '@orca-so/whirlpools-client',
+    '@kamino-finance/kliquidity-sdk',
+  ],
   // Optimize chunk loading for Vercel deployment
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -13,6 +21,11 @@ const nextConfig = {
         fs: false,
         net: false,
         tls: false,
+      };
+      // @walletconnect/logger → pino optional dev dependency (not installed in prod)
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'pino-pretty': false,
       };
       // Chunk splitting without fixed names to avoid CSS being loaded as JS
       // (named chunks like "vendor-js" get both .js and .css; runtime can request wrong one)
