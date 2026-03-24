@@ -87,12 +87,14 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number) {
     const fallbackLogoUrl = getPreferredJupiterTokenIcon(row.tokenSymbol, row.tokenLogoUrl);
     const valueUsd = toNumber(row.netUsdAmount, 0);
     const amount = toNumber(row.netTokenAmount, 0);
+    const price = amount > 0 ? valueUsd / amount : undefined;
     return {
       id: `kamino-farm-${row.farmPubkey}-${idx}`,
       label: `Kamino Farm (${symbol})`,
       fallbackLogoUrl,
       valueUsd,
       amount,
+      price,
       typeLabel: "Supply",
       typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
     };
@@ -215,7 +217,9 @@ export function KaminoPositions() {
                       {position.typeLabel}
                     </Badge>
                   </div>
-                  <div className="text-base text-muted-foreground mt-0.5">{formatCurrency(position.valueUsd, 4)}</div>
+                  {position.price != null && (
+                    <div className="text-base text-muted-foreground mt-0.5">{formatCurrency(position.price, 4)}</div>
+                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -247,7 +251,9 @@ export function KaminoPositions() {
                         {position.typeLabel}
                       </Badge>
                     </div>
-                    <div className="text-sm text-muted-foreground">{formatCurrency(position.valueUsd, 4)}</div>
+                    {position.price != null && (
+                      <div className="text-sm text-muted-foreground">{formatCurrency(position.price, 4)}</div>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">

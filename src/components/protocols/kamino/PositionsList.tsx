@@ -158,6 +158,7 @@ export function PositionsList({
         if (r.source === "kamino-farm") {
           const value = toNumber(r.netUsdAmount, 0);
           const amount = toNumber(r.netTokenAmount, 0);
+          const price = amount > 0 ? value / amount : undefined;
           const tokenLabel = (r.tokenSymbol || "").trim();
           const icon = getPreferredJupiterTokenIcon(r.tokenSymbol, r.tokenLogoUrl);
           return {
@@ -167,6 +168,7 @@ export function PositionsList({
             logoUrl: icon,
             badge: PositionBadge.Supply,
             subLabel: formatNumber(amount, 6),
+            price,
           };
         }
         if (r.source === "kamino-lend") {
