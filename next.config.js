@@ -6,6 +6,14 @@ const nextConfig = {
   // Optimize chunk loading for Vercel deployment
   webpack: (config, { isServer }) => {
     if (!isServer) {
+      // @kamino-finance/klend-sdk (and similar) may reference Node built-ins behind optional paths;
+      // the browser bundle must not try to resolve them.
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
       // Chunk splitting without fixed names to avoid CSS being loaded as JS
       // (named chunks like "vendor-js" get both .js and .css; runtime can request wrong one)
       config.optimization.splitChunks = {
