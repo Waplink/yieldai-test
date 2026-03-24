@@ -16,6 +16,10 @@ interface JupiterDepositModalProps {
   onClose: () => void;
   onConfirm: (amountUi: number) => void;
   isLoading?: boolean;
+  /** Default: "Deposit to Jupiter" */
+  title?: string;
+  /** Default: `Enter amount to deposit ${token.symbol}` */
+  description?: string;
   token: {
     symbol: string;
     logoUrl?: string;
@@ -30,8 +34,12 @@ export function JupiterDepositModal({
   onClose,
   onConfirm,
   isLoading = false,
+  title,
+  description,
   token,
 }: JupiterDepositModalProps) {
+  const dialogTitle = title ?? "Deposit to Jupiter";
+  const dialogDescription = description ?? `Enter amount to deposit ${token.symbol}`;
   const [amount, setAmount] = useState("");
   const [isYieldExpanded, setIsYieldExpanded] = useState(false);
   const amountUi = Number(amount);
@@ -78,11 +86,9 @@ export function JupiterDepositModal({
             {token.logoUrl ? (
               <Image src={token.logoUrl} alt={token.symbol} width={24} height={24} className="object-contain rounded-full" unoptimized />
             ) : null}
-            <DialogTitle>Deposit to Jupiter</DialogTitle>
+            <DialogTitle>{dialogTitle}</DialogTitle>
           </div>
-          <DialogDescription>
-            Enter amount to deposit {token.symbol}
-          </DialogDescription>
+          <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-center gap-2 py-4">

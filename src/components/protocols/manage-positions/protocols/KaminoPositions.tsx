@@ -7,12 +7,12 @@ import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ExternalLink } from "lucide-react";
 import Image from "next/image";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
+import type { Token } from "@/lib/types/token";
+import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
+import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 import {
@@ -78,6 +78,34 @@ function shortKey(value?: string): string {
 function isExternalUrl(value?: string): boolean {
   if (!value) return false;
   return /^https?:\/\//i.test(value);
+}
+
+function extractUnderlyingMintSymbol(position: unknown): { mint?: string; symbol?: string } {
+  if (!position || typeof position !== "object") return {};
+  const o = position as Record<string, unknown>;
+  const fromState = getDeep(position, "state.tokenMint");
+  const mintRaw =
+    (typeof o.tokenMint === "string" && o.tokenMint.trim()) ||
+    (typeof fromState === "string" && fromState.trim()) ||
+    (typeof getDeep(position, "vault.tokenMint") === "string" && String(getDeep(position, "vault.tokenMint")).trim()) ||
+    undefined;
+  const symRaw =
+    (typeof o.tokenSymbol === "string" && o.tokenSymbol.trim()) ||
+    (typeof getDeep(position, "state.tokenSymbol") === "string" && String(getDeep(position, "state.tokenSymbol")).trim()) ||
+    (typeof o.symbol === "string" && o.symbol.trim()) ||
+    undefined;
+  return { mint: mintRaw || undefined, symbol: symRaw || undefined };
+}
+
+function walletUiAmountForMint(tokens: Token[], mint: string | undefined): number {
+  const m = (mint ?? "").trim();
+  if (!m) return 0;
+  const token = tokens.find((t) => (t.address ?? "").trim() === m);
+  if (!token) return 0;
+  const rawAmount = Number(token.amount);
+  const decimals = Number(token.decimals);
+  if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
+  return rawAmount / Math.pow(10, decimals);
 }
 
 function parseEarnShares(position: unknown): { total: number; unstaked: number; staked: number } {
@@ -167,6 +195,8 @@ type NormalizedKaminoRow =
       typeColor: string;
       vaultAddress?: string;
       shares: { total: number; unstaked: number; staked: number };
+      underlyingMint?: string;
+      underlyingSymbol?: string;
     };
 
 function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKaminoRow {
@@ -182,6 +212,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
       const label =
         (row.vaultName && row.vaultName.trim()) ||
         (symbol ? `Kamino Farm (${symbol})` : `Kamino Farm (${shortKey(row.farmPubkey)})`);
+      const mint = (row.tokenMint ?? "").trim() || undefined;
       return {
         kind: "earn",
         id: `kamino-farm-${row.farmPubkey}-${idx}`,
@@ -194,6 +225,8 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
         typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
         vaultAddress: vaultResolved,
         shares: { total: 0, unstaked: 0, staked: 0 },
+        underlyingMint: mint,
+        underlyingSymbol: symbol,
       };
     }
     return {
@@ -249,6 +282,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
   const vaultAddress =
     extractKvaultVaultAddress(row.position) ?? extractKvaultVaultAddress(mergedForVault);
   const shares = parseEarnShares(row.position);
+  const { mint: uMint, symbol: uSym } = extractUnderlyingMintSymbol(row.position);
   return {
     kind: "earn",
     id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
@@ -260,11 +294,13 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
     typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
     vaultAddress,
     shares,
+    underlyingMint: uMint,
+    underlyingSymbol: uSym,
   };
 }
 
 export function KaminoPositions() {
-  const { address: solanaAddress, refresh: refreshSolana } = useSolanaPortfolio();
+  const { address: solanaAddress, tokens: solanaTokens, refresh: refreshSolana } = useSolanaPortfolio();
   const { toast } = useToast();
   const { publicKey, signTransaction, wallet: solanaWallet, connecting: solanaConnecting } = useSolanaWallet();
 
@@ -332,95 +368,118 @@ export function KaminoPositions() {
 
   const openEarnDeposit = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
     setEarnTarget(row);
-    setEarnAmount("");
     setEarnModal("deposit");
   }, []);
 
   const openEarnWithdraw = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
     setEarnTarget(row);
-    setEarnAmount("");
     setEarnModal("withdraw");
   }, []);
 
   const closeEarnModal = useCallback(() => {
     setEarnModal(null);
     setEarnTarget(null);
-    setEarnAmount("");
     setEarnSubmitting(false);
   }, []);
 
-  const submitEarnModal = useCallback(async () => {
-    if (!earnTarget?.vaultAddress || !effectiveSignerAddress) {
-      toast({
-        variant: "destructive",
-        title: "Wallet required",
-        description: "Connect a Solana wallet that matches your portfolio address.",
-      });
-      return;
-    }
-    if (!activeSignTransaction) {
-      toast({
-        variant: "destructive",
-        title: "Wallet cannot sign",
-        description: solanaConnecting ? "Connecting wallet…" : "This wallet cannot sign transactions.",
-      });
-      return;
-    }
+  const kaminoDepositModalToken = useMemo(() => {
+    if (!earnTarget || earnTarget.kind !== "earn") return null;
+    const sym = earnTarget.underlyingSymbol || "Token";
+    const available = walletUiAmountForMint(solanaTokens, earnTarget.underlyingMint);
+    return {
+      symbol: sym,
+      logoUrl:
+        (getPreferredJupiterTokenIcon(sym, earnTarget.fallbackLogoUrl || undefined) ??
+          earnTarget.fallbackLogoUrl) ||
+        undefined,
+      availableAmount: available,
+      apy: 0,
+      priceUsd: earnTarget.price ?? 0,
+    };
+  }, [earnTarget, solanaTokens]);
 
-    const rpc = createMainnetRpc();
-    const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
-    const signer = createWalletAdapterPartialSigner(effectiveSignerAddress, activeSignTransaction);
+  const kaminoWithdrawModalToken = useMemo(() => {
+    if (!earnTarget || earnTarget.kind !== "earn") return null;
+    return {
+      symbol: "Shares",
+      logoUrl: earnTarget.fallbackLogoUrl || undefined,
+      suppliedAmount: earnTarget.shares.total,
+    };
+  }, [earnTarget]);
 
-    const amountDec = new Decimal((earnAmount || "").trim() || "0");
-    if (!amountDec.isFinite() || amountDec.lte(0)) {
-      toast({ variant: "destructive", title: "Invalid amount", description: "Enter a positive number." });
-      return;
-    }
-
-    setEarnSubmitting(true);
-    try {
-      const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
-      const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
-
-      if (earnModal === "deposit") {
-        const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
-        const stakeExtra =
-          dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
-        const ixs = [...dep.depositIxs, ...stakeExtra];
-        const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
-        toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
-      } else {
-        const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
-        const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
-        const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
-        toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
+  const runEarnTransaction = useCallback(
+    async (mode: "deposit" | "withdraw", amountUi: number) => {
+      if (!earnTarget?.vaultAddress || !effectiveSignerAddress) {
+        toast({
+          variant: "destructive",
+          title: "Wallet required",
+          description: "Connect a Solana wallet that matches your portfolio address.",
+        });
+        return;
+      }
+      if (!activeSignTransaction) {
+        toast({
+          variant: "destructive",
+          title: "Wallet cannot sign",
+          description: solanaConnecting ? "Connecting wallet…" : "This wallet cannot sign transactions.",
+        });
+        return;
       }
 
-      closeEarnModal();
-      await refreshSolana();
-      void loadPositions();
-      window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-    } catch (e) {
-      toast({
-        variant: "destructive",
-        title: earnModal === "deposit" ? "Deposit failed" : "Withdraw failed",
-        description: getErrorMessage(e),
-      });
-    } finally {
-      setEarnSubmitting(false);
-    }
-  }, [
-    earnTarget,
-    effectiveSignerAddress,
-    activeSignTransaction,
-    earnAmount,
-    earnModal,
-    toast,
-    closeEarnModal,
-    refreshSolana,
-    solanaConnecting,
-    loadPositions,
-  ]);
+      const rpc = createMainnetRpc();
+      const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
+      const signer = createWalletAdapterPartialSigner(effectiveSignerAddress, activeSignTransaction);
+
+      const amountDec = new Decimal(amountUi);
+      if (!amountDec.isFinite() || amountDec.lte(0)) {
+        toast({ variant: "destructive", title: "Invalid amount", description: "Enter a positive number." });
+        return;
+      }
+
+      setEarnSubmitting(true);
+      try {
+        const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
+        const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
+
+        if (mode === "deposit") {
+          const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
+          const stakeExtra =
+            dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
+          const ixs = [...dep.depositIxs, ...stakeExtra];
+          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+          toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
+        } else {
+          const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
+          const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
+          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+          toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
+        }
+
+        closeEarnModal();
+        await refreshSolana();
+        void loadPositions();
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+      } catch (e) {
+        toast({
+          variant: "destructive",
+          title: mode === "deposit" ? "Deposit failed" : "Withdraw failed",
+          description: getErrorMessage(e),
+        });
+      } finally {
+        setEarnSubmitting(false);
+      }
+    },
+    [
+      earnTarget,
+      effectiveSignerAddress,
+      activeSignTransaction,
+      toast,
+      closeEarnModal,
+      refreshSolana,
+      solanaConnecting,
+      loadPositions,
+    ]
+  );
 
   if (loading) {
     return <div className="py-4 text-muted-foreground">Loading positions...</div>;
@@ -432,57 +491,40 @@ export function KaminoPositions() {
     return <div className="py-4 text-muted-foreground">No positions on Kamino.</div>;
   }
 
+  const depositSymbol = kaminoDepositModalToken?.symbol ?? "Token";
+
   return (
     <div className="space-y-4 text-base">
-      <Dialog open={earnModal !== null} onOpenChange={(o) => !o && closeEarnModal()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{earnModal === "deposit" ? "Deposit to vault" : "Withdraw from vault"}</DialogTitle>
-          </DialogHeader>
-          {earnTarget && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{earnTarget.label}</p>
-              {earnModal === "withdraw" && earnTarget.shares.total > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Share balance (approx.): {formatNumber(earnTarget.shares.total, 6)}
-                  {earnTarget.shares.staked > 0 && (
-                    <span className="block text-xs mt-1">
-                      Unstaked {formatNumber(earnTarget.shares.unstaked, 6)} · Staked{" "}
-                      {formatNumber(earnTarget.shares.staked, 6)}
-                    </span>
-                  )}
-                </p>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="kamino-earn-amount">
-                  {earnModal === "deposit" ? "Amount (vault token)" : "Share amount to withdraw"}
-                </Label>
-                <Input
-                  id="kamino-earn-amount"
-                  inputMode="decimal"
-                  placeholder={earnModal === "deposit" ? "0.0" : "0.0"}
-                  value={earnAmount}
-                  onChange={(e) => setEarnAmount(e.target.value)}
-                  disabled={earnSubmitting}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {earnModal === "deposit"
-                    ? "Deposit uses the vault’s underlying token amount."
-                    : "Enter shares in vault share units (same decimals as on Kamino). Any amount larger than your balance withdraws all."}
-                </p>
-              </div>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={closeEarnModal} disabled={earnSubmitting}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => void submitEarnModal()} disabled={earnSubmitting}>
-              {earnSubmitting ? "Submitting…" : earnModal === "deposit" ? "Deposit" : "Withdraw"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {kaminoDepositModalToken ? (
+        <JupiterDepositModal
+          isOpen={earnModal === "deposit"}
+          onClose={closeEarnModal}
+          onConfirm={(amountUi) => void runEarnTransaction("deposit", amountUi)}
+          isLoading={earnSubmitting}
+          title="Deposit to Kamino"
+          description={
+            earnTarget ? `${earnTarget.label}. Enter amount to deposit ${depositSymbol}.` : undefined
+          }
+          token={kaminoDepositModalToken}
+        />
+      ) : null}
+
+      {kaminoWithdrawModalToken ? (
+        <JupiterWithdrawModal
+          isOpen={earnModal === "withdraw"}
+          onClose={closeEarnModal}
+          onConfirm={(amountUi) => void runEarnTransaction("withdraw", amountUi)}
+          isLoading={earnSubmitting}
+          title="Withdraw from Kamino"
+          description={
+            earnTarget && earnTarget.shares.total > 0
+              ? `${earnTarget.label}. Select the percentage of vault shares to withdraw.`
+              : `${earnTarget?.label ?? "Vault"}. Enter vault share amount (Kamino share units).`
+          }
+          useAmountInput={earnTarget ? earnTarget.shares.total <= 0 : false}
+          token={kaminoWithdrawModalToken}
+        />
+      ) : null}
 
       <ScrollArea>
         {sorted.map((position) => (
