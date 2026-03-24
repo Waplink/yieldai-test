@@ -465,7 +465,7 @@
     "depositType": "external",
     "depositUrl": "https://kamino.com/lend",
     "isDepositEnabled": true,
-    "managedType": "external",
+    "managedType": "native",
     "socialMedia": {
       "twitter": "https://x.com/KaminoFinance"
     },
