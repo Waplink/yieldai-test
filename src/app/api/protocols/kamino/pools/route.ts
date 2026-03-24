@@ -9,23 +9,21 @@ const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
 
-type KaminoMarket = {
-  lendingMarket: string;
-  isPrimary?: boolean;
-  name?: string;
+type KaminoVaultRow = {
+  address: string;
+  state?: {
+    name?: string;
+    tokenMint?: string;
+    tokenMintDecimals?: number;
+    vaultFarm?: string;
+  };
 };
 
-type KaminoReserveMetrics = {
-  reserve: string;
-  liquidityToken: string;
-  liquidityTokenMint: string;
-  maxLtv: string;
-  borrowApy: string;
-  supplyApy: string;
-  totalSupply: string;
-  totalBorrow: string;
-  totalBorrowUsd: string;
-  totalSupplyUsd: string;
+type KaminoVaultMetrics = {
+  apy?: string | number;
+  tokenPrice?: string | number;
+  tokensAvailableUsd?: string | number;
+  tokensInvestedUsd?: string | number;
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -93,18 +91,26 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
   throw lastError instanceof Error ? lastError : new Error("Kamino request failed after retries");
 }
 
+function isLikelyProductionVaultName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  if (!n) return false;
+  // Exclude obvious internal/test/staging/dev labels from Ideas Pro protocol list.
+  const deny = ["test", "stg", "staging", "dev", "dummy"];
+  return !deny.some((k) => n.includes(k));
+}
+
 export async function GET() {
   try {
-    const marketsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/v2/kamino-market`, {
+    const vaultsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults`, {
       method: "GET",
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
 
-    if (!marketsRes.ok) {
-      console.warn("[Kamino][Pools] markets API unavailable, returning empty data", {
-        status: marketsRes.status,
-        statusText: marketsRes.statusText,
+    if (!vaultsRes.ok) {
+      console.warn("[Kamino][Pools] kvaults API unavailable, returning empty data", {
+        status: vaultsRes.status,
+        statusText: vaultsRes.statusText,
       });
       return NextResponse.json({
         success: true,
@@ -113,51 +119,15 @@ export async function GET() {
       });
     }
 
-    const markets = (await marketsRes.json()) as KaminoMarket[];
-    const marketList = Array.isArray(markets) ? markets : [];
-    const allReserveMetrics: Array<KaminoReserveMetrics & { marketPubkey: string; marketName?: string }> = [];
+    const allVaults = (await vaultsRes.json()) as KaminoVaultRow[];
+    const vaults = Array.isArray(allVaults) ? allVaults : [];
+    const candidates = vaults.filter((v) => {
+      const vaultName = String(v.state?.name ?? "").trim();
+      const tokenMint = String(v.state?.tokenMint ?? "").trim();
+      return !!v.address && !!tokenMint && isLikelyProductionVaultName(vaultName);
+    });
 
-    // Keep this intentionally sequential to reduce the chance of rate-limits on unauthenticated requests.
-    // We query ALL markets so multiple USDC variants (Gauntlet/Steakhouse/etc.) show up separately.
-    for (const market of marketList) {
-      if (!market?.lendingMarket) continue;
-
-      const metricsRes = await fetchWithRetry(
-        `${KAMINO_API_BASE_URL}/kamino-market/${market.lendingMarket}/reserves/metrics?env=mainnet-beta`,
-        {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        }
-      );
-
-      if (!metricsRes.ok) {
-        console.warn("[Kamino][Pools] reserves metrics API unavailable, returning empty data", {
-          market: market.lendingMarket,
-          status: metricsRes.status,
-          statusText: metricsRes.statusText,
-        });
-        return NextResponse.json({
-          success: true,
-          data: [],
-          count: 0,
-        });
-      }
-
-      const metrics = (await metricsRes.json()) as KaminoReserveMetrics[];
-      if (Array.isArray(metrics)) {
-        for (const m of metrics) {
-          allReserveMetrics.push({ ...m, marketPubkey: market.lendingMarket, marketName: market.name });
-        }
-      }
-    }
-
-    // Filter out empty pools.
-    const filtered = allReserveMetrics.filter((m) => toNumber(m.totalSupplyUsd, 0) > 0);
-
-    const tokenMints = Array.from(
-      new Set(filtered.map((m) => m.liquidityTokenMint).filter(Boolean))
-    );
+    const tokenMints = Array.from(new Set(candidates.map((v) => String(v.state?.tokenMint ?? "").trim())));
 
     // Best-effort metadata enrichment (symbol/decimals/logo). If it fails, we still return pools.
     let metadataMap: Record<string, { symbol?: string; decimals?: number; logoUrl?: string }> = {};
@@ -170,18 +140,11 @@ export async function GET() {
     }
 
     const displaySymbolByMint = new Map<string, string>();
-    for (const reserve of filtered) {
-      const mint = reserve.liquidityTokenMint;
+    for (const mint of tokenMints) {
       if (!mint || displaySymbolByMint.has(mint)) continue;
       const meta = metadataMap[mint];
-      displaySymbolByMint.set(mint, normalizeLiquiditySymbol(meta?.symbol || reserve.liquidityToken, mint));
-    }
-
-    const mintCount = new Map<string, number>();
-    for (const r of filtered) {
-      const mint = r.liquidityTokenMint;
-      if (!mint) continue;
-      mintCount.set(mint, (mintCount.get(mint) ?? 0) + 1);
+      const fallback = mint === NATIVE_MINT.toBase58() ? "SOL" : "Unknown";
+      displaySymbolByMint.set(mint, normalizeLiquiditySymbol(meta?.symbol || fallback, mint));
     }
 
     const iconByMint = new Map<string, string | undefined>();
@@ -189,41 +152,60 @@ export async function GET() {
       iconByMint.set(mint, await resolveLocalTokenIconBySymbol(symbol));
     }
 
-    const data: InvestmentData[] = filtered.map((m) => {
-      const tokenMint = m.liquidityTokenMint;
-      const meta = tokenMint ? metadataMap[tokenMint] : undefined;
+    const data: InvestmentData[] = [];
+    // Sequential to avoid aggressive rate limits on /metrics endpoint.
+    for (const v of candidates) {
+      const vaultAddress = v.address;
+      const vaultName = String(v.state?.name ?? "").trim();
+      const tokenMint = String(v.state?.tokenMint ?? "").trim();
+      if (!vaultAddress || !vaultName || !tokenMint) continue;
 
-      const baseAsset = normalizeLiquiditySymbol(meta?.symbol || m.liquidityToken, tokenMint);
-      const marketSuffix =
-        tokenMint && (mintCount.get(tokenMint) ?? 0) > 1 && m.marketName
-          ? ` (${m.marketName})`
-          : "";
-      const asset = `${baseAsset}${marketSuffix}`;
-      const depositApy = toApyPct(m.supplyApy);
-      const borrowApy = toApyPct(m.borrowApy);
-      const tvlUSD = toNumber(m.totalSupplyUsd, 0);
-      const localIcon = tokenMint ? iconByMint.get(tokenMint) : undefined;
+      let metrics: KaminoVaultMetrics | null = null;
+      try {
+        const mr = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults/${vaultAddress}/metrics`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!mr.ok) continue;
+        metrics = (await mr.json().catch(() => null)) as KaminoVaultMetrics | null;
+      } catch {
+        continue;
+      }
+      if (!metrics) continue;
 
-      return {
-        asset,
+      const depositApy = toApyPct(metrics.apy);
+      if (depositApy < 1) continue;
+
+      const tvlUSD = toNumber(metrics.tokensInvestedUsd, 0) + toNumber(metrics.tokensAvailableUsd, 0);
+      const meta = metadataMap[tokenMint];
+      const symbol = displaySymbolByMint.get(tokenMint) || "Unknown";
+      const localIcon = iconByMint.get(tokenMint);
+
+      data.push({
+        // For Ideas Pro: show vault market name from kvault catalog.
+        asset: vaultName,
         provider: "Kamino",
         totalAPY: depositApy,
         depositApy,
-        borrowAPY: borrowApy,
+        // KVaults are yield vaults; borrow APR is not part of this product surface.
+        borrowAPY: 0,
         token: tokenMint,
         tokenDecimals: typeof meta?.decimals === "number" ? meta.decimals : undefined,
         protocol: "Kamino",
         logoUrl: localIcon || meta?.logoUrl,
         tvlUSD,
         dailyVolumeUSD: 0,
-        poolType: "Lending",
+        poolType: "Vault",
         originalPool: {
-          marketPubkey: m.marketPubkey,
-          marketName: m.marketName,
-          reserve: m.reserve,
+          vaultAddress,
+          vaultName,
+          tokenMint,
+          tokenSymbol: symbol,
+          vaultFarm: v.state?.vaultFarm,
         },
-      };
-    }).filter((pool) => (pool.totalAPY || 0) > 1);
+      });
+    }
 
     data.sort((a, b) => (b.totalAPY || 0) - (a.totalAPY || 0));
 
