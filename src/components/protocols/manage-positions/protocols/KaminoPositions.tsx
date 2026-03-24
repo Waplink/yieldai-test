@@ -79,8 +79,21 @@ function isExternalUrl(value?: string): boolean {
 function parseEarnVaultAddress(position: unknown): string | undefined {
   if (!position || typeof position !== "object") return undefined;
   const o = position as Record<string, unknown>;
-  const a = o.vaultAddress ?? o.vault ?? o.vaultPubkey;
-  if (typeof a === "string" && a.trim().length > 0) return a.trim();
+  // API: usually `vaultAddress`; some responses use root `address` for the vault (see Kamino OpenAPI).
+  const direct = o.vaultAddress ?? o.vaultPubkey ?? o.address ?? o.earnVaultAddress;
+  if (typeof direct === "string" && direct.trim().length > 0) return direct.trim();
+  const nested =
+    getDeep(position, "vault.address") ??
+    getDeep(position, "vault.vaultAddress") ??
+    getDeep(position, "earnVaultAddress");
+  if (typeof nested === "string" && nested.trim().length > 0) return nested.trim();
+  const vault = o.vault;
+  if (vault && typeof vault === "object") {
+    const vo = vault as Record<string, unknown>;
+    const addr = vo.address ?? vo.pubkey ?? vo.vaultAddress;
+    if (typeof addr === "string" && addr.trim().length > 0) return addr.trim();
+  }
+  if (typeof o.vault === "string" && o.vault.trim().length > 0) return o.vault.trim();
   return undefined;
 }
 

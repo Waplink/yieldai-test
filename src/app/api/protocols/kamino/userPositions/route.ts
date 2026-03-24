@@ -68,6 +68,34 @@ function hasEarnVaultBalance(item: unknown): boolean {
   );
 }
 
+/** Kamino API returns vault pubkey as `vaultAddress` or (in nested rows) as `address` — normalize for clients. */
+function extractKvaultVaultAddress(pos: unknown): string | undefined {
+  if (!pos || typeof pos !== "object") return undefined;
+  const o = pos as Record<string, unknown>;
+  const tryStr = (v: unknown): string | undefined =>
+    typeof v === "string" && v.trim().length > 0 && isLikelySolanaAddress(v.trim()) ? v.trim() : undefined;
+
+  const direct =
+    tryStr(o.vaultAddress) ?? tryStr(o.vaultPubkey) ?? tryStr(o.address) ?? tryStr(o.earnVaultAddress);
+  if (direct) return direct;
+
+  const vault = o.vault;
+  if (vault && typeof vault === "object") {
+    const v = vault as Record<string, unknown>;
+    const nested = tryStr(v.address) ?? tryStr(v.vaultAddress) ?? tryStr(v.pubkey);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function enrichEarnPositionPayload(pos: unknown): unknown {
+  const vaultAddress = extractKvaultVaultAddress(pos);
+  if (!vaultAddress || !pos || typeof pos !== "object") return pos;
+  const o = pos as Record<string, unknown>;
+  if (typeof o.vaultAddress === "string" && o.vaultAddress.trim() === vaultAddress) return pos;
+  return { ...o, vaultAddress };
+}
+
 export type KaminoUserPositionRow =
   | {
       source: "kamino-lend";
@@ -342,7 +370,7 @@ export async function GET(request: NextRequest) {
 
     for (const pos of earnRaw) {
       if (!hasEarnVaultBalance(pos)) continue;
-      flat.push({ source: "kamino-earn", position: pos });
+      flat.push({ source: "kamino-earn", position: enrichEarnPositionPayload(pos) });
     }
 
     let farmTx: KaminoFarmTx[] = [];
