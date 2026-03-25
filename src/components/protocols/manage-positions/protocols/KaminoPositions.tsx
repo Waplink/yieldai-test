@@ -408,7 +408,6 @@ export function KaminoPositions() {
           earnTarget.fallbackLogoUrl) ||
         undefined,
       suppliedAmount: earnTarget.shares.total,
-      amountSymbol: "shares",
     };
   }, [earnTarget]);
 
@@ -520,7 +519,6 @@ export function KaminoPositions() {
           onClose={closeEarnModal}
           onConfirm={(amountUi) => void runEarnTransaction("withdraw", amountUi)}
           isLoading={earnSubmitting}
-          useAmountInput={earnTarget ? earnTarget.shares.total <= 0 : false}
           token={kaminoWithdrawModalToken}
         />
       ) : null}
