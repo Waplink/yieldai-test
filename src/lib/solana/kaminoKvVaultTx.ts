@@ -124,6 +124,36 @@ export async function sendKitInstructionsWithWallet(
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
   const wire = getBase64EncodedWireTransaction(signedTransaction);
   const raw = base64ToBytes(wire);
+
+  // Sanity-check signature & fee payer before hitting RPC.
+  try {
+    const vtx = VersionedTransaction.deserialize(raw);
+    const feePayerPk = vtx.message.staticAccountKeys?.[0]?.toBase58?.() ?? "";
+    const expectedFeePayer = String(feePayerSigner.address);
+    const sig0 = vtx.signatures?.[0];
+    const sig0Empty = !sig0 || sig0.length !== 64 || sig0.every((b) => b === 0);
+    if (!feePayerPk || feePayerPk !== expectedFeePayer) {
+      throw new Error(`Fee payer mismatch. tx=${feePayerPk || "unknown"} signer=${expectedFeePayer}`);
+    }
+    if (sig0Empty) {
+      throw new Error("Missing fee payer signature (index 0)");
+    }
+
+    const sim = await connection.simulateTransaction(vtx, { sigVerify: true, commitment: "processed" });
+    if (sim.value.err) {
+      const logs = sim.value.logs ?? [];
+      throw new Error(
+        `Preflight simulation failed: ${JSON.stringify(sim.value.err)}${logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`
+      );
+    }
+  } catch (e) {
+    // If simulateTransaction fails (e.g. RPC issues), proceed to sendRawTransaction to preserve existing behavior,
+    // but surface signature/fee-payer issues early.
+    if (e instanceof Error && /Fee payer mismatch|Missing fee payer signature|Preflight simulation failed/.test(e.message)) {
+      throw e;
+    }
+  }
+
   try {
     const sentSig = await connection.sendRawTransaction(raw, {
       skipPreflight: false,
