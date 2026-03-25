@@ -603,7 +603,8 @@ export function KaminoPositions() {
 
         closeEarnModal();
         // Refresh UI immediately (show loading), then refetch after Kamino API catches up.
-        schedulePositionsRefresh(5000, 10000);
+        // Withdraw updates can lag longer than deposits.
+        schedulePositionsRefresh(10000, 10000);
       } catch (e) {
         toast({
           variant: "destructive",
