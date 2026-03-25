@@ -363,7 +363,71 @@ export function KaminoPositions() {
   }, [loadPositions]);
 
   const normalized = useMemo(() => positions.map(normalizeKaminoPosition), [positions]);
-  const sorted = useMemo(() => [...normalized].sort((a, b) => b.valueUsd - a.valueUsd), [normalized]);
+
+  // De-dupe kVault positions: the same vault can appear as:
+  // - `kamino-earn` (has shares for withdraw)
+  // - `kamino-farm` aggregated (has value/amount/price)
+  // Merge them so the card and withdraw modal are both correct.
+  const merged = useMemo(() => {
+    const out: NormalizedKaminoRow[] = [];
+    const byVault = new Map<string, Extract<NormalizedKaminoRow, { kind: "earn" }>>();
+
+    const mergeEarn = (
+      a: Extract<NormalizedKaminoRow, { kind: "earn" }>,
+      b: Extract<NormalizedKaminoRow, { kind: "earn" }>
+    ): Extract<NormalizedKaminoRow, { kind: "earn" }> => {
+      const pickLabel = (x: string, y: string) => {
+        const nx = (x || "").trim();
+        const ny = (y || "").trim();
+        if (!nx) return ny;
+        if (!ny) return nx;
+        // Prefer non-generic, non "Kamino Farm" label when possible.
+        const xScore = nx.toLowerCase().includes("kamino earn") ? 0 : nx.toLowerCase().includes("kamino farm") ? 1 : 2;
+        const yScore = ny.toLowerCase().includes("kamino earn") ? 0 : ny.toLowerCase().includes("kamino farm") ? 1 : 2;
+        if (xScore !== yScore) return xScore > yScore ? nx : ny;
+        return nx.length >= ny.length ? nx : ny;
+      };
+
+      return {
+        kind: "earn",
+        id: a.vaultAddress ? `kamino-earn-${a.vaultAddress}` : a.id,
+        label: pickLabel(a.label, b.label),
+        fallbackLogoUrl: a.fallbackLogoUrl || b.fallbackLogoUrl,
+        valueUsd: Math.max(a.valueUsd || 0, b.valueUsd || 0),
+        amount: Math.max(a.amount || 0, b.amount || 0),
+        price: (a.price ?? 0) > 0 ? a.price : b.price,
+        typeLabel: a.typeLabel,
+        typeColor: a.typeColor,
+        vaultAddress: a.vaultAddress || b.vaultAddress,
+        shares: {
+          total: Math.max(a.shares?.total || 0, b.shares?.total || 0),
+          unstaked: Math.max(a.shares?.unstaked || 0, b.shares?.unstaked || 0),
+          staked: Math.max(a.shares?.staked || 0, b.shares?.staked || 0),
+        },
+        underlyingMint: a.underlyingMint || b.underlyingMint,
+        underlyingSymbol: a.underlyingSymbol || b.underlyingSymbol,
+      };
+    };
+
+    for (const row of normalized) {
+      if (row.kind !== "earn" || !row.vaultAddress) {
+        out.push(row);
+        continue;
+      }
+      const key = row.vaultAddress.trim();
+      const prev = byVault.get(key);
+      if (!prev) {
+        byVault.set(key, row);
+      } else {
+        byVault.set(key, mergeEarn(prev, row));
+      }
+    }
+
+    out.push(...byVault.values());
+    return out;
+  }, [normalized]);
+
+  const sorted = useMemo(() => [...merged].sort((a, b) => b.valueUsd - a.valueUsd), [merged]);
   const totalValue = useMemo(() => sorted.reduce((sum, p) => sum + p.valueUsd, 0), [sorted]);
 
   const openEarnDeposit = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
