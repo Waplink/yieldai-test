@@ -996,7 +996,7 @@ export function DepositButton({
         window.setTimeout(() => {
           void refreshSolana();
           window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-        }, 3000);
+        }, 10000);
       }
       toast({
         title: "Deposit submitted",
