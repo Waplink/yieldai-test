@@ -1746,7 +1746,10 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   protocol={protocol}
                                   className="w-full"
                                   tokenIn={{
-                                    symbol: displaySymbol,
+                                    symbol:
+                                      item.protocol === "Kamino"
+                                        ? String(item.originalPool?.tokenSymbol ?? displaySymbol)
+                                        : displaySymbol,
                                     logo: logoUrl || '/file.svg',
                                     decimals:
                                       protocol?.name === 'Jupiter' || protocol?.name === 'Kamino'
@@ -1768,7 +1771,11 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                       ? String(item.originalPool.vaultAddress)
                                       : undefined
                                   }
-                                  kaminoVaultLabel={item.protocol === 'Kamino' ? item.asset : undefined}
+                                  kaminoVaultLabel={
+                                    item.protocol === "Kamino"
+                                      ? String(item.originalPool?.tokenSymbol ?? displaySymbol)
+                                      : undefined
+                                  }
                                   kaminoDepositApy={item.protocol === 'Kamino' ? item.depositApy : undefined}
                                 />
                               )
