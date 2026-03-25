@@ -83,13 +83,21 @@ export function createWalletAdapterPartialSigner(
       for (const kitTx of transactions) {
         const vtx = kitTransactionToVersionedTransaction(kitTx);
         const signed = await signTransaction(vtx);
-        // Wallet-adapter returns signatures by index, not keyed by address.
-        // Fee payer signature is always index 0 in Solana transactions.
-        const sig0 = signed.signatures?.[0];
-        if (!sig0 || sig0.length !== 64 || sig0.every((b) => b === 0)) {
+        // Wallet-adapter returns signatures by index. We must pick the index that corresponds
+        // to the requested signer pubkey among required signers.
+        const keys = signed.message.staticAccountKeys;
+        const required = signed.message.header.numRequiredSignatures;
+        const signerIndex = keys
+          .slice(0, required)
+          .findIndex((k) => k.toBase58() === walletAddressBase58);
+        if (signerIndex < 0) {
+          throw new Error("Signer pubkey not found in required signers");
+        }
+        const sig = signed.signatures?.[signerIndex];
+        if (!sig || sig.length !== 64 || sig.every((b) => b === 0)) {
           throw new Error("Wallet did not return a valid signature for this transaction");
         }
-        out.push({ [addr]: new Uint8Array(sig0) as SignatureBytes } as SignatureDictionary);
+        out.push({ [addr]: new Uint8Array(sig) as SignatureBytes } as SignatureDictionary);
       }
       return out;
     },
