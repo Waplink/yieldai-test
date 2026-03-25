@@ -992,9 +992,11 @@ export function DepositButton({
         signerAddress: resolvedSignerAddress,
         signTransaction: resolvedSignTransaction as (tx: VersionedTransaction) => Promise<VersionedTransaction>,
       });
-      await refreshSolana();
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        window.setTimeout(() => {
+          void refreshSolana();
+          window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        }, 3000);
       }
       toast({
         title: "Deposit submitted",

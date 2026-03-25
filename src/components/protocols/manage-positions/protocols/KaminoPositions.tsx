@@ -546,9 +546,13 @@ export function KaminoPositions() {
         }
 
         closeEarnModal();
-        await refreshSolana();
-        await loadPositions();
-        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => {
+            void refreshSolana();
+            void loadPositions();
+            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+          }, 3000);
+        }
       } catch (e) {
         toast({
           variant: "destructive",
