@@ -543,6 +543,20 @@ export function KaminoPositions() {
         await refreshSolana();
         void loadPositions();
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        // Kamino APIs can lag right after tx confirmation; schedule a couple of delayed refreshes
+        // so Manage Positions + sidebar positions catch up.
+        if (typeof window !== "undefined") {
+          window.setTimeout(() => {
+            void refreshSolana();
+            void loadPositions();
+            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+          }, 3000);
+          window.setTimeout(() => {
+            void refreshSolana();
+            void loadPositions();
+            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+          }, 10000);
+        }
       } catch (e) {
         toast({
           variant: "destructive",
