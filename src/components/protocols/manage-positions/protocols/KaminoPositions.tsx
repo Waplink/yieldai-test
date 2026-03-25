@@ -308,17 +308,20 @@ export function KaminoPositions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // IMPORTANT: signer address must match the wallet adapter used to sign.
+  // Prefer adapter publicKey/signTransaction because some wallets can leave hook values stale.
   const adapterPublicKey = (solanaWallet?.adapter?.publicKey as PublicKey | null) ?? null;
   const adapterAddress = toBase58Address(adapterPublicKey);
-  const effectiveSignerAddress = toBase58Address(publicKey) || adapterAddress || "";
+  const hookAddress = toBase58Address(publicKey);
+  const effectiveSignerAddress = adapterAddress || hookAddress || "";
 
   const adapterSignTransaction =
     typeof (solanaWallet?.adapter as { signTransaction?: unknown } | undefined)?.signTransaction === "function"
-      ? ((solanaWallet?.adapter as { signTransaction: (t: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction> }).signTransaction.bind(
-          solanaWallet?.adapter
-        ) as (t: VersionedTransaction) => Promise<VersionedTransaction>)
+      ? ((solanaWallet?.adapter as {
+          signTransaction: (t: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction>;
+        }).signTransaction.bind(solanaWallet?.adapter) as (t: VersionedTransaction) => Promise<VersionedTransaction>)
       : undefined;
-  const activeSignTransaction = signTransaction ?? adapterSignTransaction;
+  const activeSignTransaction = adapterSignTransaction ?? signTransaction;
 
   const [earnModal, setEarnModal] = useState<"deposit" | "withdraw" | null>(null);
   const [earnTarget, setEarnTarget] = useState<Extract<NormalizedKaminoRow, { kind: "earn" }> | null>(null);
