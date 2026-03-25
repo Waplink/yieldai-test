@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Loader2 } from "lucide-react";
 import { formatNumber } from "@/lib/utils/numberFormat";
@@ -15,71 +13,40 @@ interface JupiterWithdrawModalProps {
   onClose: () => void;
   onConfirm: (amountUi: number) => void;
   isLoading?: boolean;
-  /** Default: `Withdraw ${token.symbol}` */
-  title?: string;
-  /** Default: Jupiter position copy */
-  description?: string;
-  /**
-   * Amount input + Half/Max instead of %-slider (e.g. vault shares when API balance is missing).
-   */
-  useAmountInput?: boolean;
   token: {
     symbol: string;
     logoUrl?: string;
+    /** Available balance in UI units. */
     suppliedAmount: number;
-    /** Suffix for Supplied/Withdraw amounts (e.g. "shares" for kVault). Defaults to symbol. */
-    amountSymbol?: string;
   };
 }
 
+/**
+ * Withdraw modal UI aligned with `WithdrawModal` (Moar/Echelon):
+ * - Slider percentage
+ * - MAX (100%) button
+ * - "Available Balance" + "Withdraw Amount" rows
+ */
 export function JupiterWithdrawModal({
   isOpen,
   onClose,
   onConfirm,
   isLoading = false,
-  title,
-  description,
-  useAmountInput = false,
   token,
 }: JupiterWithdrawModalProps) {
   const [percentage, setPercentage] = useState<number[]>([100]);
-  const [amount, setAmount] = useState("");
-
-  const amountUnit = token.amountSymbol ?? token.symbol;
-  const dialogTitle = title ?? `Withdraw ${token.symbol}`;
-  const dialogDescription =
-    description ??
-    (useAmountInput
-      ? `Enter the amount to withdraw in ${amountUnit}.`
-      : "Select the percentage to withdraw from your position.");
 
   useEffect(() => {
     if (!isOpen) {
       setPercentage([100]);
-      setAmount("");
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen || !useAmountInput) return;
-    if (token.suppliedAmount > 0) {
-      setAmount(String(token.suppliedAmount));
-    } else {
-      setAmount("");
-    }
-  }, [isOpen, useAmountInput, token.suppliedAmount]);
-
-  const amountUiSlider = useMemo(() => {
+  const amountUi = useMemo(() => {
     return (token.suppliedAmount * percentage[0]) / 100;
   }, [token.suppliedAmount, percentage]);
 
-  const amountUiInput = Number(amount);
-  const inputValid = Number.isFinite(amountUiInput) && amountUiInput > 0;
-  const inputExceeds =
-    inputValid && token.suppliedAmount > 0 && amountUiInput > token.suppliedAmount + 1e-12;
-
-  const amountUi = useAmountInput ? amountUiInput : amountUiSlider;
-  const canSubmit = useAmountInput ? inputValid && !inputExceeds : amountUiSlider > 0;
+  const canSubmit = Number.isFinite(amountUi) && amountUi > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
@@ -89,59 +56,17 @@ export function JupiterWithdrawModal({
             {token.logoUrl ? (
               <Image src={token.logoUrl} alt={token.symbol} width={24} height={24} className="object-contain rounded-full" unoptimized />
             ) : null}
-            {dialogTitle}
+            Withdraw {token.symbol}
           </DialogTitle>
-          <DialogDescription className="text-sm">{dialogDescription}</DialogDescription>
+          <DialogDescription className="text-sm">
+            Enter the amount you want to withdraw from your position
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {useAmountInput ? (
-            <div className="grid gap-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="jupiter-withdraw-amount-input" className="text-right">
-                  Amount
-                </Label>
-                <div className="col-span-3 flex flex-wrap items-center gap-2">
-                  <Input
-                    id="jupiter-withdraw-amount-input"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
-                    disabled={isLoading}
-                    className={inputExceeds ? "border-destructive text-destructive" : ""}
-                  />
-                  <span className="text-sm">{amountUnit}</span>
-                </div>
-              </div>
-              {inputExceeds ? (
-                <p className="text-sm text-destructive -mt-2">Amount exceeds available balance.</p>
-              ) : null}
-              {token.suppliedAmount > 0 ? (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAmount(String(token.suppliedAmount / 2))}
-                    disabled={isLoading}
-                  >
-                    Half
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAmount(String(token.suppliedAmount))}
-                    disabled={isLoading}
-                  >
-                    Max
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="space-y-2">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Withdraw Percentage</div>
+            <div className="space-y-4">
               <Slider
                 value={percentage}
                 onValueChange={setPercentage}
@@ -151,25 +76,35 @@ export function JupiterWithdrawModal({
                 disabled={isLoading}
                 className="w-full"
               />
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">0%</span>
-                <span className="font-semibold">{percentage[0]}%</span>
-                <span className="text-muted-foreground">100%</span>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">0%</span>
+                <span className="text-lg font-semibold">{percentage[0]}%</span>
+                <span className="text-sm text-muted-foreground">100%</span>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPercentage([100])}
+                disabled={isLoading}
+                className="w-full h-10 sm:h-9"
+              >
+                MAX (100%)
+              </Button>
             </div>
-          )}
+          </div>
 
-          <div className="rounded-md border p-3 text-sm space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Supplied</span>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Available Balance:</span>
               <span>
-                {formatNumber(token.suppliedAmount, 6)} {amountUnit}
+                {formatNumber(token.suppliedAmount, 6)} {token.symbol}
               </span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Withdraw</span>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Withdraw Amount:</span>
               <span>
-                {formatNumber(amountUi, 6)} {amountUnit}
+                {formatNumber(amountUi, 6)} {token.symbol}
               </span>
             </div>
           </div>
