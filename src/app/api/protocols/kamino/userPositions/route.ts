@@ -65,12 +65,45 @@ function hasEarnVaultBalance(item: unknown): boolean {
   );
 }
 
-function enrichEarnPositionPayload(pos: unknown): unknown {
+type KaminoVaultMeta = {
+  vaultAddress: string;
+  vaultName?: string;
+  tokenMint?: string;
+  tokenSymbol?: string;
+  tokenLogoUrl?: string;
+};
+
+function buildVaultAddressToMetaMap(vaults: KaminoVaultCatalogRow[]): Map<string, KaminoVaultMeta> {
+  const m = new Map<string, KaminoVaultMeta>();
+  for (const v of vaults) {
+    const addr = typeof v?.address === "string" ? v.address.trim() : "";
+    if (!addr) continue;
+    const vaultName = typeof v.state?.name === "string" ? v.state.name.trim() : undefined;
+    const tokenMint = typeof v.state?.tokenMint === "string" ? v.state.tokenMint.trim() : undefined;
+    const known = tokenMint ? KNOWN_SOLANA_TOKEN_BY_MINT[tokenMint] : undefined;
+    m.set(addr, {
+      vaultAddress: addr,
+      vaultName,
+      tokenMint,
+      tokenSymbol: known?.symbol,
+      tokenLogoUrl: known?.logoUrl,
+    });
+  }
+  return m;
+}
+
+function enrichEarnPositionPayload(pos: unknown, vaultMetaByAddress: Map<string, KaminoVaultMeta>): unknown {
   const vaultAddress = extractKvaultVaultAddress(pos);
   if (!vaultAddress || !pos || typeof pos !== "object") return pos;
   const o = pos as Record<string, unknown>;
-  if (typeof o.vaultAddress === "string" && o.vaultAddress.trim() === vaultAddress) return pos;
-  return { ...o, vaultAddress };
+  const meta = vaultMetaByAddress.get(vaultAddress);
+
+  const out: Record<string, unknown> = { ...o, vaultAddress };
+  if (meta?.vaultName && typeof out.vaultName !== "string") out.vaultName = meta.vaultName;
+  if (meta?.tokenMint && typeof out.tokenMint !== "string") out.tokenMint = meta.tokenMint;
+  if (meta?.tokenSymbol && typeof out.tokenSymbol !== "string") out.tokenSymbol = meta.tokenSymbol;
+  if (meta?.tokenLogoUrl && typeof out.tokenLogoUrl !== "string") out.tokenLogoUrl = meta.tokenLogoUrl;
+  return out;
 }
 
 export type KaminoUserPositionRow =
@@ -315,6 +348,23 @@ export async function GET(request: NextRequest) {
     const markets = (await marketsRes.json()) as KaminoMarketRow[];
     const marketList = Array.isArray(markets) ? markets : [];
 
+    // kVault catalog used to enrich both Earn positions and Farm aggregations.
+    let vaultCatalog: KaminoVaultCatalogRow[] = [];
+    try {
+      const vaultsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (vaultsRes.ok) {
+        const j = await vaultsRes.json().catch(() => []);
+        vaultCatalog = Array.isArray(j) ? j : [];
+      }
+    } catch {
+      vaultCatalog = [];
+    }
+    const vaultMetaByAddress = buildVaultAddressToMetaMap(vaultCatalog);
+
     const obligationResults = await Promise.all(
       marketList.map(async (m) => {
         if (!m?.lendingMarket) {
@@ -375,7 +425,7 @@ export async function GET(request: NextRequest) {
 
     for (const pos of earnRaw) {
       if (!hasEarnVaultBalance(pos)) continue;
-      flat.push({ source: "kamino-earn", position: enrichEarnPositionPayload(pos) });
+      flat.push({ source: "kamino-earn", position: enrichEarnPositionPayload(pos, vaultMetaByAddress) });
     }
 
     let farmTx: KaminoFarmTx[] = [];
@@ -388,21 +438,7 @@ export async function GET(request: NextRequest) {
     const farmRows = aggregateFarmPositions(farmTx);
     const farmRowsWithMeta = await enrichFarmRowsWithTokenMetadata(farmRows);
 
-    let farmVaultCatalog: KaminoVaultCatalogRow[] = [];
-    try {
-      const vaultsRes = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      });
-      if (vaultsRes.ok) {
-        const j = await vaultsRes.json().catch(() => []);
-        farmVaultCatalog = Array.isArray(j) ? j : [];
-      }
-    } catch {
-      farmVaultCatalog = [];
-    }
-    const farmToVault = buildFarmPubkeyToVaultMap(farmVaultCatalog);
+    const farmToVault = buildFarmPubkeyToVaultMap(vaultCatalog);
     const farmRowsResolved = farmRowsWithMeta.map((r) => {
       if (r.source !== "kamino-farm") return r;
       const meta = farmToVault.get(r.farmPubkey.trim());
