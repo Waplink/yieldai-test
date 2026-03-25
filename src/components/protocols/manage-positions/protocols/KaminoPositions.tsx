@@ -400,10 +400,15 @@ export function KaminoPositions() {
 
   const kaminoWithdrawModalToken = useMemo(() => {
     if (!earnTarget || earnTarget.kind !== "earn") return null;
+    const sym = earnTarget.underlyingSymbol || "Token";
     return {
-      symbol: "Shares",
-      logoUrl: earnTarget.fallbackLogoUrl || undefined,
+      symbol: sym,
+      logoUrl:
+        (getPreferredJupiterTokenIcon(sym, earnTarget.fallbackLogoUrl || undefined) ??
+          earnTarget.fallbackLogoUrl) ||
+        undefined,
       suppliedAmount: earnTarget.shares.total,
+      amountSymbol: "shares",
     };
   }, [earnTarget]);
 
@@ -515,12 +520,6 @@ export function KaminoPositions() {
           onClose={closeEarnModal}
           onConfirm={(amountUi) => void runEarnTransaction("withdraw", amountUi)}
           isLoading={earnSubmitting}
-          title="Withdraw from Kamino"
-          description={
-            earnTarget && earnTarget.shares.total > 0
-              ? `${earnTarget.label}. Select the percentage of vault shares to withdraw.`
-              : `${earnTarget?.label ?? "Vault"}. Enter vault share amount (Kamino share units).`
-          }
           useAmountInput={earnTarget ? earnTarget.shares.total <= 0 : false}
           token={kaminoWithdrawModalToken}
         />

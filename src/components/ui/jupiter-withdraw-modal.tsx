@@ -27,6 +27,8 @@ interface JupiterWithdrawModalProps {
     symbol: string;
     logoUrl?: string;
     suppliedAmount: number;
+    /** Suffix for Supplied/Withdraw amounts (e.g. "shares" for kVault). Defaults to symbol. */
+    amountSymbol?: string;
   };
 }
 
@@ -43,12 +45,13 @@ export function JupiterWithdrawModal({
   const [percentage, setPercentage] = useState<number[]>([100]);
   const [amount, setAmount] = useState("");
 
+  const amountUnit = token.amountSymbol ?? token.symbol;
   const dialogTitle = title ?? `Withdraw ${token.symbol}`;
   const dialogDescription =
     description ??
     (useAmountInput
-      ? `Enter the amount to withdraw in ${token.symbol}.`
-      : "Select the percentage to withdraw from your Jupiter position.");
+      ? `Enter the amount to withdraw in ${amountUnit}.`
+      : "Select the percentage to withdraw from your position.");
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,7 +113,7 @@ export function JupiterWithdrawModal({
                     disabled={isLoading}
                     className={inputExceeds ? "border-destructive text-destructive" : ""}
                   />
-                  <span className="text-sm">{token.symbol}</span>
+                  <span className="text-sm">{amountUnit}</span>
                 </div>
               </div>
               {inputExceeds ? (
@@ -160,13 +163,13 @@ export function JupiterWithdrawModal({
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Supplied</span>
               <span>
-                {formatNumber(token.suppliedAmount, 6)} {token.symbol}
+                {formatNumber(token.suppliedAmount, 6)} {amountUnit}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Withdraw</span>
               <span>
-                {formatNumber(amountUi, 6)} {token.symbol}
+                {formatNumber(amountUi, 6)} {amountUnit}
               </span>
             </div>
           </div>
