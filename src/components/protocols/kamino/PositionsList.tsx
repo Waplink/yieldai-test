@@ -91,7 +91,10 @@ export function PositionsList({
       }
 
       try {
-        const res = await fetch(`/api/protocols/kamino/userPositions?address=${encodeURIComponent(address)}`);
+        const res = await fetch(
+          `/api/protocols/kamino/userPositions?address=${encodeURIComponent(address)}&t=${Date.now()}`,
+          { cache: "no-store" }
+        );
         const data = await res.json().catch(() => null);
         const list: KaminoPositionRow[] = Array.isArray(data?.data) ? data.data : [];
 

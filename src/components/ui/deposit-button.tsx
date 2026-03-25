@@ -986,32 +986,15 @@ export function DepositButton({
 
     setIsKaminoVaultDepositing(true);
     try {
-      const baselineKaminoBalance = kaminoWalletAmount;
       const signature = await depositToKaminoVault({
         vaultAddress: vault,
         amountUi,
         signerAddress: resolvedSignerAddress,
         signTransaction: resolvedSignTransaction as (tx: VersionedTransaction) => Promise<VersionedTransaction>,
       });
-      const doRefresh = async () => {
-        await refreshSolana();
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-        }
-      };
-      await doRefresh();
-
-      // Smart refresh: retry at 3s and 6s, but cancel if balance changed.
+      await refreshSolana();
       if (typeof window !== "undefined") {
-        const scheduleIfNeeded = (delayMs: number) =>
-          window.setTimeout(async () => {
-            if (Math.abs(kaminoWalletAmount - baselineKaminoBalance) > 1e-9) return;
-            await doRefresh();
-          }, delayMs);
-        if (Math.abs(kaminoWalletAmount - baselineKaminoBalance) <= 1e-9) {
-          scheduleIfNeeded(3000);
-          scheduleIfNeeded(6000);
-        }
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
       }
       toast({
         title: "Deposit submitted",

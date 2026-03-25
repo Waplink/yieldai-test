@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Decimal from "decimal.js";
 import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
@@ -28,23 +28,6 @@ import { useToast } from "@/components/ui/use-toast";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
 const KAMINO_LOCAL_ICON = "/protocol_ico/kamino.png";
-
-function fingerprintKaminoRows(rows: KaminoPosition[]): string {
-  // Keep it cheap + stable: compare key fields that should change after tx.
-  const parts = rows.map((r) => {
-    const base = String(r.source || "");
-    const vault = typeof r.vaultAddress === "string" ? r.vaultAddress : "";
-    const farm = typeof r.farmPubkey === "string" ? r.farmPubkey : "";
-    const market = typeof r.marketPubkey === "string" ? r.marketPubkey : "";
-    const usd = typeof r.netUsdAmount === "string" ? r.netUsdAmount : "";
-    const tok = typeof r.netTokenAmount === "string" ? r.netTokenAmount : "";
-    const shares = r.position && typeof r.position === "object"
-      ? String((r.position as any).totalShares ?? "") + ":" + String((r.position as any).unstakedShares ?? "") + ":" + String((r.position as any).stakedShares ?? "")
-      : "";
-    return [base, vault, farm, market, usd, tok, shares].join("|");
-  });
-  return `${rows.length}:${parts.join("~")}`;
-}
 
 type KaminoPosition = {
   source?: "kamino-lend" | "kamino-earn" | "kamino-farm" | string;
@@ -346,40 +329,26 @@ export function KaminoPositions() {
   const [earnAmount, setEarnAmount] = useState("");
   const [earnSubmitting, setEarnSubmitting] = useState(false);
 
-  const lastPositionsFingerprintRef = useRef<string>("0:");
-  const refreshTimeoutsRef = useRef<number[]>([]);
-
-  const clearSmartRefresh = useCallback(() => {
-    for (const id of refreshTimeoutsRef.current) {
-      window.clearTimeout(id);
-    }
-    refreshTimeoutsRef.current = [];
-  }, []);
-
-  useEffect(() => {
-    return () => clearSmartRefresh();
-  }, [clearSmartRefresh]);
-
   const loadPositions = useCallback(async (): Promise<KaminoPosition[]> => {
     if (!solanaAddress) {
       setPositions([]);
-      lastPositionsFingerprintRef.current = "0:";
       return [];
     }
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/protocols/kamino/userPositions?address=${encodeURIComponent(solanaAddress)}`);
+      const response = await fetch(
+        `/api/protocols/kamino/userPositions?address=${encodeURIComponent(solanaAddress)}&t=${Date.now()}`,
+        { cache: "no-store" }
+      );
       if (!response.ok) throw new Error("Failed to fetch Kamino positions");
       const data = await response.json().catch(() => null);
       const rows = Array.isArray(data?.data) ? (data.data as KaminoPosition[]) : [];
       setPositions(rows);
-      lastPositionsFingerprintRef.current = fingerprintKaminoRows(rows);
       return rows;
     } catch {
       setError("Failed to load Kamino positions");
       setPositions([]);
-      lastPositionsFingerprintRef.current = "0:";
       return [];
     } finally {
       setLoading(false);
@@ -576,28 +545,9 @@ export function KaminoPositions() {
         }
 
         closeEarnModal();
-        clearSmartRefresh();
-        const baseline = lastPositionsFingerprintRef.current;
         await refreshSolana();
-        const immediateRows = await loadPositions();
+        await loadPositions();
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-
-        // Smart refresh: retry at 3s and 6s, but cancel if positions changed.
-        const schedule = (delayMs: number) =>
-          window.setTimeout(async () => {
-            await refreshSolana();
-            const rows = await loadPositions();
-            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-            const fp = fingerprintKaminoRows(rows);
-            if (fp !== baseline) {
-              clearSmartRefresh();
-            }
-          }, delayMs);
-
-        const immediateFp = fingerprintKaminoRows(immediateRows);
-        if (immediateFp === baseline) {
-          refreshTimeoutsRef.current = [schedule(3000), schedule(6000)];
-        }
       } catch (e) {
         toast({
           variant: "destructive",
