@@ -20,6 +20,7 @@ import {
   createWalletAdapterPartialSigner,
   getSolanaRpcEndpoint,
   loadKaminoVaultForAddress,
+  sendVaultInstructionsWithWalletAdapter,
   sendKitInstructionsWithWallet,
 } from "@/lib/solana/kaminoKvVaultTx";
 import { extractKvaultVaultAddress, isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
@@ -517,14 +518,22 @@ export function KaminoPositions() {
           const stakeExtra =
             dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
           const ixs = [...dep.depositIxs, ...stakeExtra];
-          // Phantom fails to sign v0 tx when ALT lookups are unresolved; avoid LUT compression.
-          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
+          const sig = await sendVaultInstructionsWithWalletAdapter({
+            connection,
+            payerBase58: effectiveSignerAddress,
+            signTransaction: activeSignTransaction,
+            instructions: ixs,
+          });
           toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
         } else {
           const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
           const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
-          // Phantom fails to sign v0 tx when ALT lookups are unresolved; avoid LUT compression.
-          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
+          const sig = await sendVaultInstructionsWithWalletAdapter({
+            connection,
+            payerBase58: effectiveSignerAddress,
+            signTransaction: activeSignTransaction,
+            instructions: ixs,
+          });
           toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
         }
 

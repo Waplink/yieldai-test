@@ -19,7 +19,7 @@ import type { SignatureBytes } from "@solana/keys";
 import type { SignatureDictionary, TransactionPartialSigner } from "@solana/signers";
 import type { Transaction as KitTransaction } from "@solana/transactions";
 import Decimal from "decimal.js";
-import { Connection, SendTransactionError, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, SendTransactionError, TransactionInstruction, TransactionMessage, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 
 function base64ToBytes(base64: string): Uint8Array {
   // Prefer browser-safe decoding (Next client). Fallback to Node Buffer when available.
@@ -35,6 +35,79 @@ function base64ToBytes(base64: string): Uint8Array {
     return Uint8Array.from(b.from(base64, "base64"));
   }
   throw new Error("Base64 decoder unavailable in this environment");
+}
+
+function kitInstructionToWeb3(ix: Instruction): TransactionInstruction {
+  const programId = new PublicKey(String(ix.programAddress));
+  const keys =
+    (ix.accounts ?? []).map((a) => {
+      const role = (a as { role?: unknown }).role as number | undefined;
+      const isSigner = role === 2 || role === 3;
+      const isWritable = role === 1 || role === 3;
+      return {
+        pubkey: new PublicKey(String((a as { address: unknown }).address)),
+        isSigner,
+        isWritable,
+      };
+    }) ?? [];
+  const data = ix.data ? Buffer.from(ix.data) : Buffer.alloc(0);
+  return new TransactionInstruction({ programId, keys, data });
+}
+
+async function sendRawVersionedWithLogs(connection: Connection, raw: Uint8Array): Promise<string> {
+  try {
+    const sentSig = await connection.sendRawTransaction(raw, {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+    await connection.confirmTransaction(sentSig, "confirmed");
+    return sentSig;
+  } catch (e) {
+    if (e instanceof SendTransactionError) {
+      let logs: string[] | undefined = e.logs;
+      try {
+        logs = logs ?? (await e.getLogs(connection));
+      } catch {
+        // ignore
+      }
+      const msg = e.transactionError?.message || e.message || "SendTransactionError";
+      throw new Error(`${msg}${logs && logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`);
+    }
+    throw e;
+  }
+}
+
+/**
+ * Wallet-adapter compatible path: build a VersionedTransaction via web3.js, sign with adapter,
+ * then send the signed bytes. This avoids Solana Kit signer dictionary mismatches.
+ */
+export async function sendVaultInstructionsWithWalletAdapter(params: {
+  connection: Connection;
+  payerBase58: string;
+  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
+  instructions: readonly Instruction[];
+}): Promise<string> {
+  const { connection, payerBase58, signTransaction, instructions } = params;
+  const payer = new PublicKey(payerBase58);
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const web3Ixs = instructions.map(kitInstructionToWeb3);
+  const messageV0 = new TransactionMessage({
+    payerKey: payer,
+    recentBlockhash: blockhash,
+    instructions: web3Ixs,
+  }).compileToV0Message();
+  const vtx = new VersionedTransaction(messageV0);
+
+  const signed = await signTransaction(vtx);
+  // simulate with signature verify for a clear error
+  const sim = await connection.simulateTransaction(signed, { sigVerify: true, commitment: "processed" });
+  if (sim.value.err) {
+    const logs = sim.value.logs ?? [];
+    throw new Error(
+      `Preflight simulation failed: ${JSON.stringify(sim.value.err)}${logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`
+    );
+  }
+  return sendRawVersionedWithLogs(connection, signed.serialize());
 }
 
 export function getSolanaRpcEndpoint(): string {
@@ -162,26 +235,7 @@ export async function sendKitInstructionsWithWallet(
     }
   }
 
-  try {
-    const sentSig = await connection.sendRawTransaction(raw, {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-    await connection.confirmTransaction(sentSig, "confirmed");
-    return sentSig;
-  } catch (e) {
-    if (e instanceof SendTransactionError) {
-      let logs: string[] | undefined = e.logs;
-      try {
-        logs = logs ?? (await e.getLogs(connection));
-      } catch {
-        // ignore
-      }
-      const msg = e.transactionError?.message || e.message || "SendTransactionError";
-      throw new Error(`${msg}${logs && logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`);
-    }
-    throw e;
-  }
+  return sendRawVersionedWithLogs(connection, raw);
 }
 
 export async function loadKaminoVaultForAddress(
@@ -212,8 +266,13 @@ export async function depositToKaminoVault(params: {
   const stakeExtra =
     dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
   const ixs = [...dep.depositIxs, ...stakeExtra];
-  // Some wallets (e.g. Phantom) error during signing when ALT lookups are unresolved.
-  // Avoid LUT compression for better wallet compatibility.
+  // Prefer adapter-sign path to avoid kit signer mismatches.
+  void rpc;
   void lookupTable;
-  return sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
+  return sendVaultInstructionsWithWalletAdapter({
+    connection,
+    payerBase58: params.signerAddress,
+    signTransaction: params.signTransaction,
+    instructions: ixs,
+  });
 }
