@@ -506,9 +506,8 @@ export function KaminoPositions() {
           onConfirm={(amountUi) => void runEarnTransaction("deposit", amountUi)}
           isLoading={earnSubmitting}
           title="Deposit to Kamino"
-          description={
-            earnTarget ? `${earnTarget.label}. Enter amount to deposit ${depositSymbol}.` : undefined
-          }
+          description={`Enter amount to deposit ${depositSymbol}`}
+          protocol={{ name: "Kamino", logoUrl: "/protocol_ico/kamino.png" }}
           token={kaminoDepositModalToken}
         />
       ) : null}

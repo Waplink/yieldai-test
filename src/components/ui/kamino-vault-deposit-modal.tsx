@@ -85,27 +85,36 @@ export function KaminoVaultDepositModal({
       <DialogContent className="sm:max-w-[425px] p-6 rounded-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            {token.logoUrl ? (
-              <Image
-                src={token.logoUrl}
-                alt={token.symbol}
-                width={24}
-                height={24}
-                className="object-contain rounded-full"
-                unoptimized
-              />
-            ) : null}
+            <Image
+              src="/protocol_ico/kamino.png"
+              alt="Kamino"
+              width={24}
+              height={24}
+              className="rounded-full"
+              unoptimized
+            />
             <DialogTitle>Deposit to Kamino</DialogTitle>
           </div>
-          <DialogDescription className="line-clamp-2">{vaultLabel}</DialogDescription>
+          <DialogDescription>Enter amount to deposit {token.symbol}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
-          <span>Vault token:</span>
-          <span className="font-medium text-foreground">{token.symbol}</span>
+        <div className="flex items-center justify-center gap-2 py-4">
+          <div className="flex items-center gap-2">
+            {token.logoUrl ? (
+              <Image src={token.logoUrl} alt={token.symbol} width={32} height={32} className="object-contain rounded-full" unoptimized />
+            ) : null}
+            <span>{token.symbol}</span>
+          </div>
+          <span>-&gt;</span>
+          <div className="flex items-center gap-2">
+            {token.logoUrl ? (
+              <Image src={token.logoUrl} alt={token.symbol} width={32} height={32} className="object-contain rounded-full" unoptimized />
+            ) : null}
+            <span>{token.symbol}</span>
+          </div>
         </div>
 
-        <div className="grid gap-4 py-2">
+        <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="kamino-vault-deposit-amount" className="text-right">
               Amount
@@ -138,9 +147,6 @@ export function KaminoVaultDepositModal({
                   <span className="text-sm text-muted-foreground ml-2">~ ${usdValue.toFixed(2)}</span>
                 ) : null}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Available: {formatNumber(token.availableAmount, 6)} {token.symbol}
-              </p>
             </div>
           </div>
 
