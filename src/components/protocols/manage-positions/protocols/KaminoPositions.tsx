@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
@@ -28,6 +28,23 @@ import { useToast } from "@/components/ui/use-toast";
 
 const KAMINO_LEND_URL = "https://kamino.com/lend";
 const KAMINO_LOCAL_ICON = "/protocol_ico/kamino.png";
+
+function fingerprintRows(rows: KaminoPosition[]): string {
+  const parts = rows.map((r) => {
+    const source = String(r.source ?? "");
+    const vault = String(r.vaultAddress ?? "");
+    const farm = String(r.farmPubkey ?? "");
+    const market = String(r.marketPubkey ?? "");
+    const usd = String(r.netUsdAmount ?? "");
+    const tok = String(r.netTokenAmount ?? "");
+    const shares =
+      r.position && typeof r.position === "object"
+        ? `${String((r.position as any).totalShares ?? "")}:${String((r.position as any).unstakedShares ?? "")}:${String((r.position as any).stakedShares ?? "")}`
+        : "";
+    return [source, vault, farm, market, usd, tok, shares].join("|");
+  });
+  return `${rows.length}:${parts.join("~")}`;
+}
 
 type KaminoPosition = {
   source?: "kamino-lend" | "kamino-earn" | "kamino-farm" | string;
@@ -308,6 +325,8 @@ export function KaminoPositions() {
   const [positions, setPositions] = useState<KaminoPosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastFingerprintRef = useRef<string>("0:");
+  const refreshTimeoutRef = useRef<number | null>(null);
 
   // IMPORTANT: signer address must match the wallet adapter used to sign.
   // Prefer adapter publicKey/signTransaction because some wallets can leave hook values stale.
@@ -346,15 +365,52 @@ export function KaminoPositions() {
       const data = await response.json().catch(() => null);
       const rows = Array.isArray(data?.data) ? (data.data as KaminoPosition[]) : [];
       setPositions(rows);
+      lastFingerprintRef.current = fingerprintRows(rows);
       return rows;
     } catch {
       setError("Failed to load Kamino positions");
       setPositions([]);
+      lastFingerprintRef.current = "0:";
       return [];
     } finally {
       setLoading(false);
     }
   }, [positionsOwnerAddress]);
+
+  const schedulePositionsRefresh = useCallback(
+    (delayMs: number, finalDelayMs: number) => {
+      if (typeof window === "undefined") return;
+      if (refreshTimeoutRef.current != null) {
+        window.clearTimeout(refreshTimeoutRef.current);
+      }
+      // Immediately show "something is happening"
+      setLoading(true);
+      setError(null);
+      const baseline = lastFingerprintRef.current;
+      refreshTimeoutRef.current = window.setTimeout(async () => {
+        await refreshSolana();
+        const rows = await loadPositions();
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        const fp = fingerprintRows(rows);
+        if (fp === baseline) {
+          window.setTimeout(async () => {
+            await refreshSolana();
+            await loadPositions();
+            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+          }, finalDelayMs);
+        }
+      }, delayMs);
+    },
+    [loadPositions, refreshSolana]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current != null) {
+        window.clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     void loadPositions();
@@ -546,13 +602,8 @@ export function KaminoPositions() {
         }
 
         closeEarnModal();
-        if (typeof window !== "undefined") {
-          window.setTimeout(() => {
-            void refreshSolana();
-            void loadPositions();
-            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-          }, 3000);
-        }
+        // Refresh UI immediately (show loading), then refetch after Kamino API catches up.
+        schedulePositionsRefresh(5000, 10000);
       } catch (e) {
         toast({
           variant: "destructive",
@@ -572,6 +623,7 @@ export function KaminoPositions() {
       refreshSolana,
       solanaConnecting,
       loadPositions,
+      schedulePositionsRefresh,
     ]
   );
 
