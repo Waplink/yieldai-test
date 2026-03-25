@@ -506,7 +506,7 @@ export function KaminoPositions() {
 
       setEarnSubmitting(true);
       try {
-        const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
+        const { vault } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
         const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
 
         if (mode === "deposit") {
@@ -514,12 +514,14 @@ export function KaminoPositions() {
           const stakeExtra =
             dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
           const ixs = [...dep.depositIxs, ...stakeExtra];
-          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+          // Phantom fails to sign v0 tx when ALT lookups are unresolved; avoid LUT compression.
+          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
           toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
         } else {
           const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
           const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
-          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+          // Phantom fails to sign v0 tx when ALT lookups are unresolved; avoid LUT compression.
+          const sig = await sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
           toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
         }
 

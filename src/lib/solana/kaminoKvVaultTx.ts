@@ -143,5 +143,8 @@ export async function depositToKaminoVault(params: {
   const stakeExtra =
     dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
   const ixs = [...dep.depositIxs, ...stakeExtra];
-  return sendKitInstructionsWithWallet(rpc, connection, ixs, signer, [lookupTable]);
+  // Some wallets (e.g. Phantom) error during signing when ALT lookups are unresolved.
+  // Avoid LUT compression for better wallet compatibility.
+  void lookupTable;
+  return sendKitInstructionsWithWallet(rpc, connection, ixs, signer, []);
 }
