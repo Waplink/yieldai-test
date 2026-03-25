@@ -510,7 +510,7 @@ export function KaminoPositions() {
 
       setEarnSubmitting(true);
       try {
-        const { vault } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
+        const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
         const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
 
         if (mode === "deposit") {
@@ -523,6 +523,7 @@ export function KaminoPositions() {
             payerBase58: effectiveSignerAddress,
             signTransaction: activeSignTransaction,
             instructions: ixs,
+            addressLookupTableAddresses: [String(lookupTable)],
           });
           toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
         } else {
@@ -533,6 +534,7 @@ export function KaminoPositions() {
             payerBase58: effectiveSignerAddress,
             signTransaction: activeSignTransaction,
             instructions: ixs,
+            addressLookupTableAddresses: [String(lookupTable)],
           });
           toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
         }

@@ -86,16 +86,33 @@ export async function sendVaultInstructionsWithWalletAdapter(params: {
   payerBase58: string;
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
   instructions: readonly Instruction[];
+  /** Optional ALT addresses to reduce tx size. */
+  addressLookupTableAddresses?: string[];
 }): Promise<string> {
-  const { connection, payerBase58, signTransaction, instructions } = params;
+  const { connection, payerBase58, signTransaction, instructions, addressLookupTableAddresses = [] } = params;
   const payer = new PublicKey(payerBase58);
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
   const web3Ixs = instructions.map(kitInstructionToWeb3);
+  const altAccounts = (
+    await Promise.all(
+      addressLookupTableAddresses
+        .map((a) => a.trim())
+        .filter(Boolean)
+        .map(async (a) => {
+          try {
+            const res = await connection.getAddressLookupTable(new PublicKey(a));
+            return res.value ?? null;
+          } catch {
+            return null;
+          }
+        })
+    )
+  ).filter((x): x is NonNullable<typeof x> => !!x);
   const messageV0 = new TransactionMessage({
     payerKey: payer,
     recentBlockhash: blockhash,
     instructions: web3Ixs,
-  }).compileToV0Message();
+  }).compileToV0Message(altAccounts);
   const vtx = new VersionedTransaction(messageV0);
 
   const signed = await signTransaction(vtx);
