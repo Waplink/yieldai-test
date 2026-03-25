@@ -739,11 +739,9 @@ export function KaminoPositions() {
           </div>
         ))}
       </ScrollArea>
-      <div className="p-3 sm:p-4 bg-muted/50 rounded-lg">
-        <div className="flex justify-between items-center">
-          <span className="text-base font-medium">Total Value</span>
-          <span className="text-lg font-bold">{formatCurrency(totalValue, 2)}</span>
-        </div>
+      <div className="flex items-center justify-between pt-6 pb-6">
+        <span className="text-xl">Total assets in Kamino:</span>
+        <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
       </div>
     </div>
   );
