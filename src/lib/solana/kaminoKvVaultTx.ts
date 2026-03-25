@@ -21,6 +21,22 @@ import type { Transaction as KitTransaction } from "@solana/transactions";
 import Decimal from "decimal.js";
 import { Connection, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 
+function base64ToBytes(base64: string): Uint8Array {
+  // Prefer browser-safe decoding (Next client). Fallback to Node Buffer when available.
+  if (typeof atob === "function") {
+    const bin = atob(base64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b: any = (globalThis as any).Buffer;
+  if (b && typeof b.from === "function") {
+    return Uint8Array.from(b.from(base64, "base64"));
+  }
+  throw new Error("Base64 decoder unavailable in this environment");
+}
+
 export function getSolanaRpcEndpoint(): string {
   return (
     process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
@@ -106,7 +122,7 @@ export async function sendKitInstructionsWithWallet(
 
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
   const wire = getBase64EncodedWireTransaction(signedTransaction);
-  const raw = Uint8Array.from(Buffer.from(wire, "base64"));
+  const raw = base64ToBytes(wire);
   const sentSig = await connection.sendRawTransaction(raw, {
     skipPreflight: false,
     maxRetries: 3,
