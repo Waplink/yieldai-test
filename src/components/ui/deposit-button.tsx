@@ -944,16 +944,18 @@ export function DepositButton({
     if (!vault) return;
 
     const session = await waitForReadySolanaSession();
-    let resolvedSignerAddress =
-      session.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
-    let resolvedSignTransaction = session.signTransaction ?? activeSignTransaction;
+    // IMPORTANT: signer address must match the wallet adapter used to sign.
+    // Prefer adapter publicKey/signTransaction (more reliable for Phantom).
+    const preferredSignerAddress = adapterAddress || toBase58Address(solanaPublicKey) || "";
+    const preferredSignTransaction = adapterSignTransaction ?? signTransaction ?? undefined;
+    let resolvedSignerAddress = preferredSignerAddress || session.signerAddress || "";
+    let resolvedSignTransaction = preferredSignTransaction ?? session.signTransaction ?? undefined;
 
     if (!resolvedSignerAddress || !resolvedSignTransaction) {
       await recoverSolanaWalletSelection();
       const retried = await waitForReadySolanaSession();
-      resolvedSignerAddress =
-        retried.signerAddress || toBase58Address(solanaPublicKey) || adapterAddress || "";
-      resolvedSignTransaction = retried.signTransaction ?? activeSignTransaction;
+      resolvedSignerAddress = preferredSignerAddress || retried.signerAddress || "";
+      resolvedSignTransaction = preferredSignTransaction ?? retried.signTransaction ?? undefined;
     }
 
     if (!resolvedSignerAddress || !resolvedSignTransaction) {
