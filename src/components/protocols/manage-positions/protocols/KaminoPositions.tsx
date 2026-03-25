@@ -323,6 +323,7 @@ export function KaminoPositions() {
         }).signTransaction.bind(solanaWallet?.adapter) as (t: VersionedTransaction) => Promise<VersionedTransaction>)
       : undefined;
   const activeSignTransaction = adapterSignTransaction ?? signTransaction;
+  const positionsOwnerAddress = (solanaAddress || effectiveSignerAddress || "").trim();
 
   const [earnModal, setEarnModal] = useState<"deposit" | "withdraw" | null>(null);
   const [earnTarget, setEarnTarget] = useState<Extract<NormalizedKaminoRow, { kind: "earn" }> | null>(null);
@@ -330,7 +331,7 @@ export function KaminoPositions() {
   const [earnSubmitting, setEarnSubmitting] = useState(false);
 
   const loadPositions = useCallback(async (): Promise<KaminoPosition[]> => {
-    if (!solanaAddress) {
+    if (!positionsOwnerAddress) {
       setPositions([]);
       return [];
     }
@@ -338,7 +339,7 @@ export function KaminoPositions() {
       setLoading(true);
       setError(null);
       const response = await fetch(
-        `/api/protocols/kamino/userPositions?address=${encodeURIComponent(solanaAddress)}&t=${Date.now()}`,
+        `/api/protocols/kamino/userPositions?address=${encodeURIComponent(positionsOwnerAddress)}&t=${Date.now()}`,
         { cache: "no-store" }
       );
       if (!response.ok) throw new Error("Failed to fetch Kamino positions");
@@ -353,7 +354,7 @@ export function KaminoPositions() {
     } finally {
       setLoading(false);
     }
-  }, [solanaAddress]);
+  }, [positionsOwnerAddress]);
 
   useEffect(() => {
     void loadPositions();
