@@ -19,7 +19,7 @@ import type { SignatureBytes } from "@solana/keys";
 import type { SignatureDictionary, TransactionPartialSigner } from "@solana/signers";
 import type { Transaction as KitTransaction } from "@solana/transactions";
 import Decimal from "decimal.js";
-import { Connection, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
+import { Connection, SendTransactionError, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
 
 function base64ToBytes(base64: string): Uint8Array {
   // Prefer browser-safe decoding (Next client). Fallback to Node Buffer when available.
@@ -83,12 +83,13 @@ export function createWalletAdapterPartialSigner(
       for (const kitTx of transactions) {
         const vtx = kitTransactionToVersionedTransaction(kitTx);
         const signed = await signTransaction(vtx);
-        const signedKit = fromVersionedTransaction(signed);
-        const sig = signedKit.signatures[addr];
-        if (!sig) {
-          throw new Error("Wallet did not return a signature for this transaction");
+        // Wallet-adapter returns signatures by index, not keyed by address.
+        // Fee payer signature is always index 0 in Solana transactions.
+        const sig0 = signed.signatures?.[0];
+        if (!sig0 || sig0.length !== 64 || sig0.every((b) => b === 0)) {
+          throw new Error("Wallet did not return a valid signature for this transaction");
         }
-        out.push({ [addr]: new Uint8Array(sig) as SignatureBytes } as SignatureDictionary);
+        out.push({ [addr]: new Uint8Array(sig0) as SignatureBytes } as SignatureDictionary);
       }
       return out;
     },
@@ -123,12 +124,26 @@ export async function sendKitInstructionsWithWallet(
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
   const wire = getBase64EncodedWireTransaction(signedTransaction);
   const raw = base64ToBytes(wire);
-  const sentSig = await connection.sendRawTransaction(raw, {
-    skipPreflight: false,
-    maxRetries: 3,
-  });
-  await connection.confirmTransaction(sentSig, "confirmed");
-  return sentSig;
+  try {
+    const sentSig = await connection.sendRawTransaction(raw, {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+    await connection.confirmTransaction(sentSig, "confirmed");
+    return sentSig;
+  } catch (e) {
+    if (e instanceof SendTransactionError) {
+      let logs: string[] | undefined = e.logs;
+      try {
+        logs = logs ?? (await e.getLogs(connection));
+      } catch {
+        // ignore
+      }
+      const msg = e.transactionError?.message || e.message || "SendTransactionError";
+      throw new Error(`${msg}${logs && logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`);
+    }
+    throw e;
+  }
 }
 
 export async function loadKaminoVaultForAddress(
