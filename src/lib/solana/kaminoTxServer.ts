@@ -8,6 +8,7 @@ import type { Instruction } from "@solana/instructions";
 import { Buffer } from "buffer";
 import { Connection, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
+import { createSolanaRpc } from "@solana/kit";
 
 export function getSolanaRpcEndpoint(): string {
   return getSafeSolanaRpcEndpoint();
@@ -34,21 +35,9 @@ export async function loadKaminoVaultForAddress(params: {
   rpcEndpoint?: string;
   vaultAddress: string;
 }): Promise<{ vault: KaminoVault; lookupTable: Address }> {
-  // klend-sdk expects a kit RPC-like object; it works with Solana RPC provider used previously.
-  // In this repo we only need `getLatestBlockhash` and account fetches inside klend-sdk; it uses fetch under the hood.
-  // We pass a minimal connection-backed RPC wrapper via the `connection`-like API.
   const rpcEndpoint = params.rpcEndpoint ?? getSolanaRpcEndpoint();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rpc: any = {
-    // klend-sdk uses `connection` methods via `rpc.getAccountInfo` etc on its internal provider;
-    // It accepts a "rpc" created by @solana/kit in our previous code, but we keep server route simple by
-    // instantiating KaminoVault with a kit RPC only in the existing client flow. Here we rely on klend-sdk tolerating
-    // a basic provider; if it doesn't, we should switch this file to use @solana/kit's createSolanaRpc.
-    endpoint: rpcEndpoint,
-  };
-
-  const vault = new KaminoVault(rpc, address(params.vaultAddress.trim()));
+  const rpc = createSolanaRpc(rpcEndpoint as Parameters<typeof createSolanaRpc>[0]);
+  const vault = new KaminoVault(rpc as ConstructorParameters<typeof KaminoVault>[0], address(params.vaultAddress.trim()));
   const state = await vault.getState();
   return { vault, lookupTable: state.vaultLookupTable };
 }
