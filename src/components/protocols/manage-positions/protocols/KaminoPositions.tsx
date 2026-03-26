@@ -378,7 +378,7 @@ export function KaminoPositions() {
   }, [positionsOwnerAddress]);
 
   const schedulePositionsRefresh = useCallback(
-    (delayMs: number, finalDelayMs: number) => {
+    (delayMs: number) => {
       if (typeof window === "undefined") return;
       if (refreshTimeoutRef.current != null) {
         window.clearTimeout(refreshTimeoutRef.current);
@@ -386,19 +386,10 @@ export function KaminoPositions() {
       // Immediately show "something is happening"
       setLoading(true);
       setError(null);
-      const baseline = lastFingerprintRef.current;
       refreshTimeoutRef.current = window.setTimeout(async () => {
         await refreshSolana();
-        const rows = await loadPositions();
+        await loadPositions();
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-        const fp = fingerprintRows(rows);
-        if (fp === baseline) {
-          window.setTimeout(async () => {
-            await refreshSolana();
-            await loadPositions();
-            window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-          }, finalDelayMs);
-        }
       }, delayMs);
     },
     [loadPositions, refreshSolana]
@@ -603,8 +594,7 @@ export function KaminoPositions() {
 
         closeEarnModal();
         // Refresh UI immediately (show loading), then refetch after Kamino API catches up.
-        // Withdraw updates can lag longer than deposits.
-        schedulePositionsRefresh(10000, 10000);
+        schedulePositionsRefresh(10000);
       } catch (e) {
         toast({
           variant: "destructive",
