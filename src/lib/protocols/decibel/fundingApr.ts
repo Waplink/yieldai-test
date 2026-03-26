@@ -1,5 +1,5 @@
 /**
- * Fetches Decibel funding APR (24h weighted average) from external API.
+ * Fetches Decibel funding APR (weighted average, configurable window) from external API.
  * In-memory cache per market_name, TTL 10 minutes, to avoid repeated requests.
  */
 
@@ -32,16 +32,21 @@ export function marketNameForFundingApi(displayName: string): string {
 /**
  * Fetch weighted average funding APR for a market. Cached per market_name.
  * @param marketName - e.g. "BTC/USD", "APT/USD", "ETH/USD" (or "BTC-USDC" normalized internally)
+ * @param window - averaging window for upstream API (e.g. '24h', '7d')
  * @returns APR % and direction, or null on error / missing data
  */
-export async function fetchFundingApr(marketName: string): Promise<FundingAprResult | null> {
+export async function fetchFundingApr(
+  marketName: string,
+  window: '24h' | '7d' = '7d'
+): Promise<FundingAprResult | null> {
   const key = marketNameForFundingApi(marketName);
-  const cached = cache.get(key);
+  const cacheKey = `${key}:${window}`;
+  const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.data;
   }
   try {
-    const url = `${FUNDING_API_BASE}?market_name=${encodeURIComponent(key)}`;
+    const url = `${FUNDING_API_BASE}?market_name=${encodeURIComponent(key)}&window=${encodeURIComponent(window)}`;
     const res = await fetch(url);
     const json = await res.json();
     if (!res.ok || !json?.success || !json?.weighted_average?.success) return null;
@@ -50,7 +55,7 @@ export async function fetchFundingApr(marketName: string): Promise<FundingAprRes
     const direction = typeof wa.direction === 'string' ? wa.direction : '—';
     if (typeof avg !== 'number' || !Number.isFinite(avg)) return null;
     const data: FundingAprResult = { avg_yearly_apr_pct: avg, direction };
-    cache.set(key, { data, timestamp: Date.now() });
+    cache.set(cacheKey, { data, timestamp: Date.now() });
     return data;
   } catch {
     return null;

@@ -81,6 +81,27 @@ export interface OpenMarketParams {
   builderFeeBps?: number | null;
 }
 
+export interface OpenLimitParams {
+  /** Subaccount address */
+  subaccountAddr: string;
+  /** PerpMarket object address */
+  marketAddr: string;
+  /** Desired notional in USD (human decimal) */
+  orderSizeUsd: number;
+  /** User-selected limit price from UI */
+  limitPrice: number;
+  /** Market config from v1/markets */
+  marketConfig: DecibelMarketConfig;
+  /** True for long (buy), false for short (sell) */
+  isLong: boolean;
+  /** Use testnet package address (default: false = mainnet) */
+  isTestnet?: boolean;
+  /** Optional builder address */
+  builderAddr?: string | null;
+  /** Optional builder fee in bps */
+  builderFeeBps?: number | null;
+}
+
 /**
  * Round price to valid tick size and return chain units directly.
  * Uses integer rounding to avoid floating-point errors that cause EPRICE_NOT_RESPECTING_TICKER_SIZE.
@@ -151,6 +172,65 @@ export function buildOpenMarketOrderPayload(params: OpenMarketParams): {
 
   // time_in_force: 0=GoodTillCanceled, 1=PostOnly, 2=ImmediateOrCancel
   const timeInForce = 2;
+
+  return {
+    function: `${pkg}::dex_accounts_entry::place_order_to_subaccount`,
+    typeArguments: [],
+    functionArguments: [
+      subaccountAddr,
+      marketAddr,
+      chainPrice,
+      chainSize,
+      isLong, // is_buy
+      timeInForce,
+      false, // is_reduce_only
+      null, // client_order_id
+      null, // stop_price
+      null, // tp_trigger_price
+      null, // tp_limit_price
+      null, // sl_trigger_price
+      null, // sl_limit_price
+      builderAddr ?? null, // builder_addr
+      builderFeeBps ?? null, // builder_fee
+    ],
+  };
+}
+
+/**
+ * Builds the transaction payload for opening a position at limit (GTC).
+ * Uses place_order_to_subaccount with is_reduce_only=false and user limit price.
+ */
+export function buildOpenLimitOrderPayload(params: OpenLimitParams): {
+  function: string;
+  typeArguments: string[];
+  functionArguments: unknown[];
+} {
+  const {
+    subaccountAddr,
+    marketAddr,
+    orderSizeUsd,
+    limitPrice,
+    marketConfig,
+    isLong,
+    isTestnet = false,
+    builderAddr = null,
+    builderFeeBps = null,
+  } = params;
+
+  const pkg = isTestnet ? PACKAGE_TESTNET : PACKAGE_MAINNET;
+  const pxDecimals = marketConfig.px_decimals ?? 9;
+  const szDecimals = marketConfig.sz_decimals ?? 9;
+  const tickSize = marketConfig.tick_size ?? 1_000_000;
+  const lotSize = marketConfig.lot_size ?? 100_000_000;
+  const minSize = marketConfig.min_size ?? 1_000_000_000;
+
+  const chainPrice = roundPriceToTickChainUnits(limitPrice, tickSize, pxDecimals);
+  // Convert USD notional to base size using limit price.
+  const size = limitPrice > 0 ? orderSizeUsd / limitPrice : 0;
+  const chainSize = roundSizeToLotChainUnits(size, lotSize, minSize, szDecimals);
+
+  // time_in_force: 0=GoodTillCanceled (limit order stays in book until filled/cancelled)
+  const timeInForce = 0;
 
   return {
     function: `${pkg}::dex_accounts_entry::place_order_to_subaccount`,

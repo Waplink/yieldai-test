@@ -30,6 +30,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { ToastAction } from '@/components/ui/toast';
 import {
   buildOpenMarketOrderPayload,
+  buildOpenLimitOrderPayload,
   buildCloseAtMarketPayload,
   buildCloseAtLimitPayload,
   buildCancelOrderPayload,
@@ -65,6 +66,7 @@ export const CHART_INTERVALS = [
 ] as const;
 
 const ORDER_TYPE_MARKET = 'market';
+const ORDER_TYPE_LIMIT = 'limit';
 
 /** Minimal position shape from Decibel userPositions API */
 interface DecibelPositionRow {
@@ -102,6 +104,36 @@ function formatSizeShort(size: number): string {
   if (abs < 0.01) return size.toFixed(4);
   if (abs < 1) return size.toFixed(4);
   return formatNumber(size, 2);
+}
+
+/** Quick-adjust limit price: ±1% from current input or mark; Mark sets to mark price. */
+function formatLimitPriceInput(num: number, decimals = 4): string {
+  if (!Number.isFinite(num)) return '';
+  // Keep a stable decimal precision and avoid thousand separators in <input type="number" />.
+  return num.toFixed(decimals);
+}
+
+function applyLimitPriceAction(
+  current: string,
+  markPx: number | null,
+  action: 'mark' | 'minus1pct' | 'plus1pct'
+): string {
+  if (action === 'mark') {
+    if (markPx != null && markPx > 0) return formatLimitPriceInput(markPx, 4);
+    return current;
+  }
+  const parsed = parseFloat(current.trim());
+  const hasValidInput = Number.isFinite(parsed) && parsed > 0;
+  const base = hasValidInput ? parsed : markPx != null && markPx > 0 ? markPx : Number.NaN;
+  if (!Number.isFinite(base) || base <= 0) return current;
+  const next = action === 'minus1pct' ? base * 0.99 : base * 1.01;
+  return formatLimitPriceInput(next, 4);
+}
+
+function canAdjustLimitPricePct(current: string, markPx: number | null): boolean {
+  const parsed = parseFloat(current.trim());
+  if (Number.isFinite(parsed) && parsed > 0) return true;
+  return markPx != null && markPx > 0;
 }
 
 /** Get expiration timestamp (chain time + ttl) to avoid TRANSACTION_EXPIRED. */
@@ -142,8 +174,10 @@ export function DecibelOpenPositionModal({
   const { toast } = useToast();
   const [chartInterval, setChartInterval] = useState<string>('1h');
   const [side, setSide] = useState<'long' | 'short'>('long');
+  const [orderType, setOrderType] = useState<typeof ORDER_TYPE_MARKET | typeof ORDER_TYPE_LIMIT>(ORDER_TYPE_MARKET);
   const [leverage, setLeverage] = useState<number>(1);
   const [orderSizeUsd, setOrderSizeUsd] = useState('');
+  const [openLimitPrice, setOpenLimitPrice] = useState('');
   const [availableToTrade, setAvailableToTrade] = useState<number | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [builderConfig, setBuilderConfig] = useState<{
@@ -155,7 +189,7 @@ export function DecibelOpenPositionModal({
   const [markPx, setMarkPx] = useState<number | null>(null);
   const [fundingRateBps, setFundingRateBps] = useState<number | null>(null);
   const [isFundingPositive, setIsFundingPositive] = useState<boolean | null>(null);
-  const [fundingApr24h, setFundingApr24h] = useState<FundingAprResult | null>(null);
+  const [fundingApr7d, setFundingApr7d] = useState<FundingAprResult | null>(null);
   const [decibelNetwork, setDecibelNetwork] = useState<'mainnet' | 'testnet'>('mainnet');
   const [placing, setPlacing] = useState(false);
   const [marketPositions, setMarketPositions] = useState<DecibelPositionRow[]>([]);
@@ -311,15 +345,15 @@ export function DecibelOpenPositionModal({
     return () => { cancelled = true; };
   }, [open, market?.marketAddr]);
 
-  // Funding 24h APR from external API (cached)
+  // Funding 7d APR from external API (cached)
   useEffect(() => {
     if (!open || !market?.marketName) {
-      setFundingApr24h(null);
+      setFundingApr7d(null);
       return;
     }
     let cancelled = false;
     fetchFundingApr(market.marketName).then((data) => {
-      if (!cancelled) setFundingApr24h(data);
+      if (!cancelled) setFundingApr7d(data);
     });
     return () => { cancelled = true; };
   }, [open, market?.marketName]);
@@ -381,11 +415,28 @@ export function DecibelOpenPositionModal({
     if (market) setLeverage(1);
   }, [market?.marketAddr]);
 
+  useEffect(() => {
+    if (!market) return;
+    setOrderType(ORDER_TYPE_MARKET);
+    setOpenLimitPrice('');
+  }, [market?.marketAddr]);
+
+  useEffect(() => {
+    if (!open || orderType !== ORDER_TYPE_LIMIT) return;
+    if (openLimitPrice.trim() !== '') return;
+    if (markPx == null || markPx <= 0) return;
+    setOpenLimitPrice(formatLimitPriceInput(markPx, 4));
+  }, [open, orderType, openLimitPrice, markPx]);
+
   const orderSizeNum = orderSizeUsd.trim() === '' ? NaN : parseFloat(orderSizeUsd);
+  const openLimitPriceNum = openLimitPrice.trim() === '' ? NaN : parseFloat(openLimitPrice);
   const isValidSize =
     Number.isFinite(orderSizeNum) &&
     orderSizeNum > 0 &&
     (availableToTrade == null || orderSizeNum <= availableToTrade);
+  const isValidOpenLimitPrice =
+    Number.isFinite(openLimitPriceNum) &&
+    openLimitPriceNum > 0;
 
   const handlePlaceOrder = useCallback(async () => {
     if (
@@ -393,14 +444,28 @@ export function DecibelOpenPositionModal({
       !account?.address ||
       !subaccountAddr ||
       !marketConfig ||
-      markPx == null ||
-      markPx <= 0 ||
       !signAndSubmitTransaction ||
       !isValidSize
     ) {
       toast({
         title: 'Cannot place order',
-        description: 'Missing subaccount, market config, or mark price. Try refreshing.',
+        description: 'Missing subaccount or market config. Try refreshing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (orderType === ORDER_TYPE_MARKET && (markPx == null || markPx <= 0)) {
+      toast({
+        title: 'Cannot place order',
+        description: 'Missing mark price for market order. Try refreshing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (orderType === ORDER_TYPE_LIMIT && !isValidOpenLimitPrice) {
+      toast({
+        title: 'Cannot place order',
+        description: 'Enter a valid limit price.',
         variant: 'destructive',
       });
       return;
@@ -446,7 +511,7 @@ export function DecibelOpenPositionModal({
         }
       }
 
-      // 2. Place market order
+      // 2. Place order
       // Debug: log raw addresses before payload build (to see if decimal form comes from API)
       console.log('[Decibel Open] raw inputs:', {
         subaccountAddr: typeof subaccountAddr === 'string' && subaccountAddr.length > 30
@@ -456,18 +521,30 @@ export function DecibelOpenPositionModal({
           ? `${market.marketAddr.slice(0, 24)}... (len=${market.marketAddr.length}, startsWith0x=${market.marketAddr.startsWith('0x')})`
           : market.marketAddr,
       });
-      const payload = buildOpenMarketOrderPayload({
-        subaccountAddr,
-        marketAddr: market.marketAddr,
-        orderSizeUsd: orderSizeNum,
-        markPx,
-        marketConfig,
-        isLong: side === 'long',
-        slippageBps: 50,
-        isTestnet: decibelNetwork === 'testnet',
-        builderAddr: builderConfig?.builderAddress ?? undefined,
-        builderFeeBps: builderConfig?.builderFeeBps ?? undefined,
-      });
+      const payload = orderType === ORDER_TYPE_LIMIT
+        ? buildOpenLimitOrderPayload({
+            subaccountAddr,
+            marketAddr: market.marketAddr,
+            orderSizeUsd: orderSizeNum,
+            limitPrice: openLimitPriceNum,
+            marketConfig,
+            isLong: side === 'long',
+            isTestnet: decibelNetwork === 'testnet',
+            builderAddr: builderConfig?.builderAddress ?? undefined,
+            builderFeeBps: builderConfig?.builderFeeBps ?? undefined,
+          })
+        : buildOpenMarketOrderPayload({
+            subaccountAddr,
+            marketAddr: market.marketAddr,
+            orderSizeUsd: orderSizeNum,
+            markPx: markPx!,
+            marketConfig,
+            isLong: side === 'long',
+            slippageBps: 50,
+            isTestnet: decibelNetwork === 'testnet',
+            builderAddr: builderConfig?.builderAddress ?? undefined,
+            builderFeeBps: builderConfig?.builderFeeBps ?? undefined,
+          });
       // Debug: log each argument before sending (identify which one causes u64 "out of range")
       const args = payload.functionArguments;
       const argNames = [
@@ -518,9 +595,9 @@ export function DecibelOpenPositionModal({
       const txHash = typeof result?.hash === 'string' ? result.hash : (result as { hash?: string })?.hash ?? '';
       const baseName = market.marketName?.split('/')[0] ?? 'Position';
       toast({
-        title: 'Order placed',
+        title: orderType === ORDER_TYPE_LIMIT ? 'Limit order placed' : 'Order placed',
         description: txHash
-          ? `${baseName} ${side} order submitted. Tx: ${txHash.slice(0, 8)}...${txHash.slice(-6)}`
+          ? `${baseName} ${side} ${orderType === ORDER_TYPE_LIMIT ? 'limit' : 'market'} order submitted. Tx: ${txHash.slice(0, 8)}...${txHash.slice(-6)}`
           : 'Order submitted',
         action: txHash ? (
           <ToastAction
@@ -537,6 +614,7 @@ export function DecibelOpenPositionModal({
         ) : undefined,
       });
       setOrderSizeUsd('');
+      setOpenLimitPrice('');
       fetchOverview();
       // Refresh positions/orders after 1s so the API has time to reflect the new state
       setTimeout(() => {
@@ -563,6 +641,8 @@ export function DecibelOpenPositionModal({
     signAndSubmitTransaction,
     orderSizeNum,
     side,
+    orderType,
+    openLimitPriceNum,
     decibelNetwork,
     builderConfig,
     isValidSize,
@@ -576,8 +656,8 @@ export function DecibelOpenPositionModal({
     !!account?.address &&
     !!subaccountAddr &&
     !!marketConfig &&
-    markPx != null &&
-    markPx > 0 &&
+    (orderType === ORDER_TYPE_LIMIT || (markPx != null && markPx > 0)) &&
+    (orderType !== ORDER_TYPE_LIMIT || isValidOpenLimitPrice) &&
     isValidSize &&
     !placing;
 
@@ -925,7 +1005,7 @@ export function DecibelOpenPositionModal({
                     <span className="text-muted-foreground">—</span>
                   )}
                 </span>
-                {/* Funding 24h APR (external API) */}
+                {/* Funding 7d APR (external API) */}
                 <span className="text-xs text-muted-foreground flex items-center gap-1.5">
                   <TooltipProvider delayDuration={300}>
                     <Tooltip>
@@ -935,23 +1015,23 @@ export function DecibelOpenPositionModal({
                         </span>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px]">
-                        24h funding rate annualized (extrapolated to yearly yield).
+                        7d funding rate annualized (extrapolated to yearly yield).
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  {fundingApr24h != null && Number.isFinite(fundingApr24h.avg_yearly_apr_pct) ? (
+                  {fundingApr7d != null && Number.isFinite(fundingApr7d.avg_yearly_apr_pct) ? (
                     <span
                       className={cn(
                         'font-medium',
-                        fundingApr24h.avg_yearly_apr_pct > 0
+                        fundingApr7d.avg_yearly_apr_pct > 0
                           ? 'text-green-600 dark:text-green-400'
-                          : fundingApr24h.avg_yearly_apr_pct < 0
+                          : fundingApr7d.avg_yearly_apr_pct < 0
                             ? 'text-red-600 dark:text-red-400'
                             : 'text-muted-foreground'
                       )}
                     >
-                      {fundingApr24h.avg_yearly_apr_pct > 0 ? '+' : ''}
-                      {formatNumber(fundingApr24h.avg_yearly_apr_pct, 2)}%
+                      {fundingApr7d.avg_yearly_apr_pct > 0 ? '+' : ''}
+                      {formatNumber(fundingApr7d.avg_yearly_apr_pct, 2)}%
                     </span>
                   ) : (
                     <span className="text-muted-foreground">—</span>
@@ -1021,16 +1101,17 @@ export function DecibelOpenPositionModal({
               </div>
             </div>
 
-            {/* Order type (Market only) + Leverage in one row */}
+            {/* Order type + Leverage in one row */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Order type</Label>
-                <Select value={ORDER_TYPE_MARKET}>
+                <Select value={orderType} onValueChange={(v) => setOrderType(v as typeof ORDER_TYPE_MARKET | typeof ORDER_TYPE_LIMIT)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ORDER_TYPE_MARKET}>Market</SelectItem>
+                    <SelectItem value={ORDER_TYPE_LIMIT}>Limit</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1053,6 +1134,64 @@ export function DecibelOpenPositionModal({
                 </Select>
               </div>
             </div>
+
+            {orderType === ORDER_TYPE_LIMIT && (
+              <div className="space-y-2">
+                <Label htmlFor="open-limit-price">Limit price</Label>
+                <Input
+                  id="open-limit-price"
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder={markPx != null ? formatLimitPriceInput(markPx, 4) : '0'}
+                  value={openLimitPrice}
+                  onChange={(e) => setOpenLimitPrice(e.target.value)}
+                  className="font-mono"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={!canAdjustLimitPricePct(openLimitPrice, markPx)}
+                    onClick={() =>
+                      setOpenLimitPrice((prev) => applyLimitPriceAction(prev, markPx, 'minus1pct'))
+                    }
+                  >
+                    −1%
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={markPx == null || markPx <= 0}
+                    onClick={() => setOpenLimitPrice(applyLimitPriceAction(openLimitPrice, markPx, 'mark'))}
+                  >
+                    Mark
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={!canAdjustLimitPricePct(openLimitPrice, markPx)}
+                    onClick={() =>
+                      setOpenLimitPrice((prev) => applyLimitPriceAction(prev, markPx, 'plus1pct'))
+                    }
+                  >
+                    +1%
+                  </Button>
+                </div>
+                {markPx != null && (
+                  <p className="text-xs text-muted-foreground">Mark: {formatNumber(markPx, 4)}</p>
+                )}
+                {!isValidOpenLimitPrice && openLimitPrice.trim() !== '' && (
+                  <p className="text-xs text-destructive">Enter a valid limit price.</p>
+                )}
+              </div>
+            )}
 
             {/* Order size USD */}
             <div className="space-y-2">
@@ -1125,7 +1264,7 @@ export function DecibelOpenPositionModal({
                               onClick={() => {
                                 setCloseDialogPosition(pos);
                                 setCloseMode('market');
-                                setCloseLimitPrice(markPx != null ? formatNumber(markPx, 4) : '');
+                                setCloseLimitPrice(markPx != null ? formatLimitPriceInput(markPx, 4) : '');
                               }}
                             >
                               Close
@@ -1221,7 +1360,7 @@ export function DecibelOpenPositionModal({
                   type="button"
                   onClick={() => {
                     setCloseMode('limit');
-                    if (markPx != null) setCloseLimitPrice(formatNumber(markPx, 4));
+                    if (markPx != null) setCloseLimitPrice(formatLimitPriceInput(markPx, 4));
                   }}
                   className={cn(
                     'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -1241,11 +1380,49 @@ export function DecibelOpenPositionModal({
                     type="number"
                     step="any"
                     min="0"
-                    placeholder={markPx != null ? String(markPx) : '0'}
+                    placeholder={markPx != null ? formatLimitPriceInput(markPx, 4) : '0'}
                     value={closeLimitPrice}
                     onChange={(e) => setCloseLimitPrice(e.target.value)}
                     className="font-mono"
                   />
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={!canAdjustLimitPricePct(closeLimitPrice, markPx)}
+                      onClick={() =>
+                        setCloseLimitPrice((prev) => applyLimitPriceAction(prev, markPx, 'minus1pct'))
+                      }
+                    >
+                      −1%
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={markPx == null || markPx <= 0}
+                      onClick={() =>
+                        setCloseLimitPrice(applyLimitPriceAction(closeLimitPrice, markPx, 'mark'))
+                      }
+                    >
+                      Mark
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={!canAdjustLimitPricePct(closeLimitPrice, markPx)}
+                      onClick={() =>
+                        setCloseLimitPrice((prev) => applyLimitPriceAction(prev, markPx, 'plus1pct'))
+                      }
+                    >
+                      +1%
+                    </Button>
+                  </div>
                   {markPx != null && (
                     <p className="text-xs text-muted-foreground">Mark: {formatNumber(markPx, 4)}</p>
                   )}

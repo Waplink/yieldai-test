@@ -10,6 +10,7 @@ import { DecibelOpenPositionModal, type DecibelOpenPositionMarket } from '@/comp
 import { fetchFundingApr, marketNameForFundingApi } from '@/lib/protocols/decibel/fundingApr';
 import { formatNumber, formatCurrency } from '@/lib/utils/numberFormat';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
@@ -59,31 +60,32 @@ function latestOINotionalPerMarket(data: RawFundingRecord[]): Record<string, num
   return out;
 }
 
-const CHART_MAX_SERIES = 10;
+/** Span of raw funding timestamps in hours (min..max over all rows). */
+function fundingSeriesTimeSpanHours(data: RawFundingRecord[] | null): number | null {
+  if (!data?.length) return null;
+  let minMs = Infinity;
+  let maxMs = -Infinity;
+  for (const row of data) {
+    const t = row.transaction_unix_ms;
+    if (typeof t !== 'number' || !Number.isFinite(t)) continue;
+    if (t < minMs) minMs = t;
+    if (t > maxMs) maxMs = t;
+  }
+  if (!Number.isFinite(minMs) || !Number.isFinite(maxMs) || maxMs <= minMs) return null;
+  return (maxMs - minMs) / 3600000;
+}
+
+/** Top N markets visible on the chart by default; others are toggled from the sidebar. */
+const DEFAULT_CHART_VISIBLE_COUNT = 5;
 
 export default function DecibelFundingPage() {
   const [rawFunding, setRawFunding] = useState<RawFundingRecord[] | null>(null);
   const [markets, setMarkets] = useState<DecibelMarketRow[]>([]);
-  const [fundingAprByMarket, setFundingAprByMarket] = useState<Record<string, { avg_yearly_apr_pct: number; direction: string } | null>>({});
+  const [fundingApr24hByMarket, setFundingApr24hByMarket] = useState<Record<string, { avg_yearly_apr_pct: number; direction: string } | null>>({});
+  const [fundingApr7dByMarket, setFundingApr7dByMarket] = useState<Record<string, { avg_yearly_apr_pct: number; direction: string } | null>>({});
   const [selectedMarket, setSelectedMarket] = useState<DecibelOpenPositionMarket | null>(null);
   const [hoveredCardMarket, setHoveredCardMarket] = useState<string | null>(null);
   const [visibleChartMarkets, setVisibleChartMarkets] = useState<Set<string> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/protocols/decibel/funding')
-      .then((r) => r.json())
-      .then((json) => {
-        if (cancelled) return;
-        if (json?.success && Array.isArray(json.data)) {
-          setRawFunding(json.data as RawFundingRecord[]);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,19 +106,62 @@ export default function DecibelFundingPage() {
     };
   }, []);
 
+  /** One upstream request per market so each series gets full `period=week` history (no combined row cap). */
+  useEffect(() => {
+    if (markets.length === 0) return;
+    let cancelled = false;
+    setRawFunding(null);
+    const keys = markets
+      .map((m) => marketNameForFundingApi(m.market_name || ''))
+      .filter((k) => k.length > 0);
+    Promise.all(
+      keys.map((key) =>
+        fetch(
+          `/api/protocols/decibel/funding?market_name=${encodeURIComponent(key)}&window=7d&series_only=true`
+        )
+          .then((r) => r.json())
+          .then((json) =>
+            json?.success && Array.isArray(json.data) ? (json.data as RawFundingRecord[]) : []
+          )
+      )
+    )
+      .then((chunks) => {
+        if (cancelled) return;
+        const merged: RawFundingRecord[] = [];
+        for (const rows of chunks) merged.push(...rows);
+        setRawFunding(merged);
+      })
+      .catch(() => {
+        if (!cancelled) setRawFunding([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [markets]);
+
   useEffect(() => {
     if (markets.length === 0) return;
     let cancelled = false;
     const keys = markets.map((m) => marketNameForFundingApi(m.market_name || ''));
-    Promise.all(keys.map((k) => fetchFundingApr(k)))
+    Promise.all(
+      keys.map(async (k) => {
+        const [apr24h, apr7d] = await Promise.all([
+          fetchFundingApr(k, '24h'),
+          fetchFundingApr(k, '7d'),
+        ]);
+        return { key: k, apr24h, apr7d };
+      })
+    )
       .then((results) => {
         if (cancelled) return;
-        const map: Record<string, { avg_yearly_apr_pct: number; direction: string } | null> = {};
-        markets.forEach((m, i) => {
-          const key = marketNameForFundingApi(m.market_name || '');
-          map[key] = results[i];
+        const map24h: Record<string, { avg_yearly_apr_pct: number; direction: string } | null> = {};
+        const map7d: Record<string, { avg_yearly_apr_pct: number; direction: string } | null> = {};
+        results.forEach(({ key, apr24h, apr7d }) => {
+          map24h[key] = apr24h;
+          map7d[key] = apr7d;
         });
-        setFundingAprByMarket(map);
+        setFundingApr24hByMarket(map24h);
+        setFundingApr7dByMarket(map7d);
       })
       .catch(() => {});
     return () => {
@@ -126,13 +171,8 @@ export default function DecibelFundingPage() {
 
   const oiNotionalByMarket = useMemo(() => (rawFunding ? latestOINotionalPerMarket(rawFunding) : {}), [rawFunding]);
 
-  const chartMarketNames = useMemo(() => getChartMarketOrder(rawFunding ?? null, CHART_MAX_SERIES), [rawFunding]);
-
-  useEffect(() => {
-    if (chartMarketNames.length > 0 && visibleChartMarkets === null) {
-      setVisibleChartMarkets(new Set(chartMarketNames));
-    }
-  }, [chartMarketNames, visibleChartMarkets]);
+  /** Wall-clock span of combined chart feed (multi-market responses may be row-capped). */
+  const fundingChartSpanHours = useMemo(() => fundingSeriesTimeSpanHours(rawFunding), [rawFunding]);
 
   /** Markets sorted by Open Interest (notional USD) descending */
   const marketsSortedByOI = useMemo(() => {
@@ -144,6 +184,33 @@ export default function DecibelFundingPage() {
       return oiB - oiA;
     });
   }, [markets, oiNotionalByMarket]);
+
+  const chartSeriesOrderPreference = useMemo(
+    () => marketsSortedByOI.map((m) => marketNameForFundingApi(m.market_name || '')),
+    [marketsSortedByOI]
+  );
+
+  /** All markets that have funding series data (chart lines are created for each). */
+  const allChartMarketNames = useMemo(
+    () => getChartMarketOrder(rawFunding ?? null, undefined, chartSeriesOrderPreference),
+    [rawFunding, chartSeriesOrderPreference]
+  );
+
+  const defaultVisibleMarketKeys = useMemo(
+    () => allChartMarketNames.slice(0, DEFAULT_CHART_VISIBLE_COUNT),
+    [allChartMarketNames]
+  );
+
+  const effectiveVisibleChartMarkets = useMemo(() => {
+    if (visibleChartMarkets !== null) return visibleChartMarkets;
+    return new Set(defaultVisibleMarketKeys);
+  }, [visibleChartMarkets, defaultVisibleMarketKeys]);
+
+  useEffect(() => {
+    if (defaultVisibleMarketKeys.length > 0 && visibleChartMarkets === null) {
+      setVisibleChartMarkets(new Set(defaultVisibleMarketKeys));
+    }
+  }, [defaultVisibleMarketKeys, visibleChartMarkets]);
 
   /** Same list as dropdown options for modal (with logo URLs) */
   const marketsForModal = useMemo((): DecibelOpenPositionMarket[] => {
@@ -188,18 +255,24 @@ export default function DecibelFundingPage() {
         <h1 className="text-xl font-bold mb-1 shrink-0">Decibel funding</h1>
         <p className="text-sm text-muted-foreground mb-2 shrink-0">
           Funding rate (bps) over time by market. Positive = longs pay shorts.
+            {fundingChartSpanHours != null && fundingChartSpanHours < 120 && (
+              <span className="block mt-1.5 text-xs text-amber-700 dark:text-amber-400/90">
+                Chart time range is ~{formatNumber(fundingChartSpanHours, 1)}h — less than a full week; check upstream
+                series or <code className="font-mono text-[0.85em]">DECIBEL_FUNDING_SERIES_URL</code>.
+              </span>
+            )}
         </p>
         <div className="flex-1 min-h-[55vh] md:min-h-0 flex flex-col">
           <DecibelFundingChart
             rawData={rawFunding}
-            maxSeries={CHART_MAX_SERIES}
+            explicitMarketOrder={allChartMarketNames}
             className="w-full flex-1 min-h-0"
             hoveredMarket={hoveredCardMarket}
-            visibleMarkets={visibleChartMarkets ?? (chartMarketNames.length > 0 ? new Set(chartMarketNames) : null)}
+            visibleMarkets={effectiveVisibleChartMarkets}
             onLegendHover={setHoveredCardMarket}
             onLegendClick={(market) => {
               setVisibleChartMarkets((prev) => {
-                const base = prev ?? new Set(chartMarketNames);
+                const base = prev ?? new Set(defaultVisibleMarketKeys);
                 const next = new Set(base);
                 if (next.has(market)) next.delete(market);
                 else next.add(market);
@@ -213,62 +286,113 @@ export default function DecibelFundingPage() {
       {/* Right: Markets list (sorted by Open Interest desc) */}
       <aside className="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-border p-4 overflow-y-auto md:max-h-screen min-h-0">
         <h2 className="text-sm font-semibold mb-3">Markets</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Top {DEFAULT_CHART_VISIBLE_COUNT} by open interest are on the chart by default. Use the checkbox to add or remove series; &quot;Only this&quot; isolates one market.
+        </p>
         <ul className="space-y-2">
           {marketsSortedByOI.map((m) => {
             const name = m.market_name || '';
             const key = marketNameForFundingApi(name);
-            const apr = fundingAprByMarket[key];
+            const apr24h = fundingApr24hByMarket[key];
+            const hasChartData = allChartMarketNames.includes(key);
+            const apr7d = fundingApr7dByMarket[key];
             const oiNotional = oiNotionalByMarket[key];
             const logoUrl = getLogoUrl(name);
-            const isOnChart = chartMarketNames.includes(key);
-            const isVisible = visibleChartMarkets == null ? true : visibleChartMarkets.has(key);
+            const isVisibleOnChart = effectiveVisibleChartMarkets.has(key);
             return (
               <li
                 key={m.market_addr}
                 className={cn(
-                  'flex items-center justify-between gap-2 p-2 rounded-lg border border-border bg-card transition-all',
-                  isOnChart && 'cursor-pointer hover:bg-muted/50',
+                  'flex items-start justify-between gap-3 p-2 rounded-lg border border-border bg-card transition-all',
+                  hasChartData && 'hover:bg-muted/50',
                   hoveredCardMarket === key && 'ring-1 ring-primary',
-                  isOnChart && !isVisible && 'opacity-50'
+                  hasChartData && !isVisibleOnChart && 'opacity-60'
                 )}
-                onMouseEnter={() => isOnChart && setHoveredCardMarket(key)}
+                onMouseEnter={() => hasChartData && setHoveredCardMarket(key)}
                 onMouseLeave={() => setHoveredCardMarket(null)}
-                onClick={() => {
-                  if (!isOnChart) return;
-                  setVisibleChartMarkets((prev) => {
-                    const base = prev ?? new Set(chartMarketNames);
-                    const next = new Set(base);
-                    if (next.has(key)) next.delete(key);
-                    else next.add(key);
-                    return next;
-                  });
-                }}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  {logoUrl && (
-                    <Image
-                      src={logoUrl}
-                      alt=""
-                      width={20}
-                      height={20}
-                      className="shrink-0 rounded-full"
-                      unoptimized
-                    />
+                <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                  <div className="flex gap-2 min-w-0 items-start">
+                    {logoUrl && (
+                      <Image
+                        src={logoUrl}
+                        alt=""
+                        width={20}
+                        height={20}
+                        className="shrink-0 rounded-full mt-0.5"
+                        unoptimized
+                      />
+                    )}
+                    <span className="text-sm font-medium break-words leading-snug min-w-0">
+                      {name || m.market_addr.slice(0, 8)}
+                    </span>
+                  </div>
+                  {hasChartData ? (
+                    <label className="flex items-center gap-2 cursor-pointer self-start w-full min-w-0">
+                      <Checkbox
+                        title="Show on chart"
+                        checked={isVisibleOnChart}
+                        className="shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                        onCheckedChange={(checked) => {
+                          setVisibleChartMarkets((prev) => {
+                            const base = prev ?? new Set(defaultVisibleMarketKeys);
+                            const next = new Set(base);
+                            if (checked === true) next.add(key);
+                            else next.delete(key);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className="text-xs text-muted-foreground select-none">Chart</span>
+                    </label>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground self-start">No chart data</span>
                   )}
-                  <span className="text-sm font-medium truncate">{name || m.market_addr.slice(0, 8)}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!hasChartData}
+                    title="Show only this market on the chart"
+                    className="h-6 self-start px-2 -ml-2 text-[10px] font-normal text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!hasChartData) return;
+                      setVisibleChartMarkets(new Set([key]));
+                    }}
+                  >
+                    Only this
+                  </Button>
                 </div>
-                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                <div className="flex flex-col items-end gap-0.5 shrink-0 text-right">
                   <span className="text-xs text-muted-foreground">
                     APR 24h:{' '}
-                    {apr != null && Number.isFinite(apr.avg_yearly_apr_pct) ? (
+                    {apr24h != null && Number.isFinite(apr24h.avg_yearly_apr_pct) ? (
                       <span
                         className={cn(
                           'font-medium',
-                          apr.avg_yearly_apr_pct > 0 ? 'text-green-600 dark:text-green-400' : apr.avg_yearly_apr_pct < 0 ? 'text-red-600 dark:text-red-400' : ''
+                          apr24h.avg_yearly_apr_pct > 0 ? 'text-green-600 dark:text-green-400' : apr24h.avg_yearly_apr_pct < 0 ? 'text-red-600 dark:text-red-400' : ''
                         )}
                       >
-                        {apr.avg_yearly_apr_pct > 0 ? '+' : ''}
-                        {formatNumber(apr.avg_yearly_apr_pct, 2)}%
+                        {apr24h.avg_yearly_apr_pct > 0 ? '+' : ''}
+                        {formatNumber(apr24h.avg_yearly_apr_pct, 2)}%
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    APR 7d:{' '}
+                    {apr7d != null && Number.isFinite(apr7d.avg_yearly_apr_pct) ? (
+                      <span
+                        className={cn(
+                          'font-medium',
+                          apr7d.avg_yearly_apr_pct > 0 ? 'text-green-600 dark:text-green-400' : apr7d.avg_yearly_apr_pct < 0 ? 'text-red-600 dark:text-red-400' : ''
+                        )}
+                      >
+                        {apr7d.avg_yearly_apr_pct > 0 ? '+' : ''}
+                        {formatNumber(apr7d.avg_yearly_apr_pct, 2)}%
                       </span>
                     ) : (
                       '—'
@@ -280,7 +404,7 @@ export default function DecibelFundingPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-1 h-7 text-xs"
+                    className="mt-1 h-7 text-xs w-full max-w-[9.5rem]"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedMarket({

@@ -78,15 +78,58 @@ function groupByMarket(
   return byMarket as Record<string, { time: UTCTimestamp; value: number }[]>;
 }
 
-/** Returns market names in chart order (top N by data point count). Use for hover/visibility sync with cards. */
-export function getChartMarketOrder(data: RawFundingRecord[] | null, maxSeries = 8): string[] {
+type SeriesByMarket = Record<string, { time: UTCTimestamp; value: number }[]>;
+
+/**
+ * Picks up to maxSeries markets: prefer `preferredOrder` (e.g. OI desc) for markets that have data,
+ * then fill remaining slots by point count so major pairs are not dropped when many markets share ~same length.
+ */
+function pickMarketOrder(
+  byMarket: SeriesByMarket,
+  maxSeries: number | undefined,
+  preferredOrder?: string[]
+): string[] {
+  const limit = maxSeries ?? Number.MAX_SAFE_INTEGER;
+  const entries = Object.entries(byMarket).filter(([, points]) => points.length > 0);
+  if (preferredOrder?.length) {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const name of preferredOrder) {
+      if (ordered.length >= limit) break;
+      const pts = byMarket[name];
+      if (pts?.length) {
+        ordered.push(name);
+        seen.add(name);
+      }
+    }
+    const rest = entries
+      .filter(([name]) => !seen.has(name))
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([name]) => name);
+    for (const name of rest) {
+      if (ordered.length >= limit) break;
+      ordered.push(name);
+    }
+    return ordered;
+  }
+  return entries
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, limit)
+    .map(([name]) => name);
+}
+
+/**
+ * Returns market names in chart order. Use for hover/visibility sync with cards.
+ * Pass `maxSeries: undefined` to include every market that has points.
+ */
+export function getChartMarketOrder(
+  data: RawFundingRecord[] | null,
+  maxSeries?: number,
+  preferredOrder?: string[]
+): string[] {
   if (!data || data.length === 0) return [];
   const byMarket = groupByMarket(data);
-  return Object.entries(byMarket)
-    .filter(([, points]) => points.length > 0)
-    .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, maxSeries)
-    .map(([name]) => name);
+  return pickMarketOrder(byMarket, maxSeries, preferredOrder);
 }
 
 /** Simple moving average to smooth spikes (window size 5). */
@@ -114,8 +157,15 @@ export interface DecibelFundingChartProps {
   /** If provided, use this data instead of fetching (e.g. from page for single fetch). */
   rawData?: RawFundingRecord[] | null;
   className?: string;
-  /** Max number of series to show (by most data points or first N markets). Default 8. */
+  /**
+   * Max number of series to create when `explicitMarketOrder` is not set. Default 8.
+   * Ignored if `explicitMarketOrder` is provided.
+   */
   maxSeries?: number;
+  /** If set, create one series per market in this order (skips markets with no points). */
+  explicitMarketOrder?: string[];
+  /** Prefer this order (e.g. OI desc) so major pairs stay on the chart when there are many markets. */
+  seriesOrderPreference?: string[];
   /** Market name to highlight on the chart (e.g. from card hover). */
   hoveredMarket?: string | null;
   /** Set of market names that should be visible; others are hidden. Undefined = all visible. */
@@ -142,6 +192,8 @@ export function DecibelFundingChart({
   rawData,
   className,
   maxSeries = 8,
+  explicitMarketOrder,
+  seriesOrderPreference,
   hoveredMarket = null,
   visibleMarkets = null,
   onLegendHover,
@@ -194,13 +246,11 @@ export function DecibelFundingChart({
   }, [data]);
 
   const marketOrder = useMemo(() => {
-    const entries = Object.entries(seriesByMarket)
-      .filter(([, points]) => points.length > 0)
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, maxSeries)
-      .map(([name]) => name);
-    return entries;
-  }, [seriesByMarket, maxSeries]);
+    if (explicitMarketOrder?.length) {
+      return explicitMarketOrder.filter((name) => (seriesByMarket[name]?.length ?? 0) > 0);
+    }
+    return pickMarketOrder(seriesByMarket, maxSeries, seriesOrderPreference);
+  }, [seriesByMarket, maxSeries, seriesOrderPreference, explicitMarketOrder]);
 
   useEffect(() => {
     if (!containerRef.current || marketOrder.length === 0 || !data) return;
@@ -306,34 +356,34 @@ export function DecibelFundingChart({
       />
       {marketOrder.length > 0 && !hasError && (
         <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1 pt-1.5 border-t border-border text-xs text-muted-foreground">
-          {marketOrder.map((name, i) => {
-            const visible = visibleMarkets == null ? true : visibleMarkets.has(name);
-            const isHovered = hoveredMarket === name;
-            const label = name.replace(/\/USD$/i, '');
-            return (
-              <span
-                key={name}
-                role="button"
-                tabIndex={0}
-                className={`inline-flex items-center gap-1.5 cursor-pointer select-none rounded px-1.5 py-0.5 transition-opacity ${
-                  !visible ? 'opacity-40' : ''
-                } ${isHovered ? 'ring-1 ring-primary rounded' : ''}`}
-                style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}
-                onMouseEnter={() => onLegendHover?.(name)}
-                onMouseLeave={() => onLegendHover?.(null)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onLegendClick?.(name);
-                  }
-                }}
-                onClick={() => onLegendClick?.(name)}
-              >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'currentColor' }} />
-                {label}
-              </span>
-            );
-          })}
+          {marketOrder
+            .map((name, i) => ({ name, colorIndex: i }))
+            .filter(({ name }) => visibleMarkets == null || visibleMarkets.has(name))
+            .map(({ name, colorIndex }) => {
+              const isHovered = hoveredMarket === name;
+              const label = name.replace(/\/USD$/i, '');
+              return (
+                <span
+                  key={name}
+                  role="button"
+                  tabIndex={0}
+                  className={`inline-flex items-center gap-1.5 cursor-pointer select-none rounded px-1.5 py-0.5 transition-opacity ${isHovered ? 'ring-1 ring-primary rounded' : ''}`}
+                  style={{ color: CHART_COLORS[colorIndex % CHART_COLORS.length] }}
+                  onMouseEnter={() => onLegendHover?.(name)}
+                  onMouseLeave={() => onLegendHover?.(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onLegendClick?.(name);
+                    }
+                  }}
+                  onClick={() => onLegendClick?.(name)}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'currentColor' }} />
+                  {label}
+                </span>
+              );
+            })}
         </div>
       )}
     </div>

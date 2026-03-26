@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,21 +17,39 @@ import { normalizeAddress } from "@/lib/utils/addressNormalization";
 import {
   Tooltip,
   TooltipContent,
-  TooltipTrigger,
   TooltipProvider,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Copy } from "lucide-react";
 import { YieldAIDepositModal } from "@/components/ui/yield-ai-deposit-modal";
 import { YieldAIWithdrawModal } from "@/components/ui/yield-ai-withdraw-modal";
-import { useMoarPositions, useMoarPools, type MoarPosition } from "@/lib/query/hooks/protocols/moar";
+import {
+  useMoarPositions,
+  useMoarPools,
+  useMoarRewards,
+  type MoarPosition,
+} from "@/lib/query/hooks/protocols/moar";
 import { useWithdraw } from "@/lib/hooks/useWithdraw";
 import { useWalletStore } from "@/lib/stores/walletStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query/queryKeys";
 import { WithdrawModal } from "@/components/ui/withdraw-modal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { areAddressesEqual, toCanonicalAddress } from "@/lib/utils/addressNormalization";
+import { buildDelegateTradingPayload } from "@/lib/protocols/decibel/delegateTrading";
+import { Input } from "@/components/ui/input";
+
+/** Re-enable when Decibel perps delegation matches executor flow (Decibel Delegation + Executor Trade UI). */
+const SHOW_EXECUTOR_TRADE_BLOCK = false;
 
 export function YieldAIPositions() {
-  const { account } = useWallet();
+  const { account, signAndSubmitTransaction } = useWallet();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [safeAddresses, setSafeAddresses] = useState<string[]>([]);
@@ -43,9 +61,22 @@ export function YieldAIPositions() {
   const [selectedWithdrawToken, setSelectedWithdrawToken] = useState<Token | null>(null);
   const [showMoarWithdrawModal, setShowMoarWithdrawModal] = useState(false);
   const [selectedMoarWithdrawPosition, setSelectedMoarWithdrawPosition] = useState<MoarPosition | null>(null);
+  const [decibelSubaccounts, setDecibelSubaccounts] = useState<string[]>([]);
+  const [selectedDecibelSubaccount, setSelectedDecibelSubaccount] = useState<string>("");
+  const [delegationStatusLoading, setDelegationStatusLoading] = useState(false);
+  const [delegateSubmitting, setDelegateSubmitting] = useState(false);
+  const [executorAddress, setExecutorAddress] = useState<string | null>(null);
+  const [isDelegatedToExecutor, setIsDelegatedToExecutor] = useState(false);
+  const [delegationStatusError, setDelegationStatusError] = useState<string | null>(null);
+  const [executorAsset, setExecutorAsset] = useState<"BTC" | "APT">("BTC");
+  const [executorSizeUsd, setExecutorSizeUsd] = useState<string>("10");
+  const [executorSubmitting, setExecutorSubmitting] = useState(false);
 
   const safeAddr = safeAddresses[0];
   const { data: moarPositions = [] } = useMoarPositions(safeAddr, {
+    refetchOnMount: "always",
+  });
+  const { data: rewardsResponse } = useMoarRewards(safeAddr, {
     refetchOnMount: "always",
   });
   const { data: poolsResponse } = useMoarPools();
@@ -69,7 +100,7 @@ export function YieldAIPositions() {
     return map;
   })();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const walletAddress = account?.address?.toString();
     if (!walletAddress) {
       setSafeAddresses([]);
@@ -115,7 +146,12 @@ export function YieldAIPositions() {
       }
 
       const built: Token[] = [];
-      const tokenListAptos = getTokenList(1);
+      const tokenListAptos = getTokenList(1) as Array<{
+        faAddress?: string;
+        tokenAddress?: string | null;
+        symbol?: string;
+        logoUrl?: string;
+      }>;
       const resolveLogo = (addressOrType: string, symbol: string) => {
         const addr = addressOrType.includes("::")
           ? addressOrType.split("::")[0]
@@ -128,11 +164,11 @@ export function YieldAIPositions() {
             return tFa === norm || tTa === norm;
           }
         );
-        if ((byAddr as any)?.logoUrl) return (byAddr as any).logoUrl;
+        if (byAddr?.logoUrl) return byAddr.logoUrl;
         const bySymbol = tokenListAptos.find(
           (t: { symbol?: string }) => t.symbol === symbol
         );
-        return (bySymbol as any)?.logoUrl;
+        return bySymbol?.logoUrl;
       };
       for (const t of faTokens) {
         const price = prices.find(
@@ -191,11 +227,211 @@ export function YieldAIPositions() {
     } finally {
       setLoading(false);
     }
+  }, [account?.address]);
+
+  const loadDecibelSubaccounts = useCallback(async () => {
+    const walletAddress = account?.address?.toString();
+    if (!walletAddress) {
+      setDecibelSubaccounts([]);
+      setSelectedDecibelSubaccount("");
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/protocols/decibel/subaccounts?address=${encodeURIComponent(walletAddress)}`
+      );
+      const json = await response.json();
+      const data: Array<{ subaccount_address?: string }> = Array.isArray(json?.data) ? json.data : [];
+      const addresses = data
+        .map((item) => item?.subaccount_address)
+        .filter((value: unknown): value is string => typeof value === "string")
+        .map((value: string) => toCanonicalAddress(value));
+      setDecibelSubaccounts(addresses);
+      setSelectedDecibelSubaccount((prev) => {
+        if (prev && addresses.some((it) => areAddressesEqual(it, prev))) {
+          return toCanonicalAddress(prev);
+        }
+        return addresses[0] ?? "";
+      });
+    } catch {
+      setDecibelSubaccounts([]);
+      setSelectedDecibelSubaccount("");
+    }
+  }, [account?.address]);
+
+  const loadDelegationStatus = async (subaccount: string) => {
+    if (!subaccount) {
+      setDelegationStatusError(null);
+      setIsDelegatedToExecutor(false);
+      setExecutorAddress(null);
+      return;
+    }
+    try {
+      setDelegationStatusLoading(true);
+      setDelegationStatusError(null);
+      const response = await fetch(
+        `/api/protocols/decibel/delegations?subaccount=${encodeURIComponent(subaccount)}`
+      );
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error || "Failed to load delegation status");
+      }
+      setIsDelegatedToExecutor(Boolean(json?.isDelegatedToExecutor));
+      setExecutorAddress(typeof json?.executorAddress === "string" ? json.executorAddress : null);
+    } catch (err) {
+      setIsDelegatedToExecutor(false);
+      setExecutorAddress(null);
+      setDelegationStatusError(
+        err instanceof Error ? err.message : "Failed to load delegation status"
+      );
+    } finally {
+      setDelegationStatusLoading(false);
+    }
+  };
+
+  const handleDelegate = async () => {
+    if (!account?.address) {
+      toast({
+        title: "Wallet not connected",
+        description: "Connect your wallet to delegate trading.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedDecibelSubaccount) {
+      toast({
+        title: "Subaccount required",
+        description: "Select a Decibel subaccount first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!executorAddress) {
+      toast({
+        title: "Executor is not configured",
+        description: "Try refreshing delegation status and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!signAndSubmitTransaction) {
+      toast({
+        title: "Unsupported wallet",
+        description: "Current wallet cannot sign and submit transactions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDelegateSubmitting(true);
+      const payload = buildDelegateTradingPayload({
+        subaccountAddr: selectedDecibelSubaccount,
+        accountToDelegateTo: executorAddress,
+        expirationTimestampSecs: null,
+      });
+      const result = await signAndSubmitTransaction({
+        data: {
+          function: payload.function as `${string}::${string}::${string}`,
+          typeArguments: payload.typeArguments,
+          functionArguments: payload.functionArguments as (string | number | null)[],
+        },
+        options: { maxGasAmount: 20000 },
+      });
+      const txHash = typeof result?.hash === "string" ? result.hash : "";
+      toast({
+        title: "Delegation submitted",
+        description: txHash
+          ? `Transaction ${txHash.slice(0, 6)}...${txHash.slice(-4)}`
+          : "Transaction submitted successfully.",
+      });
+      await loadDelegationStatus(selectedDecibelSubaccount);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delegate trading";
+      toast({ title: "Delegation failed", description: msg, variant: "destructive" });
+    } finally {
+      setDelegateSubmitting(false);
+    }
+  };
+
+  const handleExecutorOpenShort = async () => {
+    if (!account?.address) {
+      toast({
+        title: "Wallet not connected",
+        description: "Connect your wallet to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedDecibelSubaccount) {
+      toast({
+        title: "Subaccount required",
+        description: "Select a Decibel subaccount first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const sizeUsd = Number(executorSizeUsd);
+    if (!Number.isFinite(sizeUsd) || sizeUsd <= 0) {
+      toast({
+        title: "Invalid size",
+        description: "Enter a valid USD size.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      setExecutorSubmitting(true);
+      const response = await fetch("/api/protocols/decibel/executor-open-short", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner: account.address.toString(),
+          subaccount: selectedDecibelSubaccount,
+          asset: executorAsset,
+          sizeUsd,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error || "Failed to open short via executor");
+      }
+
+      const hash = json?.data?.openTxHash as string | undefined;
+      toast({
+        title: "Executor short opened",
+        description: hash
+          ? `${executorAsset} short 1x submitted: ${hash.slice(0, 6)}...${hash.slice(-4)}`
+          : `${executorAsset} short 1x submitted.`,
+      });
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "decibel" } }));
+      }, 1500);
+    } catch (err) {
+      toast({
+        title: "Executor short failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setExecutorSubmitting(false);
+    }
   };
 
   useEffect(() => {
-    loadData();
-  }, [account?.address]);
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!SHOW_EXECUTOR_TRADE_BLOCK) return;
+    void loadDecibelSubaccounts();
+  }, [loadDecibelSubaccounts]);
+
+  useEffect(() => {
+    if (!SHOW_EXECUTOR_TRADE_BLOCK) return;
+    if (!selectedDecibelSubaccount) return;
+    void loadDelegationStatus(selectedDecibelSubaccount);
+  }, [selectedDecibelSubaccount]);
 
   useEffect(() => {
     const handleRefresh: EventListener = (evt) => {
@@ -206,7 +442,7 @@ export function YieldAIPositions() {
     };
     window.addEventListener("refreshPositions", handleRefresh);
     return () => window.removeEventListener("refreshPositions", handleRefresh);
-  }, [account?.address]);
+  }, [loadData]);
 
   const getMoarTokenAddress = (symbol: string) => {
     if (symbol === "APT") return "0x1::aptos_coin::AptosCoin";
@@ -223,6 +459,7 @@ export function YieldAIPositions() {
       setSelectedMoarWithdrawPosition(null);
       if (safeAddr) {
         queryClient.invalidateQueries({ queryKey: queryKeys.protocols.moar.userPositions(safeAddr) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.protocols.moar.rewards(safeAddr) });
       }
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "yield-ai" } }));
@@ -237,13 +474,17 @@ export function YieldAIPositions() {
     }
   };
 
+  const rewardsData = rewardsResponse?.data ?? [];
+  const totalRewardsValue = rewardsResponse?.totalUsd ?? 0;
+
   const moarPositionsValue = moarPositions.reduce(
     (sum, p) => sum + parseFloat(p.value || "0"),
     0
   );
   const totalValue =
     tokens.reduce((sum, t) => sum + (t.value ? parseFloat(t.value) : 0), 0) +
-    moarPositionsValue;
+    moarPositionsValue +
+    totalRewardsValue;
 
   if (loading) {
     return <div className="py-4 text-muted-foreground">Loading safe assets...</div>;
@@ -298,30 +539,174 @@ export function YieldAIPositions() {
             </TooltipContent>
           </Tooltip>
         </div>
-        {!tokens.some(
-          (t) =>
-            t.symbol === "USDC" ||
-            normalizeAddress(t.address) === normalizeAddress(USDC_FA_METADATA_MAINNET)
-        ) && (
-          <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+          <span className="text-sm text-muted-foreground font-normal text-right max-w-md">
+            AI agent rebalances positions every hour
+          </span>
+          {!tokens.some(
+            (t) =>
+              t.symbol === "USDC" ||
+              normalizeAddress(t.address) === normalizeAddress(USDC_FA_METADATA_MAINNET)
+          ) && (
             <Button size="sm" variant="default" onClick={() => setShowDepositModal(true)}>
               Deposit USDC
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
+      {SHOW_EXECUTOR_TRADE_BLOCK && (
+        <>
+          <div className="rounded-lg border bg-card p-3 sm:p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">Decibel Delegation</div>
+                <div className="text-sm text-muted-foreground">
+                  Delegate selected subaccount to executor for AI trading.
+                </div>
+              </div>
+              <Badge
+                variant="outline"
+                className={
+                  isDelegatedToExecutor
+                    ? "bg-green-500/10 text-green-600 border-green-500/20"
+                    : "bg-muted text-muted-foreground"
+                }
+              >
+                {delegationStatusLoading
+                  ? "Checking..."
+                  : isDelegatedToExecutor
+                    ? "Delegated"
+                    : "Not delegated"}
+              </Badge>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={selectedDecibelSubaccount}
+                onValueChange={setSelectedDecibelSubaccount}
+                disabled={decibelSubaccounts.length === 0 || delegateSubmitting}
+              >
+                <SelectTrigger className="w-full sm:w-[380px]">
+                  <SelectValue placeholder="Select Decibel subaccount" />
+                </SelectTrigger>
+                <SelectContent>
+                  {decibelSubaccounts.map((sub) => (
+                    <SelectItem key={sub} value={sub}>
+                      {sub.slice(0, 8)}...{sub.slice(-6)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={handleDelegate}
+                  disabled={
+                    delegateSubmitting ||
+                    !account?.address ||
+                    !selectedDecibelSubaccount ||
+                    !executorAddress
+                  }
+                >
+                  {delegateSubmitting ? "Delegating..." : "Delegate"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (selectedDecibelSubaccount) {
+                      void loadDelegationStatus(selectedDecibelSubaccount);
+                    }
+                  }}
+                  disabled={delegationStatusLoading || !selectedDecibelSubaccount}
+                >
+                  Refresh status
+                </Button>
+              </div>
+            </div>
+
+            {executorAddress && (
+              <div className="text-xs text-muted-foreground">
+                Executor: {executorAddress.slice(0, 8)}...{executorAddress.slice(-6)}
+              </div>
+            )}
+            {decibelSubaccounts.length === 0 && (
+              <div className="text-xs text-muted-foreground">
+                No Decibel subaccounts found for this wallet.
+              </div>
+            )}
+            {delegationStatusError && (
+              <div className="text-xs text-destructive">{delegationStatusError}</div>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-card p-3 sm:p-4 space-y-3">
+            <div>
+              <div className="font-medium">Executor Trade</div>
+              <div className="text-sm text-muted-foreground">
+                Test mode: open market short 1x on BTC or APT without wallet popup.
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Select
+                value={executorAsset}
+                onValueChange={(value) => setExecutorAsset(value as "BTC" | "APT")}
+                disabled={executorSubmitting}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BTC">BTC</SelectItem>
+                  <SelectItem value="APT">APT</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Size USD"
+                value={executorSizeUsd}
+                onChange={(e) => setExecutorSizeUsd(e.target.value)}
+                disabled={executorSubmitting}
+              />
+              <Button
+                variant="default"
+                onClick={handleExecutorOpenShort}
+                disabled={
+                  executorSubmitting ||
+                  !selectedDecibelSubaccount
+                }
+              >
+                {executorSubmitting ? "Submitting..." : "Open short 1x"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
       <ScrollArea>
+        {moarPositions.length > 0 && (
+          <div className="px-3 sm:px-4 pt-1 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Moar Market
+          </div>
+        )}
         {moarPositions.map((position) => {
           const value = parseFloat(position.value || "0");
           const decimals = position.assetInfo?.decimals ?? 8;
           const amount = parseFloat(position.balance || "0") / Math.pow(10, decimals);
           const poolAPR = poolsAPR[position.poolId];
+          const positionRewards = rewardsData.filter(
+            (reward: { farming_identifier?: string }) =>
+              reward.farming_identifier &&
+              reward.farming_identifier === position.poolId.toString()
+          );
           return (
-            <div
-              key={`moar-${position.poolId}`}
-              className="p-3 sm:p-4 border-b last:border-b-0 flex justify-between items-center gap-3"
-            >
+            <div key={`moar-${position.poolId}`} className="border-b last:border-b-0">
+              <div className="p-3 sm:p-4 flex justify-between items-center gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="flex items-center -space-x-1">
                   <div className="w-8 h-8 relative shrink-0 rounded-full bg-muted flex items-center justify-center overflow-hidden ring-2 ring-background">
@@ -388,13 +773,76 @@ export function YieldAIPositions() {
                   )}
                 </div>
               </div>
+              </div>
+              {positionRewards.length > 0 && (
+                <div className="px-3 sm:px-4 pb-3 pt-0 border-t border-border">
+                  <div className="text-xs font-medium text-muted-foreground mb-1">
+                    💰 Supply Rewards
+                  </div>
+                  <div className="space-y-1">
+                    {positionRewards.map((reward: { logoUrl?: string | null; symbol?: string; usdValue?: number; amount?: number; token_info?: { symbol?: string } }, rewardIdx: number) => (
+                      <TooltipProvider key={rewardIdx}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center justify-between text-xs cursor-help">
+                              <div className="flex items-center gap-1">
+                                {reward.logoUrl && (
+                                  <Image
+                                    src={reward.logoUrl}
+                                    alt={reward.symbol ?? "?"}
+                                    width={12}
+                                    height={12}
+                                    className="object-contain"
+                                    unoptimized
+                                  />
+                                )}
+                                <span className="text-muted-foreground">
+                                  {reward.symbol ?? "Unknown"}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-medium">
+                                  {formatCurrency(reward.usdValue ?? 0)}
+                                </div>
+                              </div>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="bg-popover text-popover-foreground border-border">
+                            <div className="text-xs">
+                              <div className="text-muted-foreground">
+                                {formatNumber(reward.amount ?? 0, 6)}{" "}
+                                {reward.token_info?.symbol ?? reward.symbol ?? "Unknown"}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {formatCurrency(reward.usdValue ?? 0)}
+                              </div>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
         {tokens.length === 0 && moarPositions.length === 0 ? (
           <div className="py-4 text-muted-foreground">No assets in this safe.</div>
         ) : (
-          tokens.map((token) => {
+          <>
+            {tokens.length > 0 && (
+              <div
+                className={
+                  moarPositions.length > 0
+                    ? "px-3 sm:px-4 pt-3 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide border-t border-border"
+                    : "px-3 sm:px-4 pt-1 pb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                }
+              >
+                AI agent wallet (safe)
+              </div>
+            )}
+            {tokens.map((token) => {
             const value = token.value ? parseFloat(token.value) : 0;
             const amount =
               parseFloat(token.amount) / Math.pow(10, token.decimals);
@@ -472,15 +920,63 @@ export function YieldAIPositions() {
                 </div>
               </div>
             );
-          })
+          })}
+          </>
         )}
       </ScrollArea>
 
-      <div className="flex items-center justify-between pt-6 pb-6">
-        <span className="text-xl">Total assets in safe:</span>
-        <span className="text-xl text-primary font-bold">
-          {formatCurrency(totalValue, 2)}
-        </span>
+      <div className="pt-6 pb-6 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xl">Total assets in safe:</span>
+          <span className="text-xl text-primary font-bold">
+            {formatCurrency(totalValue, 2)}
+          </span>
+        </div>
+        {totalRewardsValue > 0 && (
+          <div className="flex justify-end">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1 justify-end cursor-help">
+                    <span>💰</span>
+                    <span>including rewards {formatCurrency(totalRewardsValue)}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="bg-popover text-popover-foreground border-border max-w-xs">
+                  <div className="text-xs font-semibold mb-1">Rewards breakdown:</div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {rewardsData.map(
+                      (
+                        reward: {
+                          logoUrl?: string | null;
+                          symbol?: string;
+                          amount?: number;
+                          usdValue?: number;
+                        },
+                        idx: number
+                      ) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          {reward.logoUrl && (
+                            <img
+                              src={reward.logoUrl}
+                              alt={reward.symbol ?? ""}
+                              className="w-3 h-3 rounded-full"
+                            />
+                          )}
+                          <span>{reward.symbol}</span>
+                          <span>{formatNumber(reward.amount ?? 0, 6)}</span>
+                          <span className="text-muted-foreground">
+                            {formatCurrency(reward.usdValue ?? 0)}
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        )}
       </div>
 
       <YieldAIDepositModal
