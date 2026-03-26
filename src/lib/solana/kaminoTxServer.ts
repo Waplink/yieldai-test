@@ -5,7 +5,8 @@ import Decimal from "decimal.js";
 import type { Address } from "@solana/addresses";
 import { address } from "@solana/addresses";
 import type { Instruction } from "@solana/instructions";
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { Buffer } from "buffer";
+import { Connection, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 
 export function getSolanaRpcEndpoint(): string {
   return (
@@ -17,7 +18,7 @@ export function getSolanaRpcEndpoint(): string {
   );
 }
 
-function kitInstructionToWeb3(ix: Instruction): import("@solana/web3.js").TransactionInstruction {
+function kitInstructionToWeb3(ix: Instruction): TransactionInstruction {
   const programId = new PublicKey(String(ix.programAddress));
   const keys =
     (ix.accounts ?? []).map((a) => {
@@ -30,9 +31,7 @@ function kitInstructionToWeb3(ix: Instruction): import("@solana/web3.js").Transa
         isWritable,
       };
     }) ?? [];
-  const data = ix.data ? Uint8Array.from(ix.data) : new Uint8Array();
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { TransactionInstruction } = require("@solana/web3.js") as typeof import("@solana/web3.js");
+  const data = Buffer.from(ix.data ? Uint8Array.from(ix.data) : new Uint8Array());
   return new TransactionInstruction({ programId, keys, data });
 }
 
@@ -123,7 +122,7 @@ export async function buildKaminoVaultWithdrawTransactionBase64(params: {
 
   const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
   const { blockhash } = await connection.getLatestBlockhash("confirmed");
-  const slot = await connection.getSlot("confirmed");
+  const slot = BigInt(await connection.getSlot("confirmed"));
 
   const { vault, lookupTable } = await loadKaminoVaultForAddress({
     vaultAddress: params.vaultAddress,
