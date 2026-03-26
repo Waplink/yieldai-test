@@ -1011,11 +1011,18 @@ export function DepositButton({
       })();
 
       const signed = await resolvedSignTransaction(txForWallet as any);
-      const signature = await connection.sendRawTransaction((signed as any).serialize(), {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
+      const sendResp = await fetch("/api/solana/sendRaw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          txBase64: Buffer.from((signed as any).serialize()).toString("base64"),
+        }),
       });
-      await connection.confirmTransaction(signature, "confirmed");
+      const sendJson = await sendResp.json().catch(() => null);
+      if (!sendResp.ok || !sendJson?.success || !sendJson?.data?.signature) {
+        throw new Error(sendJson?.error || `Send failed: ${sendResp.status}`);
+      }
+      const signature = String(sendJson.data.signature);
       if (typeof window !== "undefined") {
         window.setTimeout(() => {
           void refreshSolana();

@@ -578,11 +578,18 @@ export function KaminoPositions() {
         })();
 
         const signed = await activeSignTransaction(txForWallet as any);
-        const sig = await connection.sendRawTransaction((signed as any).serialize(), {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
+        const sendResp = await fetch("/api/solana/sendRaw", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            txBase64: Buffer.from((signed as any).serialize()).toString("base64"),
+          }),
         });
-        await connection.confirmTransaction(sig, "confirmed");
+        const sendJson = await sendResp.json().catch(() => null);
+        if (!sendResp.ok || !sendJson?.success || !sendJson?.data?.signature) {
+          throw new Error(sendJson?.error || `Send failed: ${sendResp.status}`);
+        }
+        const sig = String(sendJson.data.signature);
         toast({ title: mode === "deposit" ? "Deposit submitted" : "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
 
         closeEarnModal();
