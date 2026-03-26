@@ -26,7 +26,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
 import { KaminoVaultDepositModal } from "./kamino-vault-deposit-modal";
-import { depositToKaminoVault } from "@/lib/solana/kaminoKvVaultTx";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { getAptosWalletNameFromStorage, isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
@@ -986,12 +985,40 @@ export function DepositButton({
 
     setIsKaminoVaultDepositing(true);
     try {
-      const signature = await depositToKaminoVault({
-        vaultAddress: vault,
-        amountUi,
-        signerAddress: resolvedSignerAddress,
-        signTransaction: resolvedSignTransaction as (tx: VersionedTransaction) => Promise<VersionedTransaction>,
+      // Prepare unsigned tx on server (klend-sdk depends on Node modules), then sign+send on client.
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        process.env.SOLANA_RPC_URL ||
+        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
+      const connection = new Connection(endpoint, "confirmed");
+
+      const txResp = await fetch("/api/protocols/kamino/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vaultAddress: vault,
+          signer: resolvedSignerAddress,
+          amountUi,
+        }),
       });
+      const txData = await txResp.json().catch(() => null);
+      if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+        throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
+      }
+
+      const serialized = decodeBase64Tx(String(txData.data.transaction));
+      const txForWallet = isVersionedTransactionBytes(serialized)
+        ? VersionedTransaction.deserialize(serialized)
+        : Transaction.from(serialized);
+
+      const signed = await resolvedSignTransaction(txForWallet as any);
+      const signature = await connection.sendRawTransaction((signed as any).serialize(), {
+        skipPreflight: false,
+        preflightCommitment: "confirmed",
+      });
+      await connection.confirmTransaction(signature, "confirmed");
       if (typeof window !== "undefined") {
         window.setTimeout(() => {
           void refreshSolana();

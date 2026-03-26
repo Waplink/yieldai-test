@@ -1,5 +1,4 @@
 import { fromVersionedTransaction } from "@solana/compat";
-import { KaminoVault } from "@kamino-finance/klend-sdk";
 import type { Address } from "@solana/addresses";
 import { address } from "@solana/addresses";
 import type { Instruction } from "@solana/instructions";
@@ -20,6 +19,7 @@ import type { SignatureDictionary, TransactionPartialSigner } from "@solana/sign
 import type { Transaction as KitTransaction } from "@solana/transactions";
 import Decimal from "decimal.js";
 import { Connection, PublicKey, SendTransactionError, TransactionInstruction, TransactionMessage, VersionedMessage, VersionedTransaction } from "@solana/web3.js";
+import { sendVaultInstructionsWithWalletAdapter } from "@/lib/solana/kaminoTxClient";
 
 function base64ToBytes(base64: string): Uint8Array {
   // Prefer browser-safe decoding (Next client). Fallback to Node Buffer when available.
@@ -81,51 +81,7 @@ async function sendRawVersionedWithLogs(connection: Connection, raw: Uint8Array)
  * Wallet-adapter compatible path: build a VersionedTransaction via web3.js, sign with adapter,
  * then send the signed bytes. This avoids Solana Kit signer dictionary mismatches.
  */
-export async function sendVaultInstructionsWithWalletAdapter(params: {
-  connection: Connection;
-  payerBase58: string;
-  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
-  instructions: readonly Instruction[];
-  /** Optional ALT addresses to reduce tx size. */
-  addressLookupTableAddresses?: string[];
-}): Promise<string> {
-  const { connection, payerBase58, signTransaction, instructions, addressLookupTableAddresses = [] } = params;
-  const payer = new PublicKey(payerBase58);
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
-  const web3Ixs = instructions.map(kitInstructionToWeb3);
-  const altAccounts = (
-    await Promise.all(
-      addressLookupTableAddresses
-        .map((a) => a.trim())
-        .filter(Boolean)
-        .map(async (a) => {
-          try {
-            const res = await connection.getAddressLookupTable(new PublicKey(a));
-            return res.value ?? null;
-          } catch {
-            return null;
-          }
-        })
-    )
-  ).filter((x): x is NonNullable<typeof x> => !!x);
-  const messageV0 = new TransactionMessage({
-    payerKey: payer,
-    recentBlockhash: blockhash,
-    instructions: web3Ixs,
-  }).compileToV0Message(altAccounts);
-  const vtx = new VersionedTransaction(messageV0);
-
-  const signed = await signTransaction(vtx);
-  // simulate with signature verify for a clear error
-  const sim = await connection.simulateTransaction(signed, { sigVerify: true, commitment: "processed" });
-  if (sim.value.err) {
-    const logs = sim.value.logs ?? [];
-    throw new Error(
-      `Preflight simulation failed: ${JSON.stringify(sim.value.err)}${logs.length ? `\nLogs:\n${logs.join("\n")}` : ""}`
-    );
-  }
-  return sendRawVersionedWithLogs(connection, signed.serialize());
-}
+// NOTE: sendVaultInstructionsWithWalletAdapter moved to `kaminoTxClient.ts`
 
 export function getSolanaRpcEndpoint(): string {
   return (
@@ -255,41 +211,4 @@ export async function sendKitInstructionsWithWallet(
   return sendRawVersionedWithLogs(connection, raw);
 }
 
-export async function loadKaminoVaultForAddress(
-  rpc: MainnetSolanaRpc,
-  vaultAddress: string
-): Promise<{ vault: KaminoVault; lookupTable: Address }> {
-  const vault = new KaminoVault(rpc as ConstructorParameters<typeof KaminoVault>[0], address(vaultAddress.trim()));
-  const state = await vault.getState();
-  return { vault, lookupTable: state.vaultLookupTable };
-}
-
-/** Deposit underlying tokens into a Kamino kVault (Earn). Returns transaction signature. */
-export async function depositToKaminoVault(params: {
-  vaultAddress: string;
-  amountUi: number;
-  signerAddress: string;
-  signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
-}): Promise<string> {
-  const amountDec = new Decimal(params.amountUi);
-  if (!amountDec.isFinite() || amountDec.lte(0)) {
-    throw new Error("Enter a positive amount.");
-  }
-  const rpc = createMainnetRpc();
-  const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
-  const signer = createWalletAdapterPartialSigner(params.signerAddress, params.signTransaction);
-  const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, params.vaultAddress);
-  const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
-  const stakeExtra =
-    dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
-  const ixs = [...dep.depositIxs, ...stakeExtra];
-  // Prefer adapter-sign path to avoid kit signer mismatches.
-  void rpc;
-  void lookupTable;
-  return sendVaultInstructionsWithWalletAdapter({
-    connection,
-    payerBase58: params.signerAddress,
-    signTransaction: params.signTransaction,
-    instructions: ixs,
-  });
-}
+// NOTE: klend-sdk/KaminoVault usage moved to server-only module `kaminoTxServer.ts`

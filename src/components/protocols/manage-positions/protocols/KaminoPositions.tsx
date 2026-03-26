@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Decimal from "decimal.js";
 import { Connection, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,14 +14,7 @@ import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
-import {
-  createMainnetRpc,
-  createWalletAdapterPartialSigner,
-  getSolanaRpcEndpoint,
-  loadKaminoVaultForAddress,
-  sendVaultInstructionsWithWalletAdapter,
-  sendKitInstructionsWithWallet,
-} from "@/lib/solana/kaminoKvVaultTx";
+import { getSolanaRpcEndpoint } from "@/lib/solana/kaminoKvVaultTx";
 import { extractKvaultVaultAddress, isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -550,47 +542,45 @@ export function KaminoPositions() {
         });
         return;
       }
-
-      const rpc = createMainnetRpc();
       const connection = new Connection(getSolanaRpcEndpoint(), "confirmed");
-      const signer = createWalletAdapterPartialSigner(effectiveSignerAddress, activeSignTransaction);
-
-      const amountDec = new Decimal(amountUi);
-      if (!amountDec.isFinite() || amountDec.lte(0)) {
+      if (!Number.isFinite(amountUi) || amountUi <= 0) {
         toast({ variant: "destructive", title: "Invalid amount", description: "Enter a positive number." });
         return;
       }
 
       setEarnSubmitting(true);
       try {
-        const { vault, lookupTable } = await loadKaminoVaultForAddress(rpc, earnTarget.vaultAddress);
-        const slot = await rpc.getSlot({ commitment: "confirmed" }).send();
-
-        if (mode === "deposit") {
-          const dep = await vault.depositIxs(signer, amountDec, undefined, undefined, signer);
-          const stakeExtra =
-            dep.stakeInFarmIfNeededIxs.length > 0 ? dep.stakeInFarmIfNeededIxs : dep.stakeInFlcFarmIfNeededIxs;
-          const ixs = [...dep.depositIxs, ...stakeExtra];
-          const sig = await sendVaultInstructionsWithWalletAdapter({
-            connection,
-            payerBase58: effectiveSignerAddress,
-            signTransaction: activeSignTransaction,
-            instructions: ixs,
-            addressLookupTableAddresses: [String(lookupTable)],
-          });
-          toast({ title: "Deposit submitted", description: `${sig.slice(0, 8)}…` });
-        } else {
-          const w = await vault.withdrawIxs(signer, amountDec, slot, undefined, undefined, signer);
-          const ixs = [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs];
-          const sig = await sendVaultInstructionsWithWalletAdapter({
-            connection,
-            payerBase58: effectiveSignerAddress,
-            signTransaction: activeSignTransaction,
-            instructions: ixs,
-            addressLookupTableAddresses: [String(lookupTable)],
-          });
-          toast({ title: "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
+        const txResp = await fetch("/api/protocols/kamino/earnTx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vaultAddress: earnTarget.vaultAddress,
+            signer: effectiveSignerAddress,
+            amountUi,
+            mode,
+          }),
+        });
+        const txData = await txResp.json().catch(() => null);
+        if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
+          throw new Error(txData?.error || `Transaction prepare failed: ${txResp.status}`);
         }
+
+        const serialized = (() => {
+          const decoded = atob(String(txData.data.transaction));
+          return Uint8Array.from(decoded, (c) => c.charCodeAt(0));
+        })();
+        const txForWallet =
+          serialized.length > 0 && (serialized[0] & 0x80) !== 0
+            ? VersionedTransaction.deserialize(serialized)
+            : Transaction.from(serialized);
+
+        const signed = await activeSignTransaction(txForWallet as any);
+        const sig = await connection.sendRawTransaction((signed as any).serialize(), {
+          skipPreflight: false,
+          preflightCommitment: "confirmed",
+        });
+        await connection.confirmTransaction(sig, "confirmed");
+        toast({ title: mode === "deposit" ? "Deposit submitted" : "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
 
         closeEarnModal();
         // Refresh UI immediately (show loading), then refetch after Kamino API catches up.
