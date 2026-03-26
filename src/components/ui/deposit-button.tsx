@@ -843,9 +843,13 @@ export function DepositButton({
 
       const serialized = decodeBase64Tx(txData.data.transaction);
 
-      const txForWallet = isVersionedTransactionBytes(serialized)
-        ? VersionedTransaction.deserialize(serialized)
-        : Transaction.from(serialized);
+      const txForWallet = (() => {
+        try {
+          return VersionedTransaction.deserialize(serialized);
+        } catch {
+          return Transaction.from(serialized);
+        }
+      })();
 
       let signature: string;
       const attemptErrors: string[] = [];
@@ -998,9 +1002,13 @@ export function DepositButton({
       }
 
       const serialized = decodeBase64Tx(String(txData.data.transaction));
-      const txForWallet = isVersionedTransactionBytes(serialized)
-        ? VersionedTransaction.deserialize(serialized)
-        : Transaction.from(serialized);
+      const txForWallet = (() => {
+        try {
+          return VersionedTransaction.deserialize(serialized);
+        } catch {
+          return Transaction.from(serialized);
+        }
+      })();
 
       const signed = await resolvedSignTransaction(txForWallet as any);
       const signature = await connection.sendRawTransaction((signed as any).serialize(), {

@@ -569,10 +569,13 @@ export function KaminoPositions() {
           const decoded = atob(String(txData.data.transaction));
           return Uint8Array.from(decoded, (c) => c.charCodeAt(0));
         })();
-        const txForWallet =
-          serialized.length > 0 && (serialized[0] & 0x80) !== 0
-            ? VersionedTransaction.deserialize(serialized)
-            : Transaction.from(serialized);
+        const txForWallet = (() => {
+          try {
+            return VersionedTransaction.deserialize(serialized);
+          } catch {
+            return Transaction.from(serialized);
+          }
+        })();
 
         const signed = await activeSignTransaction(txForWallet as any);
         const sig = await connection.sendRawTransaction((signed as any).serialize(), {
