@@ -1024,6 +1024,9 @@ export function DepositButton({
       }
       const signature = String(sendJson.data.signature);
       if (typeof window !== "undefined") {
+        // Kick sidebar refresh immediately, then again after Kamino API catches up.
+        window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
+        void refreshSolana();
         window.setTimeout(() => {
           void refreshSolana();
           window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
