@@ -1,4 +1,5 @@
 import type { Instruction } from "@solana/instructions";
+import { Buffer } from "buffer";
 import { PublicKey, SendTransactionError, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 
 function base64ToBytes(base64: string): Uint8Array {
@@ -30,8 +31,8 @@ function kitInstructionToWeb3(ix: Instruction): TransactionInstruction {
         isWritable,
       };
     }) ?? [];
-  // `ix.data` is a Uint8Array in kit. web3 expects Buffer/Uint8Array; Uint8Array is fine.
-  const data = ix.data ? Uint8Array.from(ix.data) : new Uint8Array();
+  // web3.js types expect Buffer for `data` in some versions.
+  const data = Buffer.from(ix.data ? Uint8Array.from(ix.data) : new Uint8Array());
   return new TransactionInstruction({ programId, keys, data });
 }
 
