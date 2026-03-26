@@ -597,10 +597,6 @@ export function KaminoPositions() {
         toast({ title: mode === "deposit" ? "Deposit submitted" : "Withdraw submitted", description: `${sig.slice(0, 8)}…` });
 
         closeEarnModal();
-        if (typeof window !== "undefined") {
-          // Let sidebar react immediately; data itself may still lag on Kamino API.
-          window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-        }
         // Refresh UI immediately (show loading), then refetch after Kamino API catches up.
         schedulePositionsRefresh(10000);
       } catch (e) {
