@@ -1,6 +1,7 @@
 import type { Instruction } from "@solana/instructions";
 import { Buffer } from "buffer";
 import { PublicKey, SendTransactionError, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 
 function base64ToBytes(base64: string): Uint8Array {
   // Prefer browser-safe decoding (Next client). Fallback to Node Buffer when available.
@@ -109,13 +110,7 @@ export async function sendVaultInstructionsWithWalletAdapter(params: {
 }
 
 export function getSolanaRpcEndpoint(): string {
-  return (
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-    process.env.SOLANA_RPC_URL ||
-    (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-      ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-      : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234")
-  );
+  return getSafeSolanaRpcEndpoint();
 }
 
 export function decodeKitWireTransaction(base64Wire: string): Uint8Array {

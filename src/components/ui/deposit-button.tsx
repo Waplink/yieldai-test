@@ -42,6 +42,7 @@ import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Token as SolanaToken } from "@/lib/types/token";
+import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 import {
   useWallet,
   AboutAptosConnect,
@@ -746,13 +747,7 @@ export function DepositButton({
     try {
       isJupiterDepositInFlightRef.current = true;
       setIsJupiterDepositing(true);
-      const endpoint =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        process.env.SOLANA_RPC_URL ||
-        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
-      const connection = new Connection(endpoint, "confirmed");
+      const connection = new Connection(getSafeSolanaRpcEndpoint(), "confirmed");
 
       // SOL uses dedicated 2-step flow:
       // 1) wrap SOL -> WSOL (separate transaction), 2) Jupiter deposit.
@@ -986,13 +981,7 @@ export function DepositButton({
     setIsKaminoVaultDepositing(true);
     try {
       // Prepare unsigned tx on server (klend-sdk depends on Node modules), then sign+send on client.
-      const endpoint =
-        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-        process.env.SOLANA_RPC_URL ||
-        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
-      const connection = new Connection(endpoint, "confirmed");
+      const connection = new Connection(getSafeSolanaRpcEndpoint(), "confirmed");
 
       const txResp = await fetch("/api/protocols/kamino/deposit", {
         method: "POST",

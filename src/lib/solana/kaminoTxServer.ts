@@ -7,15 +7,10 @@ import { address } from "@solana/addresses";
 import type { Instruction } from "@solana/instructions";
 import { Buffer } from "buffer";
 import { Connection, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 
 export function getSolanaRpcEndpoint(): string {
-  return (
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-    process.env.SOLANA_RPC_URL ||
-    (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
-      ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
-      : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234")
-  );
+  return getSafeSolanaRpcEndpoint();
 }
 
 function kitInstructionToWeb3(ix: Instruction): TransactionInstruction {
