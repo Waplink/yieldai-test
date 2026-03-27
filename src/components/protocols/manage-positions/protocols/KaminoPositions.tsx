@@ -356,7 +356,9 @@ export function KaminoPositions() {
     Array<{ tokenMint: string; tokenSymbol?: string; tokenLogoUrl?: string; amount: string; usdValue?: number }>
   >([]);
   const [rewardsLoading, setRewardsLoading] = useState(false);
-  const rewardsMockEnabled = process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "1";
+  const rewardsMockEnabled =
+    process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "1" ||
+    process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "true";
   const lastFingerprintRef = useRef<string>("0:");
   const refreshTimeoutRef = useRef<number | null>(null);
 

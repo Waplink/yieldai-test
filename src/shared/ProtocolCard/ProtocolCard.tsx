@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Image from "next/image";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -8,6 +9,7 @@ import { useCollapsible } from "@/contexts/CollapsibleContext";
 import { ManagePositionsButton } from "@/components/protocols/ManagePositionsButton";
 import { ProtocolCardSkeleton } from "./ProtocolCardSkeleton/ProtocolCardSkeleton";
 import { ProtocolCardPosition } from "./ProtocolCardPosition/ProtocolCardPosition";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Protocol } from "@/lib/protocols/getProtocolsList";
 import type { ProtocolPosition } from "./types";
 import styles from "./ProtocolCard.module.css";
@@ -16,6 +18,8 @@ export interface ProtocolCardProps {
   protocol: Protocol;
   totalValue: number;
   totalRewardsUsd?: string;
+  /** Optional tooltip body (e.g. per-token breakdown), shown when hovering the rewards row. */
+  rewardsBreakdown?: ReactNode;
   positions?: ProtocolPosition[];
   isLoading?: boolean;
   className?: string;
@@ -27,6 +31,7 @@ export function ProtocolCard({
   protocol,
   totalValue,
   totalRewardsUsd,
+  rewardsBreakdown,
   positions = [],
   isLoading = false,
   className,
@@ -65,18 +70,38 @@ export function ProtocolCard({
 
       {expanded && (
         <div className={styles.content}>
+          {totalRewardsUsd &&
+            (rewardsBreakdown ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(styles.totalRewardsRow, "cursor-help")}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
+                      <span className={styles.totalRewardsValue}>{totalRewardsUsd}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="bg-popover text-popover-foreground border-border max-w-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {rewardsBreakdown}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <div className={styles.totalRewardsRow}>
+                <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
+                <span className={styles.totalRewardsValue}>{totalRewardsUsd}</span>
+              </div>
+            ))}
           {positions.length > 0 &&
             positions.map((pos, i) => (
               <ProtocolCardPosition key={pos.id ?? i} position={pos} />
             ))}
-          {totalRewardsUsd && (
-            <div className={styles.totalRewardsRow}>
-              <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
-              <span className={styles.totalRewardsValue}>
-                {totalRewardsUsd}
-              </span>
-            </div>
-          )}
           {showManageButton && <ManagePositionsButton protocol={protocol} />}
         </div>
       )}

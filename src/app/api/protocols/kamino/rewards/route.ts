@@ -7,6 +7,17 @@ import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 import { isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
 
 const DEFAULT_PUBKEY = "11111111111111111111111111111111";
+function isKaminoRewardsMockEnabledFromEnv(): boolean {
+  const pub = process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK;
+  const server = process.env.KAMINO_REWARDS_MOCK;
+  return (
+    pub === "1" ||
+    pub === "true" ||
+    server === "1" ||
+    server === "true"
+  );
+}
+
 const MOCK_REWARDS: RewardRow[] = [
   {
     tokenMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -61,7 +72,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const address = (searchParams.get("address") || "").trim();
-    const useMock = searchParams.get("mock") === "1";
+    /** Query `mock=1` or env (server reads .env at runtime; works even if client bundle omits NEXT_PUBLIC_*). */
+    const useMock = searchParams.get("mock") === "1" || isKaminoRewardsMockEnabledFromEnv();
     if (!address) {
       return NextResponse.json({ success: false, error: "Address parameter is required", data: [] }, { status: 400 });
     }

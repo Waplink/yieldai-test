@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { ProtocolCard } from "@/shared/ProtocolCard";
 import { PositionBadge } from "@/shared/ProtocolCard/types";
-import { formatNumber } from "@/lib/utils/numberFormat";
+import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 type KaminoPositionsListProps = {
@@ -12,6 +12,14 @@ type KaminoPositionsListProps = {
   onPositionsValueChange?: (value: number) => void;
   showManageButton?: boolean;
   onPositionsCheckComplete?: () => void;
+};
+
+type KaminoRewardRow = {
+  tokenMint: string;
+  tokenSymbol?: string;
+  tokenLogoUrl?: string;
+  amount: string;
+  usdValue?: number;
 };
 
 type KaminoPositionRow = {
@@ -68,7 +76,11 @@ export function PositionsList({
   onPositionsCheckComplete,
 }: KaminoPositionsListProps) {
   const [rows, setRows] = useState<KaminoPositionRow[]>([]);
+  const [rewards, setRewards] = useState<KaminoRewardRow[]>([]);
   const [totalValue, setTotalValue] = useState(0);
+  const rewardsMockEnabled =
+    process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "1" ||
+    process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "true";
   const protocol = getProtocolByName("Kamino");
   const onValueRef = useRef(onPositionsValueChange);
   onValueRef.current = onPositionsValueChange;
@@ -85,6 +97,7 @@ export function PositionsList({
       if (!address) {
         if (!cancelled) {
           setRows([]);
+          setRewards([]);
           setTotalValue(0);
           onValueRef.current?.(0);
           markComplete();
@@ -92,17 +105,18 @@ export function PositionsList({
         return;
       }
 
+      let list: KaminoPositionRow[] = [];
+      let total = 0;
+
       try {
-        const res = await fetch(
+        const posRes = await fetch(
           `/api/protocols/kamino/userPositions?address=${encodeURIComponent(address)}&t=${Date.now()}`,
           { cache: "no-store" }
         );
-        const data = await res.json().catch(() => null);
+        const data = await posRes.json().catch(() => null);
         const raw: KaminoPositionRow[] = Array.isArray(data?.data) ? data.data : [];
         // Don't render kamino-farm in UI (treat it as internal / rewards history noise).
-        const list: KaminoPositionRow[] = raw.filter((r) => r.source !== "kamino-farm");
-
-        let total = 0;
+        list = raw.filter((r) => r.source !== "kamino-farm");
 
         for (const r of list) {
           if (r.source === "kamino-lend") {
@@ -128,20 +142,36 @@ export function PositionsList({
             continue;
           }
         }
-
-        if (!cancelled) {
-          setRows(list);
-          setTotalValue(total);
-          onValueRef.current?.(total);
-          markComplete();
-        }
       } catch {
-        if (!cancelled) {
-          setRows([]);
-          setTotalValue(0);
-          onValueRef.current?.(0);
-          markComplete();
-        }
+        list = [];
+        total = 0;
+      }
+
+      let rewardList: KaminoRewardRow[] = [];
+      try {
+        const rewRes = await fetch(
+          `/api/protocols/kamino/rewards?address=${encodeURIComponent(address)}&t=${Date.now()}${
+            rewardsMockEnabled ? "&mock=1" : ""
+          }`,
+          { cache: "no-store" }
+        );
+        const rewJson = await rewRes.json().catch(() => null);
+        rewardList = Array.isArray(rewJson?.data) ? rewJson.data : [];
+      } catch {
+        rewardList = [];
+      }
+
+      const rewardsUsd = rewardList.reduce((sum, rw) => {
+        const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
+        return sum + v;
+      }, 0);
+
+      if (!cancelled) {
+        setRows(list);
+        setRewards(rewardList);
+        setTotalValue(total);
+        onValueRef.current?.(total + rewardsUsd);
+        markComplete();
       }
     }
 
@@ -157,7 +187,7 @@ export function PositionsList({
       cancelled = true;
       window.removeEventListener("refreshPositions", handleRefresh);
     };
-  }, [address]);
+  }, [address, rewardsMockEnabled]);
 
   const positions = useMemo(
     () =>
@@ -233,13 +263,61 @@ export function PositionsList({
     [rows]
   );
 
+  const rewardsTotalUsd = useMemo(
+    () =>
+      rewards.reduce((sum, rw) => {
+        const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
+        return sum + v;
+      }, 0),
+    [rewards]
+  );
+
+  const cardTotalValue = totalValue + rewardsTotalUsd;
+
+  const totalRewardsUsdStr =
+    rewards.length > 0 ? (rewardsTotalUsd > 0 ? formatCurrency(rewardsTotalUsd, 2) : "—") : undefined;
+
+  const rewardsBreakdown =
+    rewards.length > 0 ? (
+      <>
+        <div className="text-xs font-semibold mb-1">Rewards breakdown:</div>
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {rewards.map((r) => {
+            const sym = (r.tokenSymbol || "").trim();
+            const local = sym ? `/token_ico/${sym.toLowerCase()}.png` : "";
+            const icon = local || (r.tokenLogoUrl || "").trim() || getPreferredJupiterTokenIcon(sym, r.tokenLogoUrl);
+            const amountNum = Number(r.amount);
+            const lineUsd =
+              typeof r.usdValue === "number" && Number.isFinite(r.usdValue) && r.usdValue > 0
+                ? formatCurrency(r.usdValue, 2)
+                : "—";
+            return (
+              <div key={r.tokenMint} className="flex items-center gap-2 text-xs">
+                {icon ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={icon} alt={sym} className="w-3 h-3 rounded-full object-contain" />
+                ) : (
+                  <div className="w-3 h-3 rounded-full bg-muted" />
+                )}
+                <span>{sym || `${r.tokenMint.slice(0, 4)}…${r.tokenMint.slice(-4)}`}</span>
+                <span>{Number.isFinite(amountNum) ? formatNumber(amountNum, 6) : r.amount}</span>
+                <span className="text-muted-foreground">{lineUsd}</span>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    ) : undefined;
+
   if (!protocol || !address) return null;
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && rewards.length === 0) return null;
 
   return (
     <ProtocolCard
       protocol={protocol}
-      totalValue={totalValue}
+      totalValue={cardTotalValue}
+      totalRewardsUsd={totalRewardsUsdStr}
+      rewardsBreakdown={rewards.length > 0 ? rewardsBreakdown : undefined}
       positions={positions}
       isLoading={false}
       showManageButton={showManageButton}
