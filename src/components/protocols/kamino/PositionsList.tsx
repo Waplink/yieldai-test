@@ -114,6 +114,8 @@ export function PositionsList({
           }
           if (r.source === "kamino-earn") {
             const usd = pickFirstNumber(r.position, [
+              "positionUsd",
+              "positionValueUsd",
               "totalUsdValue",
               "totalValueUsd",
               "positionUsdValue",
@@ -190,6 +192,8 @@ export function PositionsList({
           };
         }
         const value = pickFirstNumber(r.position, [
+          "positionUsd",
+          "positionValueUsd",
           "totalUsdValue",
           "totalValueUsd",
           "positionUsdValue",
