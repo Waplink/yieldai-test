@@ -157,7 +157,8 @@ export function PositionsList({
 
   const positions = useMemo(
     () =>
-      rows.map((r, idx) => {
+      rows
+        .map((r, idx) => {
         if (r.source === "kamino-farm") {
           const value = toNumber(r.netUsdAmount, 0);
           const amount = toNumber(r.netTokenAmount, 0);
@@ -196,6 +197,9 @@ export function PositionsList({
           "usdValue",
           "valueUsd",
         ]);
+        // Kamino Earn positions endpoint often doesn't include USD fields.
+        // Avoid rendering confusing "$0" rows in the sidebar.
+        if (!Number.isFinite(value) || value <= 0) return null;
         const vaultName = String(
           getDeep(r.position, "name") ??
             getDeep(r.position, "vaultName") ??
@@ -208,7 +212,8 @@ export function PositionsList({
           value,
           badge: PositionBadge.Supply,
         };
-      }),
+      })
+        .filter((p): p is NonNullable<typeof p> => Boolean(p)),
     [rows]
   );
 
