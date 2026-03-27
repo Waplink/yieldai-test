@@ -44,7 +44,9 @@ yarn-error.log*
 next-env.d.ts
 
 # npm configuration with tokens
-.npmrc
+### .npmrc is allowed in repo (no tokens!)
+### If you need auth tokens, use env vars instead.
+!.npmrc
 npm
 env.local
 /.idea
