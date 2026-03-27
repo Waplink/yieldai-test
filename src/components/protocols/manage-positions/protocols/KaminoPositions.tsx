@@ -356,6 +356,7 @@ export function KaminoPositions() {
     Array<{ tokenMint: string; tokenSymbol?: string; tokenLogoUrl?: string; amount: string; usdValue?: number }>
   >([]);
   const [rewardsLoading, setRewardsLoading] = useState(false);
+  const rewardsMockEnabled = process.env.NEXT_PUBLIC_KAMINO_REWARDS_MOCK === "1";
   const lastFingerprintRef = useRef<string>("0:");
   const refreshTimeoutRef = useRef<number | null>(null);
 
@@ -418,7 +419,9 @@ export function KaminoPositions() {
     setRewardsLoading(true);
     try {
       const res = await fetch(
-        `/api/protocols/kamino/rewards?address=${encodeURIComponent(positionsOwnerAddress)}&t=${Date.now()}`,
+        `/api/protocols/kamino/rewards?address=${encodeURIComponent(positionsOwnerAddress)}&t=${Date.now()}${
+          rewardsMockEnabled ? "&mock=1" : ""
+        }`,
         { cache: "no-store" }
       );
       const j = await res.json().catch(() => null);
@@ -429,7 +432,7 @@ export function KaminoPositions() {
     } finally {
       setRewardsLoading(false);
     }
-  }, [positionsOwnerAddress]);
+  }, [positionsOwnerAddress, rewardsMockEnabled]);
 
   const schedulePositionsRefresh = useCallback(
     (delayMs: number) => {

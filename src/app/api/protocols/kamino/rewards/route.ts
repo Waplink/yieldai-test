@@ -7,6 +7,15 @@ import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 import { isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
 
 const DEFAULT_PUBKEY = "11111111111111111111111111111111";
+const MOCK_REWARDS: RewardRow[] = [
+  {
+    tokenMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    tokenSymbol: "USDC",
+    tokenLogoUrl:
+      "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+    amount: "0.025768",
+  },
+];
 
 type RewardRow = {
   tokenMint: string;
@@ -51,11 +60,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const address = (searchParams.get("address") || "").trim();
+    const useMock = searchParams.get("mock") === "1";
     if (!address) {
       return NextResponse.json({ success: false, error: "Address parameter is required", data: [] }, { status: 400 });
     }
     if (!isLikelySolanaAddress(address)) {
       return NextResponse.json({ success: false, error: "Invalid Solana wallet address", data: [] }, { status: 400 });
+    }
+
+    if (useMock) {
+      return NextResponse.json({ success: true, data: MOCK_REWARDS, count: MOCK_REWARDS.length });
     }
 
     // farms-sdk types are declared against a test-cluster RPC shape (includes requestAirdrop),
