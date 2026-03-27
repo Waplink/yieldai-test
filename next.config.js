@@ -14,7 +14,7 @@ const nextConfig = {
   // Optimize chunk loading for Vercel deployment
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // @kamino-finance/klend-sdk (and similar) may reference Node built-ins behind optional paths;
+	  // @kamino-finance/klend-sdk (and similar) may reference Node built-ins behind optional paths;
       // the browser bundle must not try to resolve them.
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -97,12 +97,20 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'app.decibel.trade',
+        port: '',
+        pathname: '/images/**',
+      },
     ],
     domains: [
       'hyperion.xyz',
       'ariesmarkets.xyz',
       'app.joule.finance',
       'app.echelon.market',
+      'cdn.jsdelivr.net',
+      'tether.to',
       'tapp.exchange',
       'app.meso.finance',
       'app.auro.finance',

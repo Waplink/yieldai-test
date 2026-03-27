@@ -5,7 +5,7 @@ import { Token } from "@/lib/types/token";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useCollapsible } from "@/contexts/CollapsibleContext";
 import { cn } from "@/lib/utils";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { formatCurrency } from "@/lib/utils/numberFormat";
 
 interface SolanaWalletCardProps {
@@ -14,20 +14,15 @@ interface SolanaWalletCardProps {
   isRefreshing?: boolean;
   onRefresh?: () => Promise<void> | void;
   hideSmallAssets?: boolean;
-  onHideSmallAssetsChange?: (value: boolean) => void;
 }
 
 export function SolanaWalletCard({
   tokens,
   totalValueUsd,
   isRefreshing = false,
-  hideSmallAssets,
-  onHideSmallAssetsChange,
+  hideSmallAssets = false,
 }: SolanaWalletCardProps) {
   const { isExpanded, toggleSection } = useCollapsible();
-  const [internalHideSmallAssets, setInternalHideSmallAssets] = useState(false);
-  const effectiveHideSmallAssets = hideSmallAssets ?? internalHideSmallAssets;
-  const setHideSmallAssets = onHideSmallAssetsChange ?? setInternalHideSmallAssets;
 
   const getTokenUsdValue = (token: Token): number => {
     const directValue = Number(token.value);
@@ -56,7 +51,7 @@ export function SolanaWalletCard({
     return "N/A";
   }, [totalValueUsd, isRefreshing]);
 
-  const filteredTokens = effectiveHideSmallAssets
+  const filteredTokens = hideSmallAssets
     ? tokens.filter((token) => {
         const value = getTokenUsdValue(token);
         return Number.isFinite(value) && value >= 1;
@@ -115,21 +110,9 @@ export function SolanaWalletCard({
           <CardContent className="flex-1 overflow-y-auto px-3 pt-0">
             <ScrollArea className="h-full">
               {filteredTokens.length > 0 ? <TokenList tokens={filteredTokens} disableDrag={true} /> : null}
-              {effectiveHideSmallAssets && hiddenCount > 0 ? (
-                <div
-                  className="text-xs text-muted-foreground py-1 text-right cursor-pointer hover:text-foreground transition-colors"
-                  onClick={() => setHideSmallAssets(false)}
-                  title="Click to show hidden assets"
-                >
+              {hideSmallAssets && hiddenCount > 0 ? (
+                <div className="text-xs text-muted-foreground py-1 text-right">
                   {hiddenCount} assets hidden
-                </div>
-              ) : !effectiveHideSmallAssets && tokens.length > 0 ? (
-                <div
-                  className="text-xs text-muted-foreground py-1 text-right cursor-pointer hover:text-foreground transition-colors"
-                  onClick={() => setHideSmallAssets(true)}
-                  title="Click to hide small assets"
-                >
-                  Hide assets {'<'}1$
                 </div>
               ) : null}
             </ScrollArea>

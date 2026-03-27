@@ -35,6 +35,7 @@ export function PositionsList({
   const {
     data: positions = [],
     isLoading,
+    isFetching,
     error,
   } = useAavePositions(walletAddress);
 
@@ -66,10 +67,10 @@ export function PositionsList({
   }, [refreshKey, walletAddress, queryClient]);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isFetching) {
       onCompleteRef.current?.();
     }
-  }, [isLoading]);
+  }, [isFetching]);
 
   useEffect(() => {
     onValueRef.current?.(totalValue);

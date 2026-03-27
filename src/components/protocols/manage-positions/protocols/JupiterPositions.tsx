@@ -21,7 +21,6 @@ import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
 import { getSolanaWalletAddress } from "@/lib/wallet/getSolanaWalletAddress";
 import { useWallet as useAptosWallet } from "@aptos-labs/wallet-adapter-react";
-import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 type JupiterPosition = {
   token?: {
@@ -1134,7 +1133,7 @@ export function JupiterPositions() {
             const amount = toNumber(position?.underlyingAssets, 0) / Math.pow(10, decimals || 0);
             const price = toNumber(position?.token?.asset?.price, 0);
             const value = amount * price;
-            const logoUrl = getPreferredJupiterTokenIcon(symbol, position?.token?.asset?.logoUrl);
+            const logoUrl = position?.token?.asset?.logoUrl;
             const aprPct = toNumber(position?.token?.totalRate, 0) / 100;
 
             return (
@@ -1240,10 +1239,7 @@ export function JupiterPositions() {
         isLoading={isDepositing}
         token={{
           symbol: selectedMeta.symbol,
-          logoUrl: getPreferredJupiterTokenIcon(
-            selectedMeta.symbol,
-            selectedPosition?.token?.asset?.logoUrl
-          ),
+          logoUrl: selectedPosition?.token?.asset?.logoUrl,
           availableAmount: selectedWalletAmount,
           apy: toNumber(selectedPosition?.token?.totalRate, 0) / 100,
           priceUsd: toNumber(selectedPosition?.token?.asset?.price, 0),
@@ -1257,10 +1253,7 @@ export function JupiterPositions() {
         isLoading={isWithdrawing}
         token={{
           symbol: selectedMeta.symbol,
-          logoUrl: getPreferredJupiterTokenIcon(
-            selectedMeta.symbol,
-            selectedPosition?.token?.asset?.logoUrl
-          ),
+          logoUrl: selectedPosition?.token?.asset?.logoUrl,
           suppliedAmount: selectedMeta.amount,
         }}
       />

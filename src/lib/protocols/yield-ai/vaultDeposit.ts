@@ -70,3 +70,26 @@ export function buildVaultWithdrawPayload(params: {
     functionArguments: [safeAddress, metadata, String(amountBaseUnits)],
   };
 }
+
+/**
+ * Builds the payload for vault::execute_withdraw_full_as_owner.
+ * Owner signs; protocol position is fully withdrawn from adapter back to safe.
+ * Function: {MODULE}::execute_withdraw_full_as_owner
+ * Arguments: safe_address (address), adapter_address (address), metadata (address).
+ */
+export function buildVaultExecuteWithdrawFullAsOwnerPayload(params: {
+  safeAddress: string;
+  adapterAddress: string;
+  metadata: string;
+}): {
+  function: string;
+  typeArguments: string[];
+  functionArguments: string[];
+} {
+  const { safeAddress, adapterAddress, metadata } = params;
+  return {
+    function: `${YIELD_AI_VAULT_MODULE}::execute_withdraw_full_as_owner`,
+    typeArguments: [],
+    functionArguments: [safeAddress, adapterAddress, metadata],
+  };
+}

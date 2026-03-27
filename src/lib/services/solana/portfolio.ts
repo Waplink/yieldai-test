@@ -87,64 +87,13 @@ export class SolanaPortfolioService {
     return SolanaPortfolioService.instance;
   }
 
-  /**
-   * Raw SPL + Token-2022 amounts by mint (summed across token accounts).
-   * Unlike `getPortfolio`, does **not** skip accounts where `uiAmount` is null/0 — needed for
-   * Jupiter jl* receipt matching when RPC omits uiAmount.
-   */
-  async getRawSplBalancesByMint(address: string): Promise<Map<string, bigint>> {
+  async getPortfolio(address: string): Promise<SolanaPortfolio> {
     const owner = new PublicKey(address);
-    const loaded = await this.fetchParsedTokenAccountsWithLamports(owner);
-    const map = new Map<string, bigint>();
-    for (const { account } of loaded.accounts) {
-      const parsed = account.data as {
-        program: string;
-        parsed?: {
-          info?: {
-            mint?: string;
-            tokenAmount?: {
-              amount?: string;
-            };
-          };
-          parsed?: {
-            info?: {
-              mint?: string;
-              tokenAmount?: {
-                amount?: string;
-              };
-            };
-          };
-        };
-      };
 
-      const tokenBlock = parsed.parsed as
-        | {
-            info?: { mint?: string; tokenAmount?: { amount?: string } };
-            parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string } } };
-          }
-        | undefined;
-      const info = tokenBlock?.info ?? tokenBlock?.parsed?.info;
-      const mint = info?.mint;
-      const tokenAmount = info?.tokenAmount;
-      if (!mint || !tokenAmount) continue;
+    // Try multiple RPC endpoints if the first one fails
+    let parsedTokenAccounts: ParsedTokenAccount[] | null = null;
+    let lamports: number | null = null;
 
-      let raw: bigint;
-      try {
-        raw = BigInt(String(tokenAmount.amount ?? "0").split(".")[0] || "0");
-      } catch {
-        continue;
-      }
-      if (raw <= BigInt(0)) continue;
-
-      map.set(mint, (map.get(mint) ?? BigInt(0)) + raw);
-    }
-
-    return map;
-  }
-
-  private async fetchParsedTokenAccountsWithLamports(
-    owner: PublicKey
-  ): Promise<{ accounts: ParsedTokenAccount[]; lamports: number }> {
     let lastError: Error | null = null;
     for (const endpoint of this.rpcEndpoints) {
       try {
@@ -162,31 +111,26 @@ export class SolanaPortfolioService {
           ),
           connection.getBalance(owner, "confirmed"),
         ]);
-
-        const parsedTokenAccounts: ParsedTokenAccount[] = [
+        
+        parsedTokenAccounts = [
           ...(legacyAccounts?.value ?? []),
           ...(token2022Accounts?.value ?? []),
         ];
-
+        lamports = balance;
+        
+        // Update connection if successful
         this.connection = connection;
-        return { accounts: parsedTokenAccounts, lamports: balance };
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to fetch portfolio from ${endpoint}:`, message);
-        lastError = error instanceof Error ? error : new Error(message);
+        break;
+      } catch (error: any) {
+        console.warn(`Failed to fetch portfolio from ${endpoint}:`, error.message);
+        lastError = error;
         continue;
       }
     }
 
-    throw lastError ?? new Error("Failed to fetch parsed token accounts from all RPC endpoints");
-  }
-
-  async getPortfolio(address: string): Promise<SolanaPortfolio> {
-    const owner = new PublicKey(address);
-
-    const loaded = await this.fetchParsedTokenAccountsWithLamports(owner);
-    const parsedTokenAccounts = loaded.accounts;
-    const lamports = loaded.lamports;
+    if (!parsedTokenAccounts || lamports === null) {
+      throw lastError || new Error("Failed to fetch portfolio from all RPC endpoints");
+    }
 
     const tokens: Token[] = [];
 

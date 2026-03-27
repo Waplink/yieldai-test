@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PanoraPricesService } from "@/lib/services/panora/prices";
 import { Token } from "@/lib/types/token";
-import { APTOS_COIN_TYPE, USDC_FA_METADATA_MAINNET } from "@/lib/constants/yieldAiVault";
+import {
+  APTOS_COIN_TYPE,
+  MOAR_ADAPTER_ADDRESS_MAINNET,
+  USDC_FA_METADATA_MAINNET,
+} from "@/lib/constants/yieldAiVault";
 import type { TokenPrice } from "@/lib/types/panora";
 import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
 import { useToast } from "@/components/ui/use-toast";
@@ -20,7 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Copy } from "lucide-react";
+import { Copy, Loader2 } from "lucide-react";
 import { YieldAIDepositModal } from "@/components/ui/yield-ai-deposit-modal";
 import { YieldAIWithdrawModal } from "@/components/ui/yield-ai-withdraw-modal";
 import {
@@ -29,11 +33,8 @@ import {
   useMoarRewards,
   type MoarPosition,
 } from "@/lib/query/hooks/protocols/moar";
-import { useWithdraw } from "@/lib/hooks/useWithdraw";
-import { useWalletStore } from "@/lib/stores/walletStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query/queryKeys";
-import { WithdrawModal } from "@/components/ui/withdraw-modal";
 import {
   Select,
   SelectContent,
@@ -44,6 +45,17 @@ import {
 import { areAddressesEqual, toCanonicalAddress } from "@/lib/utils/addressNormalization";
 import { buildDelegateTradingPayload } from "@/lib/protocols/decibel/delegateTrading";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { buildVaultExecuteWithdrawFullAsOwnerPayload } from "@/lib/protocols/yield-ai/vaultDeposit";
 
 /** Re-enable when Decibel perps delegation matches executor flow (Decibel Delegation + Executor Trade UI). */
 const SHOW_EXECUTOR_TRADE_BLOCK = false;
@@ -59,8 +71,9 @@ export function YieldAIPositions() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [selectedWithdrawToken, setSelectedWithdrawToken] = useState<Token | null>(null);
-  const [showMoarWithdrawModal, setShowMoarWithdrawModal] = useState(false);
+  const [showMoarWithdrawConfirm, setShowMoarWithdrawConfirm] = useState(false);
   const [selectedMoarWithdrawPosition, setSelectedMoarWithdrawPosition] = useState<MoarPosition | null>(null);
+  const [isExecutingMoarWithdrawToSafe, setIsExecutingMoarWithdrawToSafe] = useState(false);
   const [decibelSubaccounts, setDecibelSubaccounts] = useState<string[]>([]);
   const [selectedDecibelSubaccount, setSelectedDecibelSubaccount] = useState<string>("");
   const [delegationStatusLoading, setDelegationStatusLoading] = useState(false);
@@ -80,8 +93,6 @@ export function YieldAIPositions() {
     refetchOnMount: "always",
   });
   const { data: poolsResponse } = useMoarPools();
-  const { withdraw, isLoading: isWithdrawing } = useWithdraw();
-  const { getTokenPrice } = useWalletStore();
 
   const poolsAPR = (() => {
     if (!poolsResponse?.data) return {} as Record<number, { totalAPR: number; interestRateComponent: number; farmingAPY: number }>;
@@ -450,27 +461,66 @@ export function YieldAIPositions() {
     return symbol;
   };
 
-  const handleMoarWithdrawConfirm = async (amount: bigint) => {
+  const handleMoarWithdrawConfirm = async () => {
     if (!selectedMoarWithdrawPosition) return;
+    if (!safeAddr) return;
+    if (!signAndSubmitTransaction) {
+      toast({
+        title: "Unsupported wallet",
+        description: "Current wallet cannot sign and submit transactions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const tokenAddress = getMoarTokenAddress(selectedMoarWithdrawPosition.assetInfo.symbol);
-      await withdraw("moar", String(selectedMoarWithdrawPosition.poolId), amount, tokenAddress);
-      setShowMoarWithdrawModal(false);
+      setIsExecutingMoarWithdrawToSafe(true);
+      const metadataAddress = getMoarTokenAddress(selectedMoarWithdrawPosition.assetInfo.symbol);
+      if (metadataAddress.includes("::")) {
+        throw new Error("This asset is not supported for adapter-to-safe withdraw");
+      }
+
+      const payload = buildVaultExecuteWithdrawFullAsOwnerPayload({
+        safeAddress: safeAddr,
+        adapterAddress: MOAR_ADAPTER_ADDRESS_MAINNET,
+        metadata: metadataAddress,
+      });
+
+      const result = await signAndSubmitTransaction({
+        data: {
+          function: payload.function as `${string}::${string}::${string}`,
+          typeArguments: payload.typeArguments,
+          functionArguments: payload.functionArguments,
+        },
+        options: { maxGasAmount: 50000 },
+      });
+
+      if (!result?.hash) {
+        throw new Error("Transaction was submitted without hash");
+      }
+
+      setShowMoarWithdrawConfirm(false);
       setSelectedMoarWithdrawPosition(null);
       if (safeAddr) {
         queryClient.invalidateQueries({ queryKey: queryKeys.protocols.moar.userPositions(safeAddr) });
         queryClient.invalidateQueries({ queryKey: queryKeys.protocols.moar.rewards(safeAddr) });
       }
+      toast({
+        title: "Withdraw to safe submitted",
+        description: "Position is being moved from protocol adapter to AI agent safe.",
+      });
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "yield-ai" } }));
       }, 2000);
     } catch (err) {
-      console.error("Moar withdraw failed:", err);
+      console.error("Moar execute_withdraw_full_as_owner failed:", err);
       toast({
         title: "Withdraw Failed",
         description: err instanceof Error ? err.message : "Withdraw failed. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setIsExecutingMoarWithdrawToSafe(false);
     }
   };
 
@@ -760,13 +810,13 @@ export function YieldAIPositions() {
                       size="sm"
                       variant="outline"
                       className="h-10 max-w-[min(100%,18rem)] whitespace-normal text-center leading-tight px-2 py-1.5"
-                      disabled={isWithdrawing}
+                      disabled={isExecutingMoarWithdrawToSafe}
                       onClick={() => {
                         setSelectedMoarWithdrawPosition(position);
-                        setShowMoarWithdrawModal(true);
+                        setShowMoarWithdrawConfirm(true);
                       }}
                     >
-                      {isWithdrawing
+                      {isExecutingMoarWithdrawToSafe
                         ? "Withdrawing…"
                         : "Withdraw to AI agent wallet"}
                     </Button>
@@ -996,27 +1046,45 @@ export function YieldAIPositions() {
       />
 
       {selectedMoarWithdrawPosition && (
-        <WithdrawModal
-          isOpen={showMoarWithdrawModal}
-          onClose={() => {
-            setShowMoarWithdrawModal(false);
-            setSelectedMoarWithdrawPosition(null);
+        <AlertDialog
+          open={showMoarWithdrawConfirm}
+          onOpenChange={(open) => {
+            if (isExecutingMoarWithdrawToSafe) return;
+            setShowMoarWithdrawConfirm(open);
+            if (!open) setSelectedMoarWithdrawPosition(null);
           }}
-          onConfirm={handleMoarWithdrawConfirm}
-          position={{
-            coin: selectedMoarWithdrawPosition.assetInfo.symbol,
-            supply: selectedMoarWithdrawPosition.balance,
-            market: String(selectedMoarWithdrawPosition.poolId),
-          }}
-          tokenInfo={{
-            symbol: selectedMoarWithdrawPosition.assetInfo.symbol,
-            logoUrl: selectedMoarWithdrawPosition.assetInfo.logoUrl ?? undefined,
-            decimals: selectedMoarWithdrawPosition.assetInfo.decimals,
-            usdPrice: getTokenPrice(getMoarTokenAddress(selectedMoarWithdrawPosition.assetInfo.symbol)),
-          }}
-          isLoading={isWithdrawing}
-          userAddress={safeAddr ?? undefined}
-        />
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw to AI agent safe?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action executes a full withdraw from the Moar adapter back to your AI agent safe.
+                After this transaction succeeds, use Withdraw in the AI agent wallet section to send funds to your wallet.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isExecutingMoarWithdrawToSafe}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isExecutingMoarWithdrawToSafe}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleMoarWithdrawConfirm();
+                }}
+              >
+                {isExecutingMoarWithdrawToSafe ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Withdrawing...
+                  </>
+                ) : (
+                  "Confirm"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
     </div>

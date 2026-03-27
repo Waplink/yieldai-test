@@ -29,7 +29,6 @@ import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsLi
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
 import { PositionsList as JupiterPositionsList } from "./protocols/jupiter/PositionsList";
-import { PositionsList as KaminoPositionsList } from "./protocols/kamino/PositionsList";
 import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { ProtocolIcon } from "@/shared/ProtocolIcon/ProtocolIcon";
@@ -111,8 +110,6 @@ export default function Sidebar() {
 	"Echo Protocol",
     "Decibel",
     "APTree",
-    "Jupiter",
-    "Kamino",
     "AI agent",
   ];
 
@@ -391,8 +388,7 @@ export default function Sidebar() {
                     <div className="flex items-center gap-1">
                       {checkingProtocols.map((name) => {
                         const proto = getProtocolByName(name);
-                        const logo =
-                          name === "Kamino" ? "/protocol_ico/kamino.png" : proto?.logoUrl || "/favicon.ico";
+                        const logo = proto?.logoUrl || "/favicon.ico";
                         return (
                           <ProtocolIcon
                             key={name}
@@ -485,20 +481,8 @@ export default function Sidebar() {
                   onRefresh={refreshSolana}
                   isRefreshing={isSolanaLoading}
                   hideSmallAssets={hideSmallAssets}
-                  onHideSmallAssetsChange={setHideSmallAssets}
                 />
-                    <JupiterPositionsList
-                      address={solanaAddress}
-                      onPositionsCheckComplete={() =>
-                        setCheckingProtocols((prev) => prev.filter((p) => p !== "Jupiter"))
-                      }
-                    />
-                    <KaminoPositionsList
-                      address={solanaAddress}
-                      onPositionsCheckComplete={() =>
-                        setCheckingProtocols((prev) => prev.filter((p) => p !== "Kamino"))
-                      }
-                    />
+                    <JupiterPositionsList address={solanaAddress} />
                 <SolanaSignMessageButton />
               </div>
             )}

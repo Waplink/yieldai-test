@@ -16,17 +16,10 @@ interface JupiterWithdrawModalProps {
   token: {
     symbol: string;
     logoUrl?: string;
-    /** Available balance in UI units. */
     suppliedAmount: number;
   };
 }
 
-/**
- * Withdraw modal UI aligned with `WithdrawModal` (Moar/Echelon):
- * - Slider percentage
- * - MAX (100%) button
- * - "Available Balance" + "Withdraw Amount" rows
- */
 export function JupiterWithdrawModal({
   isOpen,
   onClose,
@@ -46,8 +39,6 @@ export function JupiterWithdrawModal({
     return (token.suppliedAmount * percentage[0]) / 100;
   }, [token.suppliedAmount, percentage]);
 
-  const canSubmit = Number.isFinite(amountUi) && amountUi > 0;
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <DialogContent className="sm:max-w-md w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -59,53 +50,36 @@ export function JupiterWithdrawModal({
             Withdraw {token.symbol}
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Enter the amount you want to withdraw from your position
+            Select the percentage to withdraw from your Jupiter position.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="text-sm font-medium">Withdraw Percentage</div>
-            <div className="space-y-4">
-              <Slider
-                value={percentage}
-                onValueChange={setPercentage}
-                max={100}
-                min={0}
-                step={1}
-                disabled={isLoading}
-                className="w-full"
-              />
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">0%</span>
-                <span className="text-lg font-semibold">{percentage[0]}%</span>
-                <span className="text-sm text-muted-foreground">100%</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPercentage([100])}
-                disabled={isLoading}
-                className="w-full h-10 sm:h-9"
-              >
-                MAX (100%)
-              </Button>
+            <Slider
+              value={percentage}
+              onValueChange={setPercentage}
+              max={100}
+              min={0}
+              step={1}
+              disabled={isLoading}
+              className="w-full"
+            />
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">0%</span>
+              <span className="font-semibold">{percentage[0]}%</span>
+              <span className="text-muted-foreground">100%</span>
             </div>
           </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Available Balance:</span>
-              <span>
-                {formatNumber(token.suppliedAmount, 6)} {token.symbol}
-              </span>
+          <div className="rounded-md border p-3 text-sm space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Supplied</span>
+              <span>{formatNumber(token.suppliedAmount, 6)} {token.symbol}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Withdraw Amount:</span>
-              <span>
-                {formatNumber(amountUi, 6)} {token.symbol}
-              </span>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Withdraw</span>
+              <span>{formatNumber(amountUi, 6)} {token.symbol}</span>
             </div>
           </div>
         </div>
@@ -116,7 +90,7 @@ export function JupiterWithdrawModal({
           </Button>
           <Button
             onClick={() => onConfirm(amountUi)}
-            disabled={isLoading || !canSubmit}
+            disabled={isLoading || amountUi <= 0}
             className="w-full sm:w-auto h-10"
           >
             {isLoading ? (

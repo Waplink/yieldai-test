@@ -456,23 +456,6 @@
     "contractAddresses": []
   },
   {
-    "name": "Kamino",
-    "key": "kamino",
-    "category": "Lending",
-    "url": "https://kamino.com/lend",
-    "logoUrl": "/protocol_ico/kamino.png",
-    "description": "Kamino lending markets on Solana.",
-    "depositType": "external",
-    "depositUrl": "https://kamino.com/lend",
-    "isDepositEnabled": true,
-    "managedType": "native",
-    "socialMedia": {
-      "twitter": "https://x.com/KaminoFinance"
-    },
-    "airdrop": "",
-    "contractAddresses": []
-  },
-  {
     "name": "AI agent",
     "key": "yield-ai",
     "category": "Vault",

@@ -54,7 +54,7 @@ function toBigIntSafe(v: any): bigint {
     if (typeof v === "number") return BigInt(Math.trunc(v));
     return BigInt(String(v));
   } catch {
-    return BigInt(0);
+    return 0n;
   }
 }
 
@@ -328,8 +328,8 @@ export async function runYieldAiVaultCronPass(options: {
 
       // Step B: swap APT -> USDC
       if (aptBalance > APT_CLAIM_THRESHOLD_OCTAS && txCount < maxTxPerRun) {
-        const amountIn = aptBalance > aptSwapReserve ? aptBalance - aptSwapReserve : BigInt(0);
-        if (amountIn > BigInt(0)) {
+        const amountIn = aptBalance > aptSwapReserve ? aptBalance - aptSwapReserve : 0n;
+        if (amountIn > 0n) {
           try {
             console.log("[Yield AI] swap attempt:", { runId, safeAddress, amountIn });
             const deadline = BigInt(Math.floor(Date.now() / 1000)) + SWAP_DEADLINE_SECONDS;
@@ -365,8 +365,8 @@ export async function runYieldAiVaultCronPass(options: {
       // Step C: deposit into Moar
       if (usdcBalance > USDC_DEPOSIT_THRESHOLD_BASE_UNITS && txCount < maxTxPerRun) {
         const amountToDeposit =
-          usdcBalance > usdcDepositReserve ? usdcBalance - usdcDepositReserve : BigInt(0);
-        if (amountToDeposit > BigInt(0)) {
+          usdcBalance > usdcDepositReserve ? usdcBalance - usdcDepositReserve : 0n;
+        if (amountToDeposit > 0n) {
           try {
             console.log("[Yield AI] deposit attempt:", { runId, safeAddress, amountToDeposit });
 

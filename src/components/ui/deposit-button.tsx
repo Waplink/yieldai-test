@@ -25,7 +25,6 @@ import {
 import { useState, useEffect, useCallback, useRef } from "react";
 import { DepositModal } from "./deposit-modal";
 import { JupiterDepositModal } from "./jupiter-deposit-modal";
-import { KaminoVaultDepositModal } from "./kamino-vault-deposit-modal";
 import { useWalletData } from "@/contexts/WalletContext";
 import { cn } from "@/lib/utils";
 import { getAptosWalletNameFromStorage, isDerivedAptosWalletReliable } from "@/lib/aptosWalletUtils";
@@ -42,7 +41,6 @@ import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Token as SolanaToken } from "@/lib/types/token";
-import { getSafeSolanaRpcEndpoint } from "@/lib/solana/solanaRpcEndpoint";
 import {
   useWallet,
   AboutAptosConnect,
@@ -75,11 +73,6 @@ interface DepositButtonProps {
   poolAddress?: string;
   solanaTokensOverride?: SolanaToken[];
   refreshSolanaOverride?: () => Promise<void>;
-  /** Kamino kVault (Earn) from pools API — enables in-app deposit when set. */
-  kaminoVaultAddress?: string;
-  kaminoVaultLabel?: string;
-  /** Pool row APR for Kamino modal (protocolAPY is not fetched for Kamino in this component). */
-  kaminoDepositApy?: number;
 }
 
 const JUPITER_MINT_BY_SYMBOL: Record<string, string> = {
@@ -168,22 +161,13 @@ export function DepositButton({
   poolAddress,
   solanaTokensOverride,
   refreshSolanaOverride,
-  kaminoVaultAddress,
-  kaminoVaultLabel,
-  kaminoDepositApy,
 }: DepositButtonProps) {
   const isJupiterProtocol = protocol.name.toLowerCase() === "jupiter";
-  const isKaminoKvVaultFlow =
-    protocol.name.toLowerCase() === "kamino" &&
-    typeof kaminoVaultAddress === "string" &&
-    kaminoVaultAddress.trim().length > 0;
 
   const [isExternalDialogOpen, setIsExternalDialogOpen] = useState(false);
   const [isNativeDialogOpen, setIsNativeDialogOpen] = useState(false);
   const [isJupiterDialogOpen, setIsJupiterDialogOpen] = useState(false);
   const [isJupiterDepositing, setIsJupiterDepositing] = useState(false);
-  const [isKaminoVaultDialogOpen, setIsKaminoVaultDialogOpen] = useState(false);
-  const [isKaminoVaultDepositing, setIsKaminoVaultDepositing] = useState(false);
   const isJupiterDepositInFlightRef = useRef(false);
   const attemptedSolanaReconnectRef = useRef(false);
   const [isWalletDialogOpen, setIsWalletDialogOpen] = useState(false);
@@ -207,7 +191,7 @@ export function DepositButton({
     tokens: hookedSolanaTokens,
     refresh: hookedRefreshSolana,
   } = useSolanaPortfolio({
-    enabled: (isJupiterProtocol || isKaminoKvVaultFlow) && !solanaTokensOverride,
+    enabled: isJupiterProtocol && !solanaTokensOverride,
   });
   const solanaTokens = solanaTokensOverride ?? hookedSolanaTokens;
   const refreshSolana = refreshSolanaOverride ?? hookedRefreshSolana;
@@ -269,18 +253,6 @@ export function DepositButton({
           )
         : undefined);
 
-    if (!token) return 0;
-    const rawAmount = Number(token.amount);
-    const decimals = Number(token.decimals);
-    if (!Number.isFinite(rawAmount) || !Number.isFinite(decimals) || decimals < 0) return 0;
-    return rawAmount / Math.pow(10, decimals);
-  })();
-
-  const kaminoWalletAmount = (() => {
-    if (!isKaminoKvVaultFlow) return 0;
-    const resolvedMint = normalizeMint(tokenIn?.address);
-    if (!resolvedMint) return 0;
-    const token = solanaTokens.find((t) => normalizeMint(t.address) === resolvedMint);
     if (!token) return 0;
     const rawAmount = Number(token.amount);
     const decimals = Number(token.decimals);
@@ -579,24 +551,6 @@ export function DepositButton({
       return;
     }
 
-    if (isKaminoKvVaultFlow) {
-      const session = resolveSolanaSession();
-      if (!session.signerAddress || !session.hasSigner) {
-        if (session.hasSession || hasAnySolanaSession || !!effectiveSolanaAddress) {
-          setIsKaminoVaultDialogOpen(true);
-          return;
-        }
-        toast({
-          title: "Solana wallet required",
-          description: "Connect Solana wallet to deposit to Kamino vault.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setIsKaminoVaultDialogOpen(true);
-      return;
-    }
-
     // Если кошелек не подключен, открываем диалог подключения
     if (!connected) {
       setIsWalletDialogOpen(true);
@@ -747,7 +701,13 @@ export function DepositButton({
     try {
       isJupiterDepositInFlightRef.current = true;
       setIsJupiterDepositing(true);
-      const connection = new Connection(getSafeSolanaRpcEndpoint(), "confirmed");
+      const endpoint =
+        process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+        process.env.SOLANA_RPC_URL ||
+        (process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY
+          ? `https://mainnet.helius-rpc.com/?api-key=${process.env.NEXT_PUBLIC_SOLANA_RPC_API_KEY || process.env.SOLANA_RPC_API_KEY}`
+          : "https://mainnet.helius-rpc.com/?api-key=29798653-2d13-4d8a-96ad-df70b015e234");
+      const connection = new Connection(endpoint, "confirmed");
 
       // SOL uses dedicated 2-step flow:
       // 1) wrap SOL -> WSOL (separate transaction), 2) Jupiter deposit.
@@ -843,13 +803,9 @@ export function DepositButton({
 
       const serialized = decodeBase64Tx(txData.data.transaction);
 
-      const txForWallet = (() => {
-        try {
-          return VersionedTransaction.deserialize(serialized);
-        } catch {
-          return Transaction.from(serialized);
-        }
-      })();
+      const txForWallet = isVersionedTransactionBytes(serialized)
+        ? VersionedTransaction.deserialize(serialized)
+        : Transaction.from(serialized);
 
       let signature: string;
       const attemptErrors: string[] = [];
@@ -936,133 +892,18 @@ export function DepositButton({
     }
   };
 
-  const handleKaminoVaultDepositConfirm = async (amountUi: number) => {
-    if (isKaminoVaultDepositing) return;
-    const vault = kaminoVaultAddress?.trim();
-    if (!vault) return;
-
-    const session = await waitForReadySolanaSession();
-    // IMPORTANT: signer address must match the wallet adapter used to sign.
-    // Prefer adapter publicKey/signTransaction (more reliable for Phantom).
-    const preferredSignerAddress = adapterAddress || toBase58Address(solanaPublicKey) || "";
-    const preferredSignTransaction = adapterSignTransaction ?? signTransaction ?? undefined;
-    let resolvedSignerAddress = preferredSignerAddress || session.signerAddress || "";
-    let resolvedSignTransaction = preferredSignTransaction ?? session.signTransaction ?? undefined;
-
-    if (!resolvedSignerAddress || !resolvedSignTransaction) {
-      await recoverSolanaWalletSelection();
-      const retried = await waitForReadySolanaSession();
-      resolvedSignerAddress = preferredSignerAddress || retried.signerAddress || "";
-      resolvedSignTransaction = preferredSignTransaction ?? retried.signTransaction ?? undefined;
-    }
-
-    if (!resolvedSignerAddress || !resolvedSignTransaction) {
-      toast({
-        title: "Solana wallet required",
-        description: "Connect Solana wallet to deposit to Kamino vault.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!Number.isFinite(amountUi) || amountUi <= 0) {
-      toast({
-        title: "Invalid amount",
-        description: "Enter a valid deposit amount.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (amountUi > kaminoWalletAmount + 1e-12) {
-      toast({
-        title: "Insufficient balance",
-        description: `Available: ${kaminoWalletAmount.toFixed(6)} ${tokenIn?.symbol || "token"}.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsKaminoVaultDepositing(true);
-    try {
-      // Prepare unsigned tx on server (klend-sdk depends on Node modules), then sign+send on client.
-      const connection = new Connection(getSafeSolanaRpcEndpoint(), "confirmed");
-
-      const txResp = await fetch("/api/protocols/kamino/deposit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vaultAddress: vault,
-          signer: resolvedSignerAddress,
-          amountUi,
-        }),
-      });
-      const txData = await txResp.json().catch(() => null);
-      if (!txResp.ok || !txData?.success || !txData?.data?.transaction) {
-        throw new Error(txData?.error || `Deposit prepare failed: ${txResp.status}`);
-      }
-
-      const serialized = decodeBase64Tx(String(txData.data.transaction));
-      const txForWallet = (() => {
-        try {
-          return VersionedTransaction.deserialize(serialized);
-        } catch {
-          return Transaction.from(serialized);
-        }
-      })();
-
-      const signed = await resolvedSignTransaction(txForWallet as any);
-      const sendResp = await fetch("/api/solana/sendRaw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          txBase64: Buffer.from((signed as any).serialize()).toString("base64"),
-        }),
-      });
-      const sendJson = await sendResp.json().catch(() => null);
-      if (!sendResp.ok || !sendJson?.success || !sendJson?.data?.signature) {
-        throw new Error(sendJson?.error || `Send failed: ${sendResp.status}`);
-      }
-      const signature = String(sendJson.data.signature);
-      if (typeof window !== "undefined") {
-        window.setTimeout(() => {
-          void refreshSolana();
-          window.dispatchEvent(new CustomEvent("refreshPositions", { detail: { protocol: "kamino" } }));
-        }, 10000);
-      }
-      toast({
-        title: "Deposit submitted",
-        description: `Deposited ${amountUi} ${tokenIn?.symbol || "token"}.`,
-        action: (
-          <ToastAction altText="View on Solscan" onClick={() => window.open(`https://solscan.io/tx/${signature}`, "_blank")}>
-            View on Solscan
-          </ToastAction>
-        ),
-      });
-      setIsKaminoVaultDialogOpen(false);
-    } catch (error) {
-      toast({
-        title: "Deposit failed",
-        description: getErrorText(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsKaminoVaultDepositing(false);
-    }
-  };
-
   return (
     <>
       <Button
-        variant={protocol.depositType === "native" || isJupiterProtocol || isKaminoKvVaultFlow ? "default" : "secondary"}
+        variant={protocol.depositType === 'native' ? "default" : "secondary"}
         className={cn(
           className,
-          (protocol.depositType === "native" || isJupiterProtocol || isKaminoKvVaultFlow) &&
-            "bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+          protocol.depositType === 'native' && "bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
         )}
         onClick={handleClick}
       >
         Deposit
-        {protocol.depositType === "external" && !isKaminoKvVaultFlow && (
+        {protocol.depositType === 'external' && (
           <ExternalLink className="ml-2 h-4 w-4" />
         )}
       </Button>
@@ -1122,23 +963,6 @@ export function DepositButton({
             logoUrl: tokenIn.logo,
             availableAmount: jupiterWalletAmount,
             apy: protocolAPY,
-            priceUsd: priceUSD || 0,
-          }}
-        />
-      )}
-
-      {isKaminoKvVaultFlow && tokenIn && tokenIn.address && (
-        <KaminoVaultDepositModal
-          isOpen={isKaminoVaultDialogOpen}
-          onClose={() => setIsKaminoVaultDialogOpen(false)}
-          onConfirm={handleKaminoVaultDepositConfirm}
-          isLoading={isKaminoVaultDepositing}
-          vaultLabel={kaminoVaultLabel || tokenIn.symbol}
-          token={{
-            symbol: tokenIn.symbol,
-            logoUrl: tokenIn.logo,
-            availableAmount: kaminoWalletAmount,
-            apy: typeof kaminoDepositApy === "number" ? kaminoDepositApy : protocolAPY,
             priceUsd: priceUSD || 0,
           }}
         />
