@@ -230,10 +230,15 @@ export function PositionsList({
             getDeep(r.position, "symbol") ??
             `Earn ${idx + 1}`
         );
+        const tokenSymbol = String(getDeep(r.position, "tokenSymbol") ?? "").trim();
+        const tokenLogoUrl = String(getDeep(r.position, "tokenLogoUrl") ?? "").trim();
+        const localBySymbol = tokenSymbol ? `/token_ico/${tokenSymbol.toLowerCase()}.png` : "";
+        const icon = localBySymbol || getPreferredJupiterTokenIcon(tokenSymbol, tokenLogoUrl);
         return {
           id: `kamino-earn-${idx}`,
           label: vaultName,
           value,
+          logoUrl: icon,
           badge: PositionBadge.Supply,
         };
       })

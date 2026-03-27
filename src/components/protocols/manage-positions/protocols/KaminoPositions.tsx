@@ -153,9 +153,26 @@ function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
-function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: string }) {
-  const [useFallback, setUseFallback] = useState(false);
-  const src = useFallback && externalLogoUrl ? externalLogoUrl : KAMINO_LOCAL_ICON;
+function KaminoLogo({
+  alt,
+  externalLogoUrl,
+  symbol,
+}: {
+  alt: string;
+  externalLogoUrl?: string;
+  symbol?: string;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const sym = (symbol || "").trim().toUpperCase();
+  const fallbackText = (sym || alt || "TOKEN").trim().slice(0, 4).toUpperCase();
+  const src = externalLogoUrl && !imageFailed ? externalLogoUrl : null;
+  if (!src) {
+    return (
+      <div className="w-8 h-8 rounded-full bg-slate-500/20 text-slate-200/90 flex items-center justify-center text-[10px] font-semibold">
+        {fallbackText}
+      </div>
+    );
+  }
   return (
     <Image
       src={src}
@@ -164,9 +181,7 @@ function KaminoLogo({ alt, externalLogoUrl }: { alt: string; externalLogoUrl?: s
       height={32}
       className="object-contain"
       unoptimized={isExternalUrl(src)}
-      onError={() => {
-        if (!useFallback && externalLogoUrl) setUseFallback(true);
-      }}
+      onError={() => setImageFailed(true)}
     />
   );
 }
@@ -293,11 +308,14 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
     extractKvaultVaultAddress(row.position) ?? extractKvaultVaultAddress(mergedForVault);
   const shares = parseEarnShares(row.position);
   const { mint: uMint, symbol: uSym } = extractUnderlyingMintSymbol(row.position);
+  const earnIcon = uSym ? `/token_ico/${uSym.toLowerCase()}.png` : "";
+  const tokenLogoUrl = String(getDeep(row.position, "tokenLogoUrl") ?? "").trim();
+  const fallbackLogoUrl = earnIcon || getPreferredJupiterTokenIcon(uSym, tokenLogoUrl) || "";
   return {
     kind: "earn",
     id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
     label,
-    fallbackLogoUrl: "",
+    fallbackLogoUrl,
     valueUsd,
     amount: 0,
     typeLabel: "Supply",
@@ -665,7 +683,11 @@ export function KaminoPositions() {
             <div className="hidden sm:flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 relative">
-                  <KaminoLogo alt={position.label} externalLogoUrl={position.fallbackLogoUrl} />
+                  <KaminoLogo
+                    alt={position.label}
+                    externalLogoUrl={position.fallbackLogoUrl}
+                    symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
+                  />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -726,7 +748,11 @@ export function KaminoPositions() {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 relative">
-                    <KaminoLogo alt={position.label} externalLogoUrl={position.fallbackLogoUrl} />
+                    <KaminoLogo
+                      alt={position.label}
+                      externalLogoUrl={position.fallbackLogoUrl}
+                      symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
+                    />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">

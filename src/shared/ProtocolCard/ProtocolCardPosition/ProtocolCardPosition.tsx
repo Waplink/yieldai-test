@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useMemo, useState } from "react";
 import { formatCurrency } from "@/lib/utils/numberFormat";
 import { Badge } from "@/shared/Badge/Badge";
 import type { ProtocolPosition } from "../types";
@@ -15,11 +16,21 @@ function getBadgeVariant(badge: PositionBadge): "success" | "danger" {
   return badge === PositionBadge.Active || badge === PositionBadge.Supply ? "success" : "danger";
 }
 
+function initialsFromLabel(label: string): string {
+  const cleaned = (label || "").trim();
+  if (!cleaned) return "?";
+  const token = cleaned.split(/\s+/)[0] ?? cleaned;
+  const up = token.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (up.slice(0, 4) || "?").toUpperCase();
+}
+
 export function ProtocolCardPosition({ position }: ProtocolCardPositionProps) {
   const isPool = Boolean(position.logoUrl && position.logoUrl2);
   const logoUrl = position.logoUrl;
   const logoUrl2 = position.logoUrl2;
   const isCollateral = position.isCollateral;
+  const [logoFailed, setLogoFailed] = useState(false);
+  const initials = useMemo(() => initialsFromLabel(position.label), [position.label]);
 
   if (isPool && logoUrl && logoUrl2) {
     return (
@@ -52,7 +63,36 @@ export function ProtocolCardPosition({ position }: ProtocolCardPositionProps) {
       <div className={styles.singleRow}>
 
         <div className={styles.singleLeft}>
-          {logoUrl && <Image src={logoUrl} alt="" width={24} height={24} className={styles.logo} unoptimized />}
+          {logoUrl && !logoFailed ? (
+            <Image
+              src={logoUrl}
+              alt=""
+              width={24}
+              height={24}
+              className={styles.logo}
+              unoptimized
+              onError={() => setLogoFailed(true)}
+            />
+          ) : (
+            <div
+              className={styles.logo}
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 9999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                fontWeight: 600,
+                background: "rgba(148,163,184,0.18)",
+                color: "rgba(148,163,184,0.95)",
+              }}
+              aria-hidden
+            >
+              {initials}
+            </div>
+          )}
           <div className={styles.singleLabelBlock}>
             <div className={styles.labelAndBadge}>
               <span className={styles.label}>{position.label}</span>
