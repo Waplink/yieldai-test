@@ -216,6 +216,8 @@ export function PositionsList({
         const localBySymbol = tokenSymbol ? `/token_ico/${tokenSymbol.toLowerCase()}.png` : "";
         const icon = localBySymbol || getPreferredJupiterTokenIcon(tokenSymbol, tokenLogoUrl);
         const label = tokenSymbol || vaultName;
+        const price = pickFirstNumber(r.position, ["underlyingTokenPriceUsd", "tokenPriceUsd", "priceUsd"], NaN);
+        const underlyingAmount = toNumber(getDeep(r.position, "underlyingTokenAmount"), NaN);
         return {
           id: `kamino-earn-${idx}`,
           label,
@@ -223,6 +225,8 @@ export function PositionsList({
           logoUrl: icon,
           logoUrlFallback: tokenLogoUrl || undefined,
           badge: PositionBadge.Supply,
+          price: Number.isFinite(price) && price > 0 ? price : undefined,
+          subLabel: Number.isFinite(underlyingAmount) && underlyingAmount > 0 ? formatNumber(underlyingAmount, 6) : undefined,
         };
       })
         .filter((p): p is NonNullable<typeof p> => Boolean(p)),
