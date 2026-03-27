@@ -24,6 +24,10 @@ type JupiterTokenPriceRow = {
   usdPrice?: number;
 };
 
+type KaminoVaultMetrics = {
+  apy?: string | number;
+};
+
 type KaminoMarketRow = {
   lendingMarket: string;
   name?: string;
@@ -99,6 +103,38 @@ function parseDecimal(value: unknown): Decimal | null {
   } catch {
     return null;
   }
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toApyPct(apyFraction: unknown): number {
+  // API returns APY as a fraction, e.g. 0.038... for 3.8%
+  const apy = toNumber(apyFraction, 0);
+  return apy * 100;
+}
+
+async function fetchVaultAprPctMap(vaultAddresses: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const uniq = Array.from(new Set(vaultAddresses.map((v) => (v || "").trim()).filter(Boolean)));
+  for (const va of uniq) {
+    try {
+      const res = await fetchWithRetry(`${KAMINO_API_BASE_URL}/kvaults/vaults/${va}/metrics`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) continue;
+      const metrics = (await res.json().catch(() => null)) as KaminoVaultMetrics | null;
+      const aprPct = toApyPct(metrics?.apy);
+      if (Number.isFinite(aprPct) && aprPct > 0) out.set(va, aprPct);
+    } catch {
+      // ignore
+    }
+  }
+  return out;
 }
 
 function hasEarnVaultBalance(item: unknown): boolean {
@@ -496,6 +532,7 @@ export async function GET(request: NextRequest) {
       .map((p) => extractKvaultVaultAddress(p))
       .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
     const exchangeRateByVault = await fetchVaultExchangeRateMap(earnVaults);
+    const aprPctByVault = await fetchVaultAprPctMap(earnVaults);
     const earnUnderlyingMints = earnEnrichedAll
       .map((p) => (p && typeof p === "object" ? String((p as Record<string, unknown>).tokenMint ?? "").trim() : ""))
       .filter(Boolean);
@@ -521,6 +558,7 @@ export async function GET(request: NextRequest) {
       const mint = typeof rec.tokenMint === "string" ? rec.tokenMint.trim() : "";
       const price = mint ? usdPriceByMint.get(mint) : undefined;
 
+      const aprPct = aprPctByVault.get(vaultAddress.trim());
       if (shares && rate && typeof price === "number" && Number.isFinite(price) && price > 0) {
         const tokens = shares.mul(rate);
         const valueUsd = tokens.mul(price).toNumber();
@@ -534,10 +572,12 @@ export async function GET(request: NextRequest) {
           // Also expose computed token amount for future UI usage.
           underlyingTokenAmount: tokens.toString(),
           underlyingTokenPriceUsd: price,
+          aprPct,
         };
         flat.push({ source: "kamino-earn", position: withUsd });
       } else {
-        flat.push({ source: "kamino-earn", position: pos });
+        const withApr = aprPct != null ? ({ ...(rec as Record<string, unknown>), aprPct } as Record<string, unknown>) : rec;
+        flat.push({ source: "kamino-earn", position: withApr });
       }
     }
 

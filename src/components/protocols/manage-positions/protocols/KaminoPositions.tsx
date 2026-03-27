@@ -225,6 +225,7 @@ type NormalizedKaminoRow =
       valueUsd: number;
       amount: number;
       price?: number;
+      aprPct?: number;
       typeLabel: string;
       typeColor: string;
       vaultAddress?: string;
@@ -323,6 +324,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
   const underlyingLogoUrl = tokenLogoUrl || getPreferredJupiterTokenIcon(uSym, tokenLogoUrl) || "";
   const amount = toNumber(getDeep(row.position, "underlyingTokenAmount"), 0);
   const price = pickFirstNumber(row.position, ["underlyingTokenPriceUsd", "tokenPriceUsd", "priceUsd"], 0);
+  const aprPct = pickFirstNumber(row.position, ["aprPct", "depositApy", "apyPct", "apy"], 0);
   return {
     kind: "earn",
     id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
@@ -332,6 +334,7 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
     valueUsd,
     amount: amount > 0 ? amount : 0,
     price: price > 0 ? price : undefined,
+    aprPct: aprPct > 0 ? aprPct : undefined,
     typeLabel: "Supply",
     typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
     vaultAddress,
@@ -750,7 +753,17 @@ export function KaminoPositions() {
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-lg font-bold">{formatCurrency(position.valueUsd, 2)}</div>
+                <div className="flex items-center justify-end gap-2 mb-1">
+                  {position.kind === "earn" && position.aprPct != null ? (
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-2 py-0.5 h-5"
+                    >
+                      APR: {formatNumber(position.aprPct, 2)}%
+                    </Badge>
+                  ) : null}
+                  <div className="text-lg font-bold text-right w-24">{formatCurrency(position.valueUsd, 2)}</div>
+                </div>
                 {"amount" in position && position.amount > 0 && (
                   <div className="text-base text-muted-foreground">{formatNumber(position.amount, 6)}</div>
                 )}
@@ -816,7 +829,17 @@ export function KaminoPositions() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-base font-semibold">{formatCurrency(position.valueUsd, 2)}</div>
+                  <div className="flex items-center justify-end gap-2 mb-1">
+                    {position.kind === "earn" && position.aprPct != null ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
+                      >
+                        APR: {formatNumber(position.aprPct, 2)}%
+                      </Badge>
+                    ) : null}
+                    <div className="text-base font-semibold text-right w-24">{formatCurrency(position.valueUsd, 2)}</div>
+                  </div>
                   {"amount" in position && position.amount > 0 && (
                     <div className="text-sm text-muted-foreground">{formatNumber(position.amount, 6)}</div>
                   )}
