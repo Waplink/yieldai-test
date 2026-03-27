@@ -345,6 +345,10 @@ export function KaminoPositions() {
   const [positions, setPositions] = useState<KaminoPosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rewards, setRewards] = useState<
+    Array<{ tokenMint: string; tokenSymbol?: string; tokenLogoUrl?: string; amount: string; usdValue?: number }>
+  >([]);
+  const [rewardsLoading, setRewardsLoading] = useState(false);
   const lastFingerprintRef = useRef<string>("0:");
   const refreshTimeoutRef = useRef<number | null>(null);
 
@@ -397,6 +401,27 @@ export function KaminoPositions() {
     }
   }, [positionsOwnerAddress]);
 
+  const loadRewards = useCallback(async () => {
+    if (!positionsOwnerAddress) {
+      setRewards([]);
+      return;
+    }
+    setRewardsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/protocols/kamino/rewards?address=${encodeURIComponent(positionsOwnerAddress)}&t=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      const j = await res.json().catch(() => null);
+      const list = Array.isArray(j?.data) ? j.data : [];
+      setRewards(list);
+    } catch {
+      setRewards([]);
+    } finally {
+      setRewardsLoading(false);
+    }
+  }, [positionsOwnerAddress]);
+
   const schedulePositionsRefresh = useCallback(
     (delayMs: number) => {
       if (typeof window === "undefined") return;
@@ -429,6 +454,7 @@ export function KaminoPositions() {
 
   useEffect(() => {
     void loadPositions();
+    void loadRewards();
     const handleRefresh: EventListener = (evt) => {
       const event = evt as CustomEvent<{ protocol?: string; data?: KaminoPosition[] }>;
       if (event?.detail?.protocol === "kamino") {
@@ -437,11 +463,12 @@ export function KaminoPositions() {
         } else {
           void loadPositions();
         }
+        void loadRewards();
       }
     };
     window.addEventListener("refreshPositions", handleRefresh);
     return () => window.removeEventListener("refreshPositions", handleRefresh);
-  }, [loadPositions]);
+  }, [loadPositions, loadRewards]);
 
   const normalized = useMemo(() => positions.map(normalizeKaminoPosition), [positions]);
 
@@ -824,6 +851,47 @@ export function KaminoPositions() {
           </div>
         ))}
       </ScrollArea>
+
+      <div className="pt-4">
+        <div className="text-lg font-semibold">Rewards</div>
+        {rewardsLoading ? (
+          <div className="text-muted-foreground mt-1">Loading rewards...</div>
+        ) : rewards.length === 0 ? (
+          <div className="text-muted-foreground mt-1">No pending rewards.</div>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {rewards.map((r) => {
+              const sym = (r.tokenSymbol || "").trim();
+              const local = sym ? `/token_ico/${sym.toLowerCase()}.png` : "";
+              const icon = local || (r.tokenLogoUrl || "").trim();
+              const label = sym || `${r.tokenMint.slice(0, 4)}...${r.tokenMint.slice(-4)}`;
+              const amountNum = Number(r.amount);
+              return (
+                <div key={r.tokenMint} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {icon ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={icon} alt="" className="w-6 h-6 rounded-full object-contain" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-slate-500/20 text-slate-200/90 flex items-center justify-center text-[9px] font-semibold">
+                        {label.slice(0, 4).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="truncate">{label}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium">{r.usdValue != null ? formatCurrency(r.usdValue, 2) : "-"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {Number.isFinite(amountNum) ? formatNumber(amountNum, 6) : r.amount}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between pt-6 pb-6">
         <span className="text-xl">Total assets in Kamino:</span>
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
