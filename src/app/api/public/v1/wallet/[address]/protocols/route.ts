@@ -11,6 +11,8 @@ type ProtocolResult = {
   success: boolean;
   positionsCount: number;
   positions: unknown[];
+  /** Passthrough from upstream route (e.g. Jupiter scaffold explanation, Kamino market counts). */
+  meta?: unknown;
   status?: number;
   error?: string;
 };
@@ -35,6 +37,7 @@ const APTOS_PROTOCOLS: ProtocolConfig[] = [
 
 const SOLANA_PROTOCOLS: ProtocolConfig[] = [
   { key: 'jupiter', endpoint: '/api/protocols/jupiter/userPositions' },
+  { key: 'kamino', endpoint: '/api/protocols/kamino/userPositions' },
 ];
 
 function isRequireKey(): boolean {
@@ -98,6 +101,12 @@ function extractPositions(payload: unknown): unknown[] {
   if (Array.isArray(obj.positions)) return obj.positions;
 
   return [];
+}
+
+function extractUpstreamMeta(payload: unknown): unknown | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const obj = payload as Record<string, unknown>;
+  return obj.meta;
 }
 
 function getPositionsCount(protocolKey: string, positions: unknown[]): number {
@@ -167,6 +176,7 @@ async function fetchProtocolPositions(
       success: true,
       positionsCount,
       positions: normalizedPositions,
+      meta: extractUpstreamMeta(payload),
       status,
     };
   } catch (error) {

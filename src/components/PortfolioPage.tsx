@@ -26,6 +26,7 @@ import { PositionsList as EchoPositionsList } from "./protocols/echo/PositionsLi
 import { PositionsList as DecibelPositionsList } from "./protocols/decibel/PositionsList";
 import { PositionsList as AptreePositionsList } from "./protocols/aptree/PositionsList";
 import { PositionsList as JupiterPositionsList } from "./protocols/jupiter/PositionsList";
+import { PositionsList as KaminoPositionsList } from "./protocols/kamino/PositionsList";
 import { PositionsList as YieldAIPositionsList } from "./protocols/yield-ai/PositionsList";
 import { CardTitle } from '@/components/ui/card';
 import { useAptosAddressResolver } from '@/lib/hooks/useAptosAddressResolver';
@@ -117,6 +118,8 @@ export default function PortfolioPage() {
    "Echo Protocol",
    "Decibel",
    "APTree",
+    "Jupiter",
+    "Kamino",
    "AI agent",
   ];
 
@@ -432,7 +435,8 @@ export default function PortfolioPage() {
                               <div className="flex items-center gap-1">
                                 {checkingProtocols.map((name) => {
                                   const proto = getProtocolByName(name);
-                                  const logo = proto?.logoUrl || "/favicon.ico";
+                                  const logo =
+                                    name === "Kamino" ? "/protocol_ico/kamino.png" : proto?.logoUrl || "/favicon.ico";
                                   return (
                                     <ProtocolIcon
                                       key={name}
@@ -622,11 +626,21 @@ export default function PortfolioPage() {
                         onRefresh={refreshSolana}
                         isRefreshing={isSolanaLoading}
                         hideSmallAssets={hideSmallAssets}
+                        onHideSmallAssetsChange={setHideSmallAssets}
                       />
                       <JupiterPositionsList
                         address={solanaAddress}
                         showManageButton={false}
                         onPositionsValueChange={handleJupiterValueChange}
+                        onPositionsCheckComplete={() =>
+                          setCheckingProtocols((prev) => prev.filter((p) => p !== "Jupiter"))
+                        }
+                      />
+                      <KaminoPositionsList
+                        address={solanaAddress}
+                        onPositionsCheckComplete={() =>
+                          setCheckingProtocols((prev) => prev.filter((p) => p !== "Kamino"))
+                        }
                       />
                       <SolanaSignMessageButton />
                     </div>

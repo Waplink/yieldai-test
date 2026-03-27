@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,20 +18,12 @@ import { formatNumber } from "@/lib/utils/numberFormat";
 import { calcYield } from "@/lib/utils/calcYield";
 import { Separator } from "@/components/ui/separator";
 
-interface JupiterDepositModalProps {
+interface KaminoVaultDepositModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (amountUi: number) => void;
   isLoading?: boolean;
-  /** Default: "Deposit to Jupiter" */
-  title?: string;
-  /** Default: `Enter amount to deposit ${token.symbol}` */
-  description?: string;
-  /** Optional protocol branding for the header (Moar-style). */
-  protocol?: {
-    name: string;
-    logoUrl: string;
-  };
+  vaultLabel: string;
   token: {
     symbol: string;
     logoUrl?: string;
@@ -34,18 +33,14 @@ interface JupiterDepositModalProps {
   };
 }
 
-export function JupiterDepositModal({
+export function KaminoVaultDepositModal({
   isOpen,
   onClose,
   onConfirm,
   isLoading = false,
-  title,
-  description,
-  protocol,
+  vaultLabel,
   token,
-}: JupiterDepositModalProps) {
-  const dialogTitle = title ?? "Deposit to Jupiter";
-  const dialogDescription = description ?? `Enter amount to deposit ${token.symbol}`;
+}: KaminoVaultDepositModalProps) {
   const [amount, setAmount] = useState("");
   const [isYieldExpanded, setIsYieldExpanded] = useState(false);
   const amountUi = Number(amount);
@@ -71,14 +66,15 @@ export function JupiterDepositModal({
     if (!isValid || !token.apy || token.apy <= 0) return 0;
     return (amountUi * token.apy) / 100 / 365;
   }, [amountUi, isValid, token.apy]);
+
   const yieldResult = useMemo(() => {
     if (!token.apy || token.apy <= 0 || !isValid) {
       return { daily: 0, weekly: 0, monthly: 0, yearly: 0 };
     }
-    // Treat amount as 6-decimal synthetic bigint for reuse.
     const scaled = BigInt(Math.floor(amountUi * 1_000_000));
     return calcYield(token.apy, scaled, 6);
   }, [amountUi, isValid, token.apy]);
+
   const usdValue = useMemo(() => {
     if (!isValid || !token.priceUsd || token.priceUsd <= 0) return 0;
     return amountUi * token.priceUsd;
@@ -89,21 +85,17 @@ export function JupiterDepositModal({
       <DialogContent className="sm:max-w-[425px] p-6 rounded-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            {protocol?.logoUrl ? (
-              <Image
-                src={protocol.logoUrl}
-                alt={protocol.name}
-                width={24}
-                height={24}
-                className="rounded-full"
-                unoptimized
-              />
-            ) : token.logoUrl ? (
-              <Image src={token.logoUrl} alt={token.symbol} width={24} height={24} className="object-contain rounded-full" unoptimized />
-            ) : null}
-            <DialogTitle>{dialogTitle}</DialogTitle>
+            <Image
+              src="/protocol_ico/kamino.png"
+              alt="Kamino"
+              width={24}
+              height={24}
+              className="rounded-full"
+              unoptimized
+            />
+            <DialogTitle>Deposit to Kamino</DialogTitle>
           </div>
-          <DialogDescription>{dialogDescription}</DialogDescription>
+          <DialogDescription>Enter amount to deposit {token.symbol}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-center gap-2 py-4">
@@ -124,46 +116,49 @@ export function JupiterDepositModal({
 
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="jupiter-deposit-amount" className="text-right">Amount</Label>
-            <div className="col-span-3 flex items-center gap-2">
-              <Input
-                id="jupiter-deposit-amount"
-                type="number"
-                min="0"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                disabled={isLoading}
-                className={`${exceeds ? "border-destructive text-destructive" : ""}`}
-              />
-              {token.logoUrl ? (
-                <Image src={token.logoUrl} alt={token.symbol} width={16} height={16} className="rounded-full" unoptimized />
-              ) : null}
-              <span className="text-sm">{token.symbol}</span>
-              {usdValue > 0 ? (
-                <span className="text-sm text-muted-foreground ml-2">
-                  ~ ${usdValue.toFixed(2)}
-                </span>
-              ) : null}
+            <Label htmlFor="kamino-vault-deposit-amount" className="text-right">
+              Amount
+            </Label>
+            <div className="col-span-3 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Input
+                  id="kamino-vault-deposit-amount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  disabled={isLoading}
+                  className={`${exceeds ? "border-destructive text-destructive" : ""}`}
+                />
+                {token.logoUrl ? (
+                  <Image
+                    src={token.logoUrl}
+                    alt={token.symbol}
+                    width={16}
+                    height={16}
+                    className="rounded-full"
+                    unoptimized
+                  />
+                ) : null}
+                <span className="text-sm shrink-0">{token.symbol}</span>
+                {usdValue > 0 ? (
+                  <span className="text-sm text-muted-foreground ml-2">~ ${usdValue.toFixed(2)}</span>
+                ) : null}
+              </div>
             </div>
           </div>
 
           {exceeds ? (
-            <p className="text-sm text-destructive -mt-2">
-              Amount exceeds available balance.
-            </p>
+            <p className="text-sm text-destructive -mt-2">Amount exceeds available balance.</p>
           ) : null}
 
           <div className="flex gap-2">
-            <Input
-              type="hidden"
-              value={amount}
-              readOnly
-            />
             <Button
               variant="outline"
               size="sm"
+              type="button"
               onClick={() => setAmount(String(token.availableAmount / 2))}
               disabled={isLoading}
             >
@@ -172,6 +167,7 @@ export function JupiterDepositModal({
             <Button
               variant="outline"
               size="sm"
+              type="button"
               onClick={() => setAmount(String(token.availableAmount))}
               disabled={isLoading}
             >
@@ -184,13 +180,9 @@ export function JupiterDepositModal({
             onClick={() => setIsYieldExpanded((v) => !v)}
           >
             <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground">
-                APR {(token.apy || 0).toFixed(2)}%
-              </div>
+              <div className="text-sm text-muted-foreground">APR {(token.apy || 0).toFixed(2)}%</div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-bold">
-                  ~ ${estimatedDaily.toFixed(2)}
-                </span>
+                <span className="text-xl font-bold">~ ${estimatedDaily.toFixed(2)}</span>
                 <span className="text-sm text-muted-foreground">/day</span>
                 <ChevronDown className="h-3 w-3 text-muted-foreground ml-1" />
               </div>
@@ -211,10 +203,7 @@ export function JupiterDepositModal({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button
-            onClick={() => onConfirm(amountUi)}
-            disabled={!isValid || exceeds || isLoading}
-          >
+          <Button onClick={() => onConfirm(amountUi)} disabled={!isValid || exceeds || isLoading}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -229,4 +218,3 @@ export function JupiterDepositModal({
     </Dialog>
   );
 }
-

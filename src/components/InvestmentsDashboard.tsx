@@ -81,10 +81,11 @@ interface Token {
 
 function getChainLogoForProtocol(protocolName: string): { src: string; alt: string } {
   const protocol = getProtocolByName(protocolName);
-  const isSolana = (protocol?.name || protocolName).toLowerCase() === "jupiter";
+  const normalizedProtocol = (protocol?.name || protocolName).toLowerCase();
+  const isSolana = normalizedProtocol === "jupiter" || normalizedProtocol === "kamino";
   return isSolana
-    ? { src: "/chain_ico/solana.svg?v=3", alt: "Solana" }
-    : { src: "/chain_ico/aptos.svg?v=2", alt: "Aptos" };
+    ? { src: "/chain_ico/solana.png?v=1", alt: "Solana" }
+    : { src: "/chain_ico/aptos.png?v=1", alt: "Aptos" };
 }
 
 export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
@@ -114,7 +115,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Decibel': true,
     'Echo Protocol': true,
     'APTree': true,
-    'Jupiter': true
+    'Jupiter': true,
+    'Kamino': true,
   });
   const [protocolsError, setProtocolsError] = useState<Record<string, string | null>>({});
   const [protocolsData, setProtocolsData] = useState<Record<string, InvestmentData[]>>({});
@@ -131,7 +133,8 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
     'Decibel': '/protocol_ico/decibel.png',
     'Echo Protocol': '/protocol_ico/echo.png',
     'APTree': '/protocol_ico/aptree.png',
-    'Jupiter': 'https://jup.ag/favicon.ico'
+    'Jupiter': 'https://jup.ag/favicon.ico',
+    'Kamino': '/protocol_ico/kamino.png',
   });
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -707,6 +710,28 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                 logoUrl: pool.logoUrl || undefined,
                 tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
                 poolType: 'Lending',
+              }));
+            }
+          },
+          {
+            name: 'Kamino',
+            url: '/api/protocols/kamino/pools',
+            logoUrl: '/protocol_ico/kamino.png',
+            transform: (data: any) => {
+              const pools = Array.isArray(data?.data) ? data.data : [];
+              return pools.map((pool: any) => ({
+                asset: pool.asset || 'Unknown',
+                provider: 'Kamino',
+                totalAPY: typeof pool.totalAPY === 'number' ? pool.totalAPY : 0,
+                depositApy: typeof pool.depositApy === 'number' ? pool.depositApy : 0,
+                borrowAPY: typeof pool.borrowAPY === 'number' ? pool.borrowAPY : 0,
+                token: pool.token || '',
+                tokenDecimals: typeof pool.tokenDecimals === 'number' ? pool.tokenDecimals : undefined,
+                protocol: 'Kamino',
+                logoUrl: pool.logoUrl || undefined,
+                tvlUSD: typeof pool.tvlUSD === 'number' ? pool.tvlUSD : 0,
+                poolType: pool.poolType || 'Vault',
+                originalPool: pool.originalPool,
               }));
             }
           }
@@ -1455,7 +1480,7 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
 
 
                     // Include whitelisted protocols that may not resolve tokenInfo yet.
-                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree' || item.protocol === 'Jupiter';
+                    return hasAssetColon || hasTokenInfo || hasDexTokens || item.protocol === 'Echelon' || item.protocol === 'Moar Market' || item.protocol === 'Decibel' || item.protocol === 'Echo Protocol' || item.protocol === 'APTree' || item.protocol === 'Jupiter' || item.protocol === 'Kamino';
                   })
                   .sort((a, b) => b.totalAPY - a.totalAPY)
                   .map((item, index) => {
@@ -1721,10 +1746,13 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   protocol={protocol}
                                   className="w-full"
                                   tokenIn={{
-                                    symbol: displaySymbol,
+                                    symbol:
+                                      item.protocol === "Kamino"
+                                        ? String(item.originalPool?.tokenSymbol ?? displaySymbol)
+                                        : displaySymbol,
                                     logo: logoUrl || '/file.svg',
                                     decimals:
-                                      protocol?.name === 'Jupiter'
+                                      protocol?.name === 'Jupiter' || protocol?.name === 'Kamino'
                                         ? (item.tokenDecimals ?? tokenInfo?.decimals ?? resolvedTokenInfo?.decimals ?? 6)
                                         : decimals,
                                     address:
@@ -1738,6 +1766,17 @@ export function InvestmentsDashboard({ className }: InvestmentsDashboardProps) {
                                   }
                                   solanaTokensOverride={solanaTokens}
                                   refreshSolanaOverride={refreshSolana}
+                                  kaminoVaultAddress={
+                                    item.protocol === 'Kamino' && item.originalPool?.vaultAddress
+                                      ? String(item.originalPool.vaultAddress)
+                                      : undefined
+                                  }
+                                  kaminoVaultLabel={
+                                    item.protocol === "Kamino"
+                                      ? String(item.originalPool?.tokenSymbol ?? displaySymbol)
+                                      : undefined
+                                  }
+                                  kaminoDepositApy={item.protocol === 'Kamino' ? item.depositApy : undefined}
                                 />
                               )
                             ) : (

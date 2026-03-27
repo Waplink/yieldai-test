@@ -165,15 +165,12 @@ export function PositionsList({
         if (!cancelled) setSafeAddresses([]);
       })
       .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-          onCompleteRef.current?.();
-        }
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [walletAddress, refreshTrigger, refreshKey]);
+  }, [walletAddress, refreshTrigger]);
 
   // For each safe: fetch safe-contents, build Token[] with prices
   useEffect(() => {

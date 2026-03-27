@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { InvestmentData } from "@/types/investments";
+import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 const JUPITER_LEND_TOKENS_URL = "https://lite-api.jup.ag/lend/v1/earn/tokens";
 
@@ -42,7 +43,7 @@ function mapPoolToInvestment(pool: JupiterPool): InvestmentData {
     token: pool.asset?.address || pool.address,
     tokenDecimals: decimals,
     protocol: "Jupiter",
-    logoUrl: pool.asset?.logoUrl,
+    logoUrl: getPreferredJupiterTokenIcon(pool.asset?.symbol, pool.asset?.logoUrl),
     tvlUSD: totalAssets * price,
   };
 }

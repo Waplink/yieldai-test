@@ -5,11 +5,13 @@ import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { ProtocolCard } from "@/shared/ProtocolCard";
 import { PositionBadge } from "@/shared/ProtocolCard/types";
 import { formatNumber } from "@/lib/utils/numberFormat";
+import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 interface PositionsListProps {
   address?: string;
   onPositionsValueChange?: (value: number) => void;
   showManageButton?: boolean;
+  onPositionsCheckComplete?: () => void;
 }
 
 interface JupiterPosition {
@@ -35,15 +37,22 @@ export function PositionsList({
   address,
   onPositionsValueChange,
   showManageButton = true,
+  onPositionsCheckComplete,
 }: PositionsListProps) {
   const [positions, setPositions] = useState<JupiterPosition[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const protocol = getProtocolByName("Jupiter");
   const onValueRef = useRef(onPositionsValueChange);
   onValueRef.current = onPositionsValueChange;
+  const onCheckCompleteRef = useRef(onPositionsCheckComplete);
+  onCheckCompleteRef.current = onPositionsCheckComplete;
 
   useEffect(() => {
     let cancelled = false;
+    const markComplete = () => {
+      if (cancelled) return;
+      onCheckCompleteRef.current?.();
+    };
 
     async function load() {
       if (!address) {
@@ -51,6 +60,7 @@ export function PositionsList({
           setPositions([]);
           setTotalValue(0);
           onValueRef.current?.(0);
+          markComplete();
         }
         return;
       }
@@ -72,12 +82,14 @@ export function PositionsList({
           setPositions(list);
           setTotalValue(total);
           onValueRef.current?.(total);
+          markComplete();
         }
       } catch {
         if (!cancelled) {
           setPositions([]);
           setTotalValue(0);
           onValueRef.current?.(0);
+          markComplete();
         }
       }
     }
@@ -109,7 +121,7 @@ export function PositionsList({
           id: `jupiter-${idx}`,
           label: symbol,
           value,
-          logoUrl: position?.token?.asset?.logoUrl,
+          logoUrl: getPreferredJupiterTokenIcon(symbol, position?.token?.asset?.logoUrl),
           badge: PositionBadge.Supply,
           subLabel: formatNumber(amount, 4),
           price,

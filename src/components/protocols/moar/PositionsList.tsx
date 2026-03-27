@@ -35,17 +35,8 @@ export function PositionsList({
   const walletAddress = address || account?.address?.toString();
   const { setRewards } = useWalletStore();
 
-  const {
-    data: positions = [],
-    isLoading: positionsLoading,
-    isFetching: positionsFetching,
-    error: positionsError,
-  } = useMoarPositions(walletAddress);
-  const {
-    data: rewardsResponse,
-    isLoading: rewardsLoading,
-    isFetching: rewardsFetching,
-  } = useMoarRewards(walletAddress);
+  const { data: positions = [], isLoading: positionsLoading, error: positionsError } = useMoarPositions(walletAddress);
+  const { data: rewardsResponse, isLoading: rewardsLoading } = useMoarRewards(walletAddress);
   const { data: poolsResponse } = useMoarPools();
 
   const protocol = getProtocolByName("Moar Market");
@@ -87,7 +78,6 @@ export function PositionsList({
       : undefined;
 
   const isLoading = positionsLoading || rewardsLoading;
-  const isFetching = positionsFetching || rewardsFetching;
   const hasError = Boolean(positionsError);
 
   useEffect(() => {
@@ -102,10 +92,10 @@ export function PositionsList({
   }, [refreshKey, walletAddress, queryClient]);
 
   useEffect(() => {
-    if (!isFetching) {
+    if (!isLoading) {
       onCompleteRef.current?.();
     }
-  }, [isFetching]);
+  }, [isLoading]);
 
   useEffect(() => {
     if (rewardsData.length > 0) {

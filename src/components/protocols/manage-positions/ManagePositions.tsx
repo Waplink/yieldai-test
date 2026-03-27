@@ -16,6 +16,7 @@ import { AavePositions } from "./protocols/AavePositions";
 import { MoarPositions } from "./protocols/MoarPositions";
 import { AptreePositions } from "./protocols/AptreePositions";
 import { JupiterPositions } from "./protocols/JupiterPositions";
+import { KaminoPositions } from "./protocols/KaminoPositions";
 import { ThalaPositions } from "./protocols/ThalaPositions";
 import { EchoPositions } from "./protocols/EchoPositions";
 import { DecibelPositions } from "./protocols/DecibelPositions";
@@ -43,8 +44,10 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
   const handleRefresh = async () => {
     const protocolNameLower = protocol.name.toLowerCase();
     const isJupiter = protocolNameLower.includes('jupiter');
-    if (!account?.address && !isJupiter) return;
-    if (isJupiter && !solanaAddress) return;
+    const isKamino = protocolNameLower.includes('kamino');
+    const isSolanaProtocol = isJupiter || isKamino;
+    if (!account?.address && !isSolanaProtocol) return;
+    if (isSolanaProtocol && !solanaAddress) return;
     
     try {
       setIsRefreshing(true);
@@ -104,9 +107,12 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
       } else if (protocol.name.toLowerCase().includes('jupiter')) {
         apiPath = 'jupiter';
         endpoint = 'userPositions';
+      } else if (protocol.name.toLowerCase().includes('kamino')) {
+        apiPath = 'kamino';
+        endpoint = 'userPositions';
       }
       
-      const refreshAddress = isJupiter ? String(solanaAddress || '') : String(account?.address || '');
+      const refreshAddress = isSolanaProtocol ? String(solanaAddress || '') : String(account?.address || '');
       const response = await fetch(`/api/protocols/${apiPath}/${endpoint}?address=${encodeURIComponent(refreshAddress)}`);
       
       if (!response.ok) {
@@ -177,6 +183,8 @@ export function ManagePositions({ protocol, onClose }: ManagePositionsProps) {
         return <AptreePositions />;
       case 'jupiter':
         return <JupiterPositions />;
+      case 'kamino':
+        return <KaminoPositions />;
       case 'thala':
         return <ThalaPositions />;
       case 'echo protocol':
