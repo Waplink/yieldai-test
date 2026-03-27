@@ -6,6 +6,7 @@ import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ExternalLink } from "lucide-react";
 import Image from "next/image";
 import { useSolanaPortfolio } from "@/hooks/useSolanaPortfolio";
@@ -537,6 +538,10 @@ export function KaminoPositions() {
 
   const sorted = useMemo(() => [...merged].sort((a, b) => b.valueUsd - a.valueUsd), [merged]);
   const totalValue = useMemo(() => sorted.reduce((sum, p) => sum + p.valueUsd, 0), [sorted]);
+  const totalRewardsUsd = useMemo(
+    () => rewards.reduce((sum, r) => sum + (typeof r.usdValue === "number" && Number.isFinite(r.usdValue) ? r.usdValue : 0), 0),
+    [rewards]
+  );
 
   const openEarnDeposit = useCallback((row: Extract<NormalizedKaminoRow, { kind: "earn" }>) => {
     setEarnTarget(row);
@@ -853,43 +858,45 @@ export function KaminoPositions() {
       </ScrollArea>
 
       <div className="pt-4">
-        <div className="text-lg font-semibold">Rewards</div>
         {rewardsLoading ? (
-          <div className="text-muted-foreground mt-1">Loading rewards...</div>
-        ) : rewards.length === 0 ? (
-          <div className="text-muted-foreground mt-1">No pending rewards.</div>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {rewards.map((r) => {
-              const sym = (r.tokenSymbol || "").trim();
-              const local = sym ? `/token_ico/${sym.toLowerCase()}.png` : "";
-              const icon = local || (r.tokenLogoUrl || "").trim();
-              const label = sym || `${r.tokenMint.slice(0, 4)}...${r.tokenMint.slice(-4)}`;
-              const amountNum = Number(r.amount);
-              return (
-                <div key={r.tokenMint} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {icon ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={icon} alt="" className="w-6 h-6 rounded-full object-contain" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full bg-slate-500/20 text-slate-200/90 flex items-center justify-center text-[9px] font-semibold">
-                        {label.slice(0, 4).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="truncate">{label}</div>
+          <div className="text-muted-foreground text-right">Loading rewards...</div>
+        ) : rewards.length > 0 && totalRewardsUsd > 0 ? (
+          <div className="text-right">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-gray-500 mb-1 cursor-help">🎁 Rewards: {formatCurrency(totalRewardsUsd, 2)}</div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <div className="space-y-1 text-xs max-h-48 overflow-auto">
+                    {rewards.map((r) => {
+                      const sym = (r.tokenSymbol || "").trim();
+                      const local = sym ? `/token_ico/${sym.toLowerCase()}.png` : "";
+                      const icon = local || (r.tokenLogoUrl || "").trim();
+                      const amountNum = Number(r.amount);
+                      return (
+                        <div key={r.tokenMint} className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            {icon ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={icon} alt={sym} className="w-4 h-4 rounded-full object-contain" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full bg-slate-500/20" />
+                            )}
+                            <span>{sym || `${r.tokenMint.slice(0, 4)}...${r.tokenMint.slice(-4)}`}</span>
+                          </div>
+                          <span className="font-semibold">
+                            {Number.isFinite(amountNum) ? formatNumber(amountNum, 6) : r.amount}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="text-right">
-                    <div className="font-medium">{r.usdValue != null ? formatCurrency(r.usdValue, 2) : "-"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {Number.isFinite(amountNum) ? formatNumber(amountNum, 6) : r.amount}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between pt-6 pb-6">
