@@ -389,9 +389,11 @@ export function KaminoPositions() {
       if (!response.ok) throw new Error("Failed to fetch Kamino positions");
       const data = await response.json().catch(() => null);
       const rows = Array.isArray(data?.data) ? (data.data as KaminoPosition[]) : [];
-      setPositions(rows);
-      lastFingerprintRef.current = fingerprintRows(rows);
-      return rows;
+      // Don't render kamino-farm in UI (treat it as internal / rewards history noise).
+      const filtered = rows.filter((r) => r.source !== "kamino-farm");
+      setPositions(filtered);
+      lastFingerprintRef.current = fingerprintRows(filtered);
+      return filtered;
     } catch {
       setError("Failed to load Kamino positions");
       setPositions([]);

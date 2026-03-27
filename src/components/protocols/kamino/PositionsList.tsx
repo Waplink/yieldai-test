@@ -98,12 +98,10 @@ export function PositionsList({
           { cache: "no-store" }
         );
         const data = await res.json().catch(() => null);
-        const list: KaminoPositionRow[] = Array.isArray(data?.data) ? data.data : [];
+        const raw: KaminoPositionRow[] = Array.isArray(data?.data) ? data.data : [];
+        // Don't render kamino-farm in UI (treat it as internal / rewards history noise).
+        const list: KaminoPositionRow[] = raw.filter((r) => r.source !== "kamino-farm");
 
-        // Avoid double counting the same kVault:
-        // - `kamino-earn` is the source of truth for vault position value.
-        // - `kamino-farm` can refer to the same vault and should not be added on top.
-        const earnVaults = new Set<string>();
         let total = 0;
 
         for (const r of list) {
@@ -119,7 +117,6 @@ export function PositionsList({
           }
 
           if (r.source === "kamino-earn") {
-            const vault = String(getDeep(r.position, "vaultAddress") ?? "").trim();
             const usd = pickFirstNumber(r.position, [
               "totalUsdValue",
               "totalValueUsd",
@@ -127,18 +124,9 @@ export function PositionsList({
               "usdValue",
               "valueUsd",
             ]);
-            if (vault) earnVaults.add(vault);
             if (Number.isFinite(usd) && usd > 0) total += usd;
             continue;
           }
-        }
-
-        for (const r of list) {
-          if (r.source !== "kamino-farm") continue;
-          const vault = String(r.vaultAddress ?? "").trim();
-          if (vault && earnVaults.has(vault)) continue;
-          const usd = toNumber(r.netUsdAmount, 0);
-          if (Number.isFinite(usd) && usd > 0) total += usd;
         }
 
         if (!cancelled) {
@@ -174,14 +162,7 @@ export function PositionsList({
   const positions = useMemo(
     () =>
       rows
-        .filter((r) => {
-          if (r.source !== "kamino-farm") return true;
-          const vault = String(r.vaultAddress ?? "").trim();
-          if (!vault) return true;
-          return !rows.some(
-            (x) => x.source === "kamino-earn" && String(getDeep(x.position, "vaultAddress") ?? "").trim() === vault
-          );
-        })
+        .filter((r) => r.source !== "kamino-farm")
         .map((r, idx) => {
         if (r.source === "kamino-farm") {
           const value = toNumber(r.netUsdAmount, 0);
