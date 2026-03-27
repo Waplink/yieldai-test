@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { JupiterTokenMetadataService } from "@/lib/services/solana/tokenMetadata";
 import { extractKvaultVaultAddress, isLikelySolanaAddress } from "@/lib/kamino/kvaultVaultAddress";
+import Decimal from "decimal.js";
+import { loadKaminoVaultForAddress } from "@/lib/solana/kaminoTxServer";
 
 const KAMINO_API_BASE_URL = "https://api.kamino.finance";
 const RETRY_ATTEMPTS = 5;
@@ -15,6 +17,11 @@ const KNOWN_SOLANA_TOKEN_BY_MINT: Record<string, { symbol: string; logoUrl?: str
   USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA: { symbol: "USDS", logoUrl: "/token_ico/usds.png" },
   JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD: { symbol: "JupUSD", logoUrl: "/token_ico/jupusd.png" },
   HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr: { symbol: "EURC", logoUrl: "/token_ico/eurc.png" },
+};
+
+type JupiterTokenPriceRow = {
+  id: string;
+  usdPrice?: number;
 };
 
 type KaminoMarketRow = {
@@ -50,6 +57,48 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
   }
 
   throw lastError instanceof Error ? lastError : new Error("Kamino request failed after retries");
+}
+
+async function fetchJupiterUsdPriceMap(mints: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const uniq = Array.from(new Set(mints.map((m) => (m || "").trim()).filter(Boolean)));
+  if (uniq.length === 0) return out;
+
+  // Jupiter search supports comma-separated mint ids in query.
+  // Keep chunk size conservative.
+  const CHUNK = 80;
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const chunk = uniq.slice(i, i + CHUNK);
+    const url = `https://api.jup.ag/tokens/v2/search?query=${encodeURIComponent(chunk.join(","))}`;
+    try {
+      const res = await fetchWithRetry(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) continue;
+      const rows = (await res.json().catch(() => [])) as JupiterTokenPriceRow[];
+      if (!Array.isArray(rows)) continue;
+      for (const r of rows) {
+        const id = typeof r?.id === "string" ? r.id.trim() : "";
+        const p = typeof r?.usdPrice === "number" ? r.usdPrice : undefined;
+        if (id && typeof p === "number" && Number.isFinite(p) && p > 0) out.set(id, p);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return out;
+}
+
+function parseDecimal(value: unknown): Decimal | null {
+  try {
+    const d = new Decimal(String(value ?? ""));
+    if (!d.isFinite()) return null;
+    return d;
+  } catch {
+    return null;
+  }
 }
 
 function hasEarnVaultBalance(item: unknown): boolean {
@@ -103,6 +152,22 @@ function enrichEarnPositionPayload(pos: unknown, vaultMetaByAddress: Map<string,
   if (meta?.tokenMint && typeof out.tokenMint !== "string") out.tokenMint = meta.tokenMint;
   if (meta?.tokenSymbol && typeof out.tokenSymbol !== "string") out.tokenSymbol = meta.tokenSymbol;
   if (meta?.tokenLogoUrl && typeof out.tokenLogoUrl !== "string") out.tokenLogoUrl = meta.tokenLogoUrl;
+  return out;
+}
+
+async function fetchVaultExchangeRateMap(vaultAddresses: string[]): Promise<Map<string, Decimal>> {
+  const out = new Map<string, Decimal>();
+  const uniq = Array.from(new Set(vaultAddresses.map((v) => (v || "").trim()).filter(Boolean)));
+  for (const va of uniq) {
+    try {
+      const { vault } = await loadKaminoVaultForAddress({ vaultAddress: va });
+      const rate = (await vault.getExchangeRate()) as unknown;
+      const d = parseDecimal(rate);
+      if (d) out.set(va, d);
+    } catch {
+      // ignore
+    }
+  }
   return out;
 }
 
@@ -423,9 +488,57 @@ export async function GET(request: NextRequest) {
       earnRaw = [];
     }
 
-    for (const pos of earnRaw) {
-      if (!hasEarnVaultBalance(pos)) continue;
-      flat.push({ source: "kamino-earn", position: enrichEarnPositionPayload(pos, vaultMetaByAddress) });
+    // Preload rates and token prices for Earn positions.
+    const earnEnrichedAll = earnRaw
+      .filter((pos) => hasEarnVaultBalance(pos))
+      .map((pos) => enrichEarnPositionPayload(pos, vaultMetaByAddress));
+    const earnVaults = earnEnrichedAll
+      .map((p) => extractKvaultVaultAddress(p))
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+    const exchangeRateByVault = await fetchVaultExchangeRateMap(earnVaults);
+    const earnUnderlyingMints = earnEnrichedAll
+      .map((p) => (p && typeof p === "object" ? String((p as Record<string, unknown>).tokenMint ?? "").trim() : ""))
+      .filter(Boolean);
+    const usdPriceByMint = await fetchJupiterUsdPriceMap(earnUnderlyingMints);
+
+    // Always include hardcoded stables if missing from Jupiter.
+    for (const [mint, meta] of Object.entries(KNOWN_SOLANA_TOKEN_BY_MINT)) {
+      if (meta.symbol === "USDC" || meta.symbol === "USDT" || meta.symbol === "USDG" || meta.symbol === "USDS" || meta.symbol === "JupUSD" || meta.symbol === "EURC") {
+        if (!usdPriceByMint.has(mint)) usdPriceByMint.set(mint, 1);
+      }
+    }
+
+    for (const pos of earnEnrichedAll) {
+      const vaultAddress = extractKvaultVaultAddress(pos);
+      if (!vaultAddress || !pos || typeof pos !== "object") {
+        flat.push({ source: "kamino-earn", position: pos });
+        continue;
+      }
+
+      const rec = pos as Record<string, unknown>;
+      const shares = parseDecimal(rec.totalShares);
+      const rate = exchangeRateByVault.get(vaultAddress.trim());
+      const mint = typeof rec.tokenMint === "string" ? rec.tokenMint.trim() : "";
+      const price = mint ? usdPriceByMint.get(mint) : undefined;
+
+      if (shares && rate && typeof price === "number" && Number.isFinite(price) && price > 0) {
+        const tokens = shares.mul(rate);
+        const valueUsd = tokens.mul(price).toNumber();
+        const withUsd: Record<string, unknown> = {
+          ...rec,
+          // Keep multiple aliases used by existing UI.
+          totalUsdValue: valueUsd,
+          totalValueUsd: valueUsd,
+          usdValue: valueUsd,
+          valueUsd: valueUsd,
+          // Also expose computed token amount for future UI usage.
+          underlyingTokenAmount: tokens.toString(),
+          underlyingTokenPriceUsd: price,
+        };
+        flat.push({ source: "kamino-earn", position: withUsd });
+      } else {
+        flat.push({ source: "kamino-earn", position: pos });
+      }
     }
 
     let farmTx: KaminoFarmTx[] = [];
