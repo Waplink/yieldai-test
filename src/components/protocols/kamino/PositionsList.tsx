@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getProtocolByName } from "@/lib/protocols/getProtocolsList";
 import { ProtocolCard } from "@/shared/ProtocolCard";
 import { PositionBadge } from "@/shared/ProtocolCard/types";
-import { formatCurrency, formatNumber } from "@/lib/utils/numberFormat";
+import { formatNumber } from "@/lib/utils/numberFormat";
 import { getPreferredJupiterTokenIcon } from "@/lib/services/solana/jupiterTokenIcons";
 
 type KaminoPositionsListProps = {
@@ -12,6 +12,8 @@ type KaminoPositionsListProps = {
   onPositionsValueChange?: (value: number) => void;
   showManageButton?: boolean;
   onPositionsCheckComplete?: () => void;
+  /** Portfolio tracker: fetch/show farm rewards like Echelon. Sidebar: omit or false. */
+  showRewards?: boolean;
 };
 
 type KaminoRewardRow = {
@@ -74,6 +76,7 @@ export function PositionsList({
   onPositionsValueChange,
   showManageButton = true,
   onPositionsCheckComplete,
+  showRewards = false,
 }: KaminoPositionsListProps) {
   const [rows, setRows] = useState<KaminoPositionRow[]>([]);
   const [rewards, setRewards] = useState<KaminoRewardRow[]>([]);
@@ -148,23 +151,27 @@ export function PositionsList({
       }
 
       let rewardList: KaminoRewardRow[] = [];
-      try {
-        const rewRes = await fetch(
-          `/api/protocols/kamino/rewards?address=${encodeURIComponent(address)}&t=${Date.now()}${
-            rewardsMockEnabled ? "&mock=1" : ""
-          }`,
-          { cache: "no-store" }
-        );
-        const rewJson = await rewRes.json().catch(() => null);
-        rewardList = Array.isArray(rewJson?.data) ? rewJson.data : [];
-      } catch {
-        rewardList = [];
+      if (showRewards) {
+        try {
+          const rewRes = await fetch(
+            `/api/protocols/kamino/rewards?address=${encodeURIComponent(address)}&t=${Date.now()}${
+              rewardsMockEnabled ? "&mock=1" : ""
+            }`,
+            { cache: "no-store" }
+          );
+          const rewJson = await rewRes.json().catch(() => null);
+          rewardList = Array.isArray(rewJson?.data) ? rewJson.data : [];
+        } catch {
+          rewardList = [];
+        }
       }
 
-      const rewardsUsd = rewardList.reduce((sum, rw) => {
-        const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
-        return sum + v;
-      }, 0);
+      const rewardsUsd = showRewards
+        ? rewardList.reduce((sum, rw) => {
+            const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
+            return sum + v;
+          }, 0)
+        : 0;
 
       if (!cancelled) {
         setRows(list);
@@ -263,22 +270,22 @@ export function PositionsList({
     [rows]
   );
 
-  const rewardsTotalUsd = useMemo(
-    () =>
-      rewards.reduce((sum, rw) => {
-        const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
-        return sum + v;
-      }, 0),
-    [rewards]
-  );
+  const rewardsTotalUsd = useMemo(() => {
+    if (!showRewards) return 0;
+    return rewards.reduce((sum, rw) => {
+      const v = typeof rw.usdValue === "number" && Number.isFinite(rw.usdValue) ? rw.usdValue : 0;
+      return sum + v;
+    }, 0);
+  }, [rewards, showRewards]);
 
-  const cardTotalValue = totalValue + rewardsTotalUsd;
+  const cardTotalValue = showRewards ? totalValue + rewardsTotalUsd : totalValue;
 
+  // Echelon: only show rewards row when total USD &gt; 0; display $ like Echelon ($ + formatNumber)
   const totalRewardsUsdStr =
-    rewards.length > 0 ? (rewardsTotalUsd > 0 ? formatCurrency(rewardsTotalUsd, 2) : "—") : undefined;
+    showRewards && rewardsTotalUsd > 0 ? `$${formatNumber(rewardsTotalUsd, 2)}` : undefined;
 
   const rewardsBreakdown =
-    rewards.length > 0 ? (
+    showRewards && rewardsTotalUsd > 0 ? (
       <>
         <div className="text-xs font-semibold mb-1">Rewards breakdown:</div>
         <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -289,19 +296,17 @@ export function PositionsList({
             const amountNum = Number(r.amount);
             const lineUsd =
               typeof r.usdValue === "number" && Number.isFinite(r.usdValue) && r.usdValue > 0
-                ? formatCurrency(r.usdValue, 2)
-                : "—";
+                ? formatNumber(r.usdValue, 2)
+                : "N/A";
             return (
-              <div key={r.tokenMint} className="flex items-center gap-2 text-xs">
+              <div key={r.tokenMint} className="flex items-center gap-2">
                 {icon ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={icon} alt={sym} className="w-3 h-3 rounded-full object-contain" />
-                ) : (
-                  <div className="w-3 h-3 rounded-full bg-muted" />
-                )}
+                  <img src={icon} alt={sym} className="w-3 h-3 rounded-full" />
+                ) : null}
                 <span>{sym || `${r.tokenMint.slice(0, 4)}…${r.tokenMint.slice(-4)}`}</span>
                 <span>{Number.isFinite(amountNum) ? formatNumber(amountNum, 6) : r.amount}</span>
-                <span className="text-muted-foreground">{lineUsd}</span>
+                <span className="text-gray-300">${lineUsd}</span>
               </div>
             );
           })}
@@ -310,14 +315,15 @@ export function PositionsList({
     ) : undefined;
 
   if (!protocol || !address) return null;
-  if (rows.length === 0 && rewards.length === 0) return null;
+  if (rows.length === 0 && !(showRewards && rewardsTotalUsd > 0)) return null;
 
   return (
     <ProtocolCard
       protocol={protocol}
       totalValue={cardTotalValue}
       totalRewardsUsd={totalRewardsUsdStr}
-      rewardsBreakdown={rewards.length > 0 ? rewardsBreakdown : undefined}
+      rewardsBreakdown={rewardsBreakdown}
+      rewardsEchelonStyle={showRewards && Boolean(totalRewardsUsdStr)}
       positions={positions}
       isLoading={false}
       showManageButton={showManageButton}

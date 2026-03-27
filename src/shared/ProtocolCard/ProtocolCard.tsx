@@ -20,6 +20,11 @@ export interface ProtocolCardProps {
   totalRewardsUsd?: string;
   /** Optional tooltip body (e.g. per-token breakdown), shown when hovering the rewards row. */
   rewardsBreakdown?: ReactNode;
+  /**
+   * Match Echelon sidebar: border-top, text-sm label/value, rewards row after positions.
+   * When false, uses compact ProtocolCard styles.
+   */
+  rewardsEchelonStyle?: boolean;
   positions?: ProtocolPosition[];
   isLoading?: boolean;
   className?: string;
@@ -32,6 +37,7 @@ export function ProtocolCard({
   totalValue,
   totalRewardsUsd,
   rewardsBreakdown,
+  rewardsEchelonStyle = false,
   positions = [],
   isLoading = false,
   className,
@@ -70,18 +76,35 @@ export function ProtocolCard({
 
       {expanded && (
         <div className={styles.content}>
+          {positions.length > 0 &&
+            positions.map((pos, i) => (
+              <ProtocolCardPosition key={pos.id ?? i} position={pos} />
+            ))}
           {totalRewardsUsd &&
             (rewardsBreakdown ? (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div
-                      className={cn(styles.totalRewardsRow, "cursor-help")}
+                      className={cn(
+                        rewardsEchelonStyle
+                          ? "flex w-full items-center justify-between pt-2 mt-1 border-t border-gray-200 cursor-help"
+                          : styles.totalRewardsRow,
+                        !rewardsEchelonStyle && "cursor-help"
+                      )}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >
-                      <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
-                      <span className={styles.totalRewardsValue}>{totalRewardsUsd}</span>
+                      <span
+                        className={rewardsEchelonStyle ? "text-sm text-muted-foreground" : styles.totalRewardsLabel}
+                      >
+                        💰 Total rewards:
+                      </span>
+                      <span
+                        className={rewardsEchelonStyle ? "text-sm font-medium" : styles.totalRewardsValue}
+                      >
+                        {totalRewardsUsd}
+                      </span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent
@@ -93,14 +116,22 @@ export function ProtocolCard({
                 </Tooltip>
               </TooltipProvider>
             ) : (
-              <div className={styles.totalRewardsRow}>
-                <span className={styles.totalRewardsLabel}>💰 Total rewards:</span>
-                <span className={styles.totalRewardsValue}>{totalRewardsUsd}</span>
+              <div
+                className={cn(
+                  rewardsEchelonStyle
+                    ? "flex w-full items-center justify-between pt-2 mt-1 border-t border-gray-200"
+                    : styles.totalRewardsRow
+                )}
+              >
+                <span
+                  className={rewardsEchelonStyle ? "text-sm text-muted-foreground" : styles.totalRewardsLabel}
+                >
+                  💰 Total rewards:
+                </span>
+                <span className={rewardsEchelonStyle ? "text-sm font-medium" : styles.totalRewardsValue}>
+                  {totalRewardsUsd}
+                </span>
               </div>
-            ))}
-          {positions.length > 0 &&
-            positions.map((pos, i) => (
-              <ProtocolCardPosition key={pos.id ?? i} position={pos} />
             ))}
           {showManageButton && <ManagePositionsButton protocol={protocol} />}
         </div>
