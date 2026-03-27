@@ -14,6 +14,7 @@ const MOCK_REWARDS: RewardRow[] = [
     tokenLogoUrl:
       "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
     amount: "0.025768",
+    usdValue: 0.025768,
   },
 ];
 

@@ -891,12 +891,14 @@ export function KaminoPositions() {
       <div className="pt-4">
         {rewardsLoading ? (
           <div className="text-muted-foreground text-right">Loading rewards...</div>
-        ) : rewards.length > 0 && totalRewardsUsd > 0 ? (
+        ) : rewards.length > 0 ? (
           <div className="text-right">
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="text-gray-500 mb-1 cursor-help">🎁 Rewards: {formatCurrency(totalRewardsUsd, 2)}</div>
+                  <div className="text-gray-500 mb-1 cursor-help">
+                    🎁 Rewards: {totalRewardsUsd > 0 ? formatCurrency(totalRewardsUsd, 2) : "-"}
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
                   <div className="space-y-1 text-xs max-h-48 overflow-auto">
