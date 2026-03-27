@@ -26,6 +26,7 @@
     "@emotion/styled": "^11.14.1",
     "@hyperionxyz/sdk": "^0.0.13",
 	"@kamino-finance/klend-sdk": "^7.3.21",
+    "@kamino-finance/farms-sdk": "^3.2.24",
     "@panoraexchange/swap-sdk": "^1.0.8",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-avatar": "^1.1.10",
