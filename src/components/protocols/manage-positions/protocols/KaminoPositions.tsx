@@ -273,8 +273,6 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
   }
 
   const valueUsd = pickFirstNumber(row.position, [
-    "positionUsd",
-    "positionValueUsd",
     "totalUsdValue",
     "totalValueUsd",
     "positionUsdValue",

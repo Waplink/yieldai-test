@@ -106,43 +106,6 @@ function enrichEarnPositionPayload(pos: unknown, vaultMetaByAddress: Map<string,
   return out;
 }
 
-function parseDecimalField(value: unknown): number | undefined {
-  const n = Number.parseFloat(String(value ?? ""));
-  return Number.isFinite(n) ? n : undefined;
-}
-
-async function fetchKaminoEarnPositionUsd(vaultAddress: string, walletAddress: string): Promise<number | undefined> {
-  const url = `${KAMINO_API_BASE_URL}/kvaults/${encodeURIComponent(vaultAddress)}/users/${encodeURIComponent(walletAddress)}/pnl`;
-  try {
-    const res = await fetchWithRetry(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!res.ok) return undefined;
-    const pnl = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!pnl || typeof pnl !== "object") return undefined;
-
-    // Prefer explicit current position value if API provides it.
-    const directUsd =
-      parseDecimalField((pnl as Record<string, unknown>).positionUsd) ??
-      parseDecimalField((pnl as Record<string, unknown>).positionValueUsd) ??
-      parseDecimalField((pnl as Record<string, unknown>).position_value_usd) ??
-      parseDecimalField((pnl.positionValue as Record<string, unknown> | undefined)?.usd);
-    if (directUsd !== undefined) return directUsd;
-
-    // Fallback: cost basis + pnl.
-    const costBasisUsd = parseDecimalField((pnl.totalCostBasis as Record<string, unknown> | undefined)?.usd);
-    const totalPnlUsd = parseDecimalField((pnl.totalPnl as Record<string, unknown> | undefined)?.usd);
-    if (costBasisUsd !== undefined || totalPnlUsd !== undefined) {
-      return (costBasisUsd ?? 0) + (totalPnlUsd ?? 0);
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export type KaminoUserPositionRow =
   | {
       source: "kamino-lend";
@@ -462,27 +425,7 @@ export async function GET(request: NextRequest) {
 
     for (const pos of earnRaw) {
       if (!hasEarnVaultBalance(pos)) continue;
-      const enriched = enrichEarnPositionPayload(pos, vaultMetaByAddress);
-      const vaultAddress = extractKvaultVaultAddress(enriched);
-      if (!vaultAddress || !enriched || typeof enriched !== "object") {
-        flat.push({ source: "kamino-earn", position: enriched });
-        continue;
-      }
-
-      const positionUsd = await fetchKaminoEarnPositionUsd(vaultAddress, address);
-      if (positionUsd === undefined) {
-        flat.push({ source: "kamino-earn", position: enriched });
-        continue;
-      }
-
-      const withUsd = {
-        ...(enriched as Record<string, unknown>),
-        // Keep multiple aliases so current UI resolvers pick it up without fragile coupling.
-        positionUsd,
-        positionValueUsd: positionUsd,
-        totalValueUsd: positionUsd,
-      };
-      flat.push({ source: "kamino-earn", position: withUsd });
+      flat.push({ source: "kamino-earn", position: enrichEarnPositionPayload(pos, vaultMetaByAddress) });
     }
 
     let farmTx: KaminoFarmTx[] = [];
