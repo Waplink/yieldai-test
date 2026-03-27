@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rpc = createSolanaRpc(getSafeSolanaRpcEndpoint() as Parameters<typeof createSolanaRpc>[0]);
-    const farms = new Farms(rpc as ConstructorParameters<typeof Farms>[0]);
+    const farms = new Farms(rpc);
     const user = toAddress(address);
     const currentTime = new Decimal(Math.floor(Date.now() / 1000));
 
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: [], count: 0 });
     }
 
-    const farmStates = await FarmState.fetchMultiple(rpc as ConstructorParameters<typeof FarmState.fetchMultiple>[0], farmAddresses);
+    const farmStates = await FarmState.fetchMultiple(rpc, farmAddresses);
 
     // Aggregate by reward mint.
     const byMint = new Map<string, Decimal>();
