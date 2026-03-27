@@ -215,9 +215,10 @@ export function PositionsList({
         const tokenLogoUrl = String(getDeep(r.position, "tokenLogoUrl") ?? "").trim();
         const localBySymbol = tokenSymbol ? `/token_ico/${tokenSymbol.toLowerCase()}.png` : "";
         const icon = localBySymbol || getPreferredJupiterTokenIcon(tokenSymbol, tokenLogoUrl);
+        const label = tokenSymbol || vaultName;
         return {
           id: `kamino-earn-${idx}`,
-          label: vaultName,
+          label,
           value,
           logoUrl: icon,
           logoUrlFallback: tokenLogoUrl || undefined,
