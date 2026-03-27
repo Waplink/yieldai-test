@@ -321,6 +321,8 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
   const tokenLogoUrl = String(getDeep(row.position, "tokenLogoUrl") ?? "").trim();
   const fallbackLogoUrl = earnIcon || "";
   const underlyingLogoUrl = tokenLogoUrl || getPreferredJupiterTokenIcon(uSym, tokenLogoUrl) || "";
+  const amount = toNumber(getDeep(row.position, "underlyingTokenAmount"), 0);
+  const price = pickFirstNumber(row.position, ["underlyingTokenPriceUsd", "tokenPriceUsd", "priceUsd"], 0);
   return {
     kind: "earn",
     id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
@@ -328,7 +330,8 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
     fallbackLogoUrl,
     underlyingLogoUrl,
     valueUsd,
-    amount: 0,
+    amount: amount > 0 ? amount : 0,
+    price: price > 0 ? price : undefined,
     typeLabel: "Supply",
     typeColor: "bg-green-500/10 text-green-600 border-green-500/20",
     vaultAddress,
