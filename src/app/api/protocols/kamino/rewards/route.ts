@@ -58,7 +58,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid Solana wallet address", data: [] }, { status: 400 });
     }
 
-    const rpc = createSolanaRpc(getSafeSolanaRpcEndpoint() as Parameters<typeof createSolanaRpc>[0]);
+    // farms-sdk types are declared against a test-cluster RPC shape (includes requestAirdrop),
+    // but we use mainnet RPC. Runtime methods used here don't require airdrops.
+    const rpc = createSolanaRpc(getSafeSolanaRpcEndpoint() as Parameters<typeof createSolanaRpc>[0]) as unknown as Parameters<typeof Farms>[0];
     const farms = new Farms(rpc);
     const user = toAddress(address);
     const currentTime = new Decimal(Math.floor(Date.now() / 1000));
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: [], count: 0 });
     }
 
-    const farmStates = await FarmState.fetchMultiple(rpc, farmAddresses);
+    const farmStates = await FarmState.fetchMultiple(rpc as unknown as Parameters<typeof FarmState.fetchMultiple>[0], farmAddresses);
 
     // Aggregate by reward mint.
     const byMint = new Map<string, Decimal>();
