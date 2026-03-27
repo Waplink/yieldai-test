@@ -27,8 +27,10 @@ function initialsFromLabel(label: string): string {
 export function ProtocolCardPosition({ position }: ProtocolCardPositionProps) {
   const isPool = Boolean(position.logoUrl && position.logoUrl2);
   const logoUrl = position.logoUrl;
+  const logoUrlFallback = position.logoUrlFallback;
   const logoUrl2 = position.logoUrl2;
   const isCollateral = position.isCollateral;
+  const [useFallbackLogo, setUseFallbackLogo] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const initials = useMemo(() => initialsFromLabel(position.label), [position.label]);
 
@@ -63,15 +65,21 @@ export function ProtocolCardPosition({ position }: ProtocolCardPositionProps) {
       <div className={styles.singleRow}>
 
         <div className={styles.singleLeft}>
-          {logoUrl && !logoFailed ? (
+          {(logoUrl || (useFallbackLogo && logoUrlFallback)) && !logoFailed ? (
             <Image
-              src={logoUrl}
+              src={useFallbackLogo ? (logoUrlFallback as string) : (logoUrl as string)}
               alt=""
               width={24}
               height={24}
               className={styles.logo}
               unoptimized
-              onError={() => setLogoFailed(true)}
+              onError={() => {
+                if (!useFallbackLogo && logoUrlFallback) {
+                  setUseFallbackLogo(true);
+                  return;
+                }
+                setLogoFailed(true);
+              }}
             />
           ) : (
             <div

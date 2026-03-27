@@ -156,16 +156,20 @@ function getErrorMessage(error: unknown): string {
 function KaminoLogo({
   alt,
   externalLogoUrl,
+  fallbackLogoUrl,
   symbol,
 }: {
   alt: string;
   externalLogoUrl?: string;
+  fallbackLogoUrl?: string;
   symbol?: string;
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
+  const [stage, setStage] = useState<"primary" | "fallback" | "badge">("primary");
   const sym = (symbol || "").trim().toUpperCase();
   const fallbackText = (sym || alt || "TOKEN").trim().slice(0, 4).toUpperCase();
-  const src = externalLogoUrl && !imageFailed ? externalLogoUrl : null;
+  const primary = (externalLogoUrl || "").trim();
+  const fallback = (fallbackLogoUrl || "").trim();
+  const src = stage === "primary" ? (primary || null) : stage === "fallback" ? (fallback || null) : null;
   if (!src) {
     return (
       <div className="w-8 h-8 rounded-full bg-slate-500/20 text-slate-200/90 flex items-center justify-center text-[10px] font-semibold">
@@ -181,7 +185,10 @@ function KaminoLogo({
       height={32}
       className="object-contain"
       unoptimized={isExternalUrl(src)}
-      onError={() => setImageFailed(true)}
+      onError={() => {
+        if (stage === "primary" && fallback) setStage("fallback");
+        else setStage("badge");
+      }}
     />
   );
 }
@@ -213,6 +220,7 @@ type NormalizedKaminoRow =
       id: string;
       label: string;
       fallbackLogoUrl: string;
+      underlyingLogoUrl?: string;
       valueUsd: number;
       amount: number;
       price?: number;
@@ -310,12 +318,14 @@ function normalizeKaminoPosition(row: KaminoPosition, idx: number): NormalizedKa
   const { mint: uMint, symbol: uSym } = extractUnderlyingMintSymbol(row.position);
   const earnIcon = uSym ? `/token_ico/${uSym.toLowerCase()}.png` : "";
   const tokenLogoUrl = String(getDeep(row.position, "tokenLogoUrl") ?? "").trim();
-  const fallbackLogoUrl = earnIcon || getPreferredJupiterTokenIcon(uSym, tokenLogoUrl) || "";
+  const fallbackLogoUrl = earnIcon || "";
+  const underlyingLogoUrl = tokenLogoUrl || getPreferredJupiterTokenIcon(uSym, tokenLogoUrl) || "";
   return {
     kind: "earn",
     id: vaultAddress ? `kamino-earn-${vaultAddress}` : `kamino-earn-${idx}`,
     label,
     fallbackLogoUrl,
+    underlyingLogoUrl,
     valueUsd,
     amount: 0,
     typeLabel: "Supply",
@@ -686,6 +696,7 @@ export function KaminoPositions() {
                   <KaminoLogo
                     alt={position.label}
                     externalLogoUrl={position.fallbackLogoUrl}
+                    fallbackLogoUrl={"underlyingLogoUrl" in position ? position.underlyingLogoUrl : undefined}
                     symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
                   />
                 </div>
@@ -751,6 +762,7 @@ export function KaminoPositions() {
                     <KaminoLogo
                       alt={position.label}
                       externalLogoUrl={position.fallbackLogoUrl}
+                      fallbackLogoUrl={"underlyingLogoUrl" in position ? position.underlyingLogoUrl : undefined}
                       symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
                     />
                   </div>

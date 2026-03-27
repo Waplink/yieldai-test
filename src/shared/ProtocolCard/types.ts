@@ -15,6 +15,8 @@ export interface ProtocolPosition {
   value: number;
   /** URL логотипа первого токена */
   logoUrl?: string;
+  /** Optional fallback logo URL if the primary fails */
+  logoUrlFallback?: string;
   /** URL логотипа второго токена (для LP / пула) */
   logoUrl2?: string;
   /** Статус: для пула — Active/Inactive, для одиночной — Supply/Borrow */

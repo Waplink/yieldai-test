@@ -239,6 +239,7 @@ export function PositionsList({
           label: vaultName,
           value,
           logoUrl: icon,
+          logoUrlFallback: tokenLogoUrl || undefined,
           badge: PositionBadge.Supply,
         };
       })
