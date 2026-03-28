@@ -16,6 +16,7 @@ import {
   NATIVE_MINT,
 } from "@solana/spl-token";
 import { useToast } from "@/components/ui/use-toast";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToastAction } from "@/components/ui/toast";
 import { JupiterDepositModal } from "@/components/ui/jupiter-deposit-modal";
 import { JupiterWithdrawModal } from "@/components/ui/jupiter-withdraw-modal";
@@ -1126,9 +1127,9 @@ export function JupiterPositions() {
   }
 
   return (
-    <div className="space-y-4 text-base">
-      <div className="mb-4">
-          {positions.map((position, idx) => {
+    <div className="w-full min-w-0 max-w-full space-y-4 text-base">
+      <ScrollArea className="w-full min-w-0 max-w-full">
+        {positions.map((position, idx) => {
             const symbol = position?.token?.asset?.uiSymbol || position?.token?.asset?.symbol || "Unknown";
             const decimals = toNumber(position?.token?.asset?.decimals, 0);
             const amount = toNumber(position?.underlyingAssets, 0) / Math.pow(10, decimals || 0);
@@ -1138,7 +1139,10 @@ export function JupiterPositions() {
             const aprPct = toNumber(position?.token?.totalRate, 0) / 100;
 
             return (
-              <div key={`jupiter-${idx}`} className="p-3 sm:p-4 border-b last:border-b-0">
+              <div
+                key={`jupiter-${idx}`}
+                className="box-border w-full min-w-0 max-w-full overflow-hidden border-b p-3 last:border-b-0 sm:p-4"
+              >
               <div className="hidden sm:flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 relative">
@@ -1181,53 +1185,57 @@ export function JupiterPositions() {
                 </div>
               </div>
 
-              <div className="block sm:hidden space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 relative">
-                      {logoUrl ? (
-                        <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" unoptimized />
-                      ) : null}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-base font-semibold">{symbol}</div>
-                        <Badge
-                          variant="outline"
-                          className="bg-green-500/10 text-green-600 border-green-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
-                        >
-                          Supply
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</div>
-                    </div>
+              <div className="block sm:hidden w-full min-w-0 max-w-full space-y-3">
+                <div className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-2">
+                  <div className="relative h-8 w-8 shrink-0">
+                    {logoUrl ? (
+                      <Image src={logoUrl} alt={symbol} width={32} height={32} className="object-contain" unoptimized />
+                    ) : null}
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center justify-end gap-2 mb-1">
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
-                      >
-                        APR: {formatNumber(aprPct, 2)}%
-                      </Badge>
-                      <div className="text-base font-semibold text-right w-24">{formatCurrency(value, 2)}</div>
-                    </div>
-                    <div className="text-sm text-muted-foreground">{formatNumber(amount, 4)}</div>
-                    <div className="flex gap-2 mt-2 justify-end">
-                      <Button onClick={() => onDepositClick(position)} size="sm" variant="default" className="h-10">
-                        Deposit
-                      </Button>
-                      <Button onClick={() => onWithdrawClick(position)} size="sm" variant="outline" className="h-10">
-                        Withdraw
-                      </Button>
-                    </div>
+                  <div className="min-w-0 max-w-full break-words text-base font-semibold [overflow-wrap:anywhere]">
+                    {symbol}
                   </div>
+                  <Badge
+                    variant="outline"
+                    className="h-4 shrink-0 border-green-500/20 bg-green-500/10 px-1.5 py-0.5 text-xs font-normal text-green-600"
+                  >
+                    Supply
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="h-4 shrink-0 border-blue-500/20 bg-blue-500/10 px-1.5 py-0.5 text-xs font-normal text-blue-600"
+                  >
+                    APR: {formatNumber(aprPct, 2)}%
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">{formatCurrency(price, 4)}</span>
+                  <span className="text-base font-semibold">{formatCurrency(value, 2)}</span>
+                  <span className="min-w-0 max-w-full break-all text-sm text-muted-foreground">
+                    {formatNumber(amount, 6)}
+                  </span>
+                </div>
+                <div className="flex w-full min-w-0 max-w-full flex-col gap-2">
+                  <Button
+                    onClick={() => onDepositClick(position)}
+                    size="sm"
+                    variant="default"
+                    className="box-border h-10 w-full min-w-0 max-w-full"
+                  >
+                    Deposit
+                  </Button>
+                  <Button
+                    onClick={() => onWithdrawClick(position)}
+                    size="sm"
+                    variant="outline"
+                    className="box-border h-10 w-full min-w-0 max-w-full"
+                  >
+                    Withdraw
+                  </Button>
                 </div>
               </div>
               </div>
             );
           })}
-      </div>
+      </ScrollArea>
       <div className="flex items-center justify-between pt-6 pb-6">
         <span className="text-xl">Total assets in Jupiter:</span>
         <span className="text-xl text-primary font-bold">{formatCurrency(totalValue, 2)}</span>
