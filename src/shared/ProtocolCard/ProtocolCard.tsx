@@ -88,7 +88,7 @@ export function ProtocolCard({
                     <div
                       className={cn(
                         rewardsEchelonStyle
-                          ? "flex w-full items-center justify-between pt-2 mt-1 border-t border-gray-200 cursor-help"
+                          ? "flex items-center justify-between pt-2 border-t border-gray-200 cursor-help"
                           : styles.totalRewardsRow,
                         !rewardsEchelonStyle && "cursor-help"
                       )}
@@ -119,7 +119,7 @@ export function ProtocolCard({
               <div
                 className={cn(
                   rewardsEchelonStyle
-                    ? "flex w-full items-center justify-between pt-2 mt-1 border-t border-gray-200"
+                    ? "flex items-center justify-between pt-2 border-t border-gray-200"
                     : styles.totalRewardsRow
                 )}
               >

@@ -639,7 +639,6 @@ export default function PortfolioPage() {
                       <KaminoPositionsList
                         address={solanaAddress}
                         showManageButton={false}
-                        showRewards
                         onPositionsCheckComplete={() =>
                           setCheckingProtocols((prev) => prev.filter((p) => p !== "Kamino"))
                         }
