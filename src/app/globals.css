@@ -276,3 +276,10 @@
 .loading-dot:nth-child(3) {
   animation-delay: 0.4s;
 }
+
+/* Radix ScrollArea viewport wraps content in display:table + minWidth:100%, which can grow past the viewport and clip wide flex rows (e.g. Kamino manage positions on mobile). */
+[data-radix-scroll-area-viewport] > div {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}

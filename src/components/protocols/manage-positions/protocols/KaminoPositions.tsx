@@ -708,7 +708,7 @@ export function KaminoPositions() {
   const depositSymbol = kaminoDepositModalToken?.symbol ?? "Token";
 
   return (
-    <div className="space-y-4 text-base">
+    <div className="w-full min-w-0 max-w-full space-y-4 text-base">
       {kaminoDepositModalToken ? (
         <JupiterDepositModal
           isOpen={earnModal === "deposit"}
@@ -732,9 +732,12 @@ export function KaminoPositions() {
         />
       ) : null}
 
-      <ScrollArea>
+      <ScrollArea className="w-full min-w-0 max-w-full">
         {sorted.map((position) => (
-          <div key={position.id} className="p-3 sm:p-4 border-b last:border-b-0">
+          <div
+            key={position.id}
+            className="box-border w-full min-w-0 max-w-full overflow-hidden p-3 sm:p-4 border-b last:border-b-0"
+          >
             <div className="hidden sm:flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 relative">
@@ -810,53 +813,50 @@ export function KaminoPositions() {
               </div>
             </div>
 
-            <div className="block sm:hidden space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 relative">
-                    <KaminoLogo
-                      alt={position.label}
-                      externalLogoUrl={position.fallbackLogoUrl}
-                      fallbackLogoUrl={"underlyingLogoUrl" in position ? position.underlyingLogoUrl : undefined}
-                      symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-base font-semibold">{position.label}</div>
-                      <Badge variant="outline" className={`${position.typeColor} text-xs font-normal px-1.5 py-0.5 h-4`}>
-                        {position.typeLabel}
-                      </Badge>
-                    </div>
-                    {"price" in position && position.price != null && (
-                      <div className="text-sm text-muted-foreground">{formatCurrency(position.price, 4)}</div>
-                    )}
-                  </div>
+            <div className="block sm:hidden w-full min-w-0 max-w-full space-y-3">
+              <div className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-2">
+                <div className="relative h-8 w-8 shrink-0">
+                  <KaminoLogo
+                    alt={position.label}
+                    externalLogoUrl={position.fallbackLogoUrl}
+                    fallbackLogoUrl={"underlyingLogoUrl" in position ? position.underlyingLogoUrl : undefined}
+                    symbol={"underlyingSymbol" in position ? position.underlyingSymbol : undefined}
+                  />
                 </div>
-                <div className="text-right">
-                  <div className="flex items-center justify-end gap-2 mb-1">
-                    {position.kind === "earn" && position.aprPct != null ? (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-xs font-normal px-1.5 py-0.5 h-4"
-                      >
-                        APR: {formatNumber(position.aprPct, 2)}%
-                      </Badge>
-                    ) : null}
-                    <div className="text-base font-semibold text-right w-24">{formatCurrency(position.valueUsd, 2)}</div>
-                  </div>
-                  {"amount" in position && position.amount > 0 && (
-                    <div className="text-sm text-muted-foreground">{formatNumber(position.amount, 6)}</div>
-                  )}
+                <div className="min-w-0 max-w-full break-words text-base font-semibold [overflow-wrap:anywhere]">
+                  {position.label}
                 </div>
+                <Badge
+                  variant="outline"
+                  className={`${position.typeColor} h-4 shrink-0 px-1.5 py-0.5 text-xs font-normal`}
+                >
+                  {position.typeLabel}
+                </Badge>
+                {position.kind === "earn" && position.aprPct != null ? (
+                  <Badge
+                    variant="outline"
+                    className="h-4 shrink-0 border-blue-500/20 bg-blue-500/10 px-1.5 py-0.5 text-xs font-normal text-blue-600"
+                  >
+                    APR: {formatNumber(position.aprPct, 2)}%
+                  </Badge>
+                ) : null}
+                {"price" in position && position.price != null ? (
+                  <span className="text-sm text-muted-foreground">{formatCurrency(position.price, 4)}</span>
+                ) : null}
+                <span className="text-base font-semibold">{formatCurrency(position.valueUsd, 2)}</span>
+                {"amount" in position && position.amount > 0 ? (
+                  <span className="min-w-0 max-w-full break-all text-sm text-muted-foreground">
+                    {formatNumber(position.amount, 6)}
+                  </span>
+                ) : null}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex w-full min-w-0 max-w-full flex-col gap-2">
                 {position.kind === "earn" && position.vaultAddress ? (
                   <>
                     <Button
                       size="sm"
                       variant="default"
-                      className="w-full h-10"
+                      className="box-border h-10 w-full min-w-0 max-w-full"
                       onClick={() => openEarnDeposit(position)}
                       disabled={!effectiveSignerAddress || !activeSignTransaction}
                     >
@@ -865,7 +865,7 @@ export function KaminoPositions() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="w-full h-10"
+                      className="box-border h-10 w-full min-w-0 max-w-full"
                       onClick={() => openEarnWithdraw(position)}
                       disabled={!effectiveSignerAddress || !activeSignTransaction}
                     >
@@ -874,13 +874,23 @@ export function KaminoPositions() {
                   </>
                 ) : (
                   <>
-                    <Button size="sm" variant="default" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="box-border h-10 w-full min-w-0 max-w-full"
+                      onClick={() => window.open(KAMINO_LEND_URL, "_blank")}
+                    >
                       Deposit
-                      <ExternalLink className="h-3 w-3 ml-1" />
+                      <ExternalLink className="ml-1 h-3 w-3" />
                     </Button>
-                    <Button size="sm" variant="outline" className="w-full h-10" onClick={() => window.open(KAMINO_LEND_URL, "_blank")}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="box-border h-10 w-full min-w-0 max-w-full"
+                      onClick={() => window.open(KAMINO_LEND_URL, "_blank")}
+                    >
                       Withdraw
-                      <ExternalLink className="h-3 w-3 ml-1" />
+                      <ExternalLink className="ml-1 h-3 w-3" />
                     </Button>
                   </>
                 )}
